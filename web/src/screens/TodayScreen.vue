@@ -16,7 +16,7 @@ const canSave = computed(() => body.value.trim().length > 0 && remaining.value >
   <main class="flex flex-1 flex-col gap-6 py-8">
     <header class="space-y-1">
       <p class="text-sm text-ink-faint">{{ today }}</p>
-      <h1 class="text-2xl">きょう、どんなことがありましたか</h1>
+      <h1 class="text-2xl">きょうは、どんな日でしたか</h1>
     </header>
 
     <section class="card p-4">
