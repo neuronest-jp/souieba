@@ -14,7 +14,7 @@ run_worker_first = ["/api/*"]
 # ローカルでは .dev.vars が上書きする（ENVIRONMENT=development など）。
 [vars]
 ENVIRONMENT = "production"
-ANTHROPIC_MODEL = "claude-sonnet-5-5"
+ANTHROPIC_MODEL = "claude-opus-5-5"   # コスト優先なら claude-sonnet-5-5（ADR-0005）
 ACCESS_TEAM_DOMAIN = ""   # 例: "example" （https://example.cloudflareaccess.com）
 ACCESS_AUD = ""           # Access アプリケーションの AUD タグ
 APP_VERSION = "0.1.0"

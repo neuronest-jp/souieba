@@ -11,7 +11,7 @@
 | D1 名 | `souieba` | 旧 `yui` と混同しない |
 | R2 バケット名 | `souieba-photos` | 用途が名前から分かる |
 | Worker 名 | `souieba` | |
-| モデル名 | `ANTHROPIC_MODEL` 既定 `claude-sonnet-5-5`。上位切替候補 `claude-opus-5-5` | 想起の品質とコストの両立。環境変数で切替 |
+| モデル名 | `ANTHROPIC_MODEL` 既定 `claude-opus-5-5`。コスト優先時は `claude-sonnet-5-5` に切替（ADR-0005 で更新） | 想起の判断の質が製品の核。環境変数で切替 |
 | リポジトリ名 | `yui` のまま | リネームは GitHub 側の操作が必要 |
 | ブランチ運用 | `claude/souieba-setup-ukc5pw` に push、PR は作らない | 開発者が main にマージ |
 | ローカル認証 | `ENVIRONMENT=development` のときのみ `X-Dev-User` を受理 | 本番では無視 |

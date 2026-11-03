@@ -123,8 +123,8 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 
 ## 9. AI 呼び出しの設計
 
-- `@anthropic-ai/sdk` を Worker から直接呼ぶ。モデル名は環境変数 `ANTHROPIC_MODEL`（既定 `claude-sonnet-5-5`）
-- tool use で JSON Schema を強制（`tool_choice: {type: "tool", name: ...}`）
+- `@anthropic-ai/sdk` を Worker から直接呼ぶ。モデル名は環境変数 `ANTHROPIC_MODEL`（既定 `claude-opus-5-5`、切替候補 `claude-sonnet-5-5`）
+- JSON Schema で出力の形を強制する。依頼文では tool use（`tool_choice` 強制）だが、現行モデルは強制 tool_choice を拒否するため Structured Outputs（`output_config.format`）で行う（ADR-0005）
 - 入力: 新しい記憶本文 + 過去記憶（id, happened_on, body, 確定事実）の直近 200 件
 - 出力後の検証（Worker 側）: `evidence` が引用元 body に部分文字列として含まれない項目は捨てる。1 件も残らなければ 0 件扱い
 - 失敗時: 画面には何も出さない。`ai_runs.status = failed` を記録。再試行はしない
@@ -149,7 +149,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 
 - Cloudflare Workers + Hono + D1 + R2。Workers Static Assets で Vue 3 + Vite + TypeScript + Tailwind の SPA を同一 Worker から配信
 - 認証: Cloudflare Access（メール OTP）
-- AI: `@anthropic-ai/sdk`、tool use、モデル名は環境変数
+- AI: `@anthropic-ai/sdk`、JSON Schema による構造化出力（ADR-0005）、モデル名は環境変数
 - 秘密情報: wrangler secret のみ。`.dev.vars` は gitignore
 - パッケージ: pnpm。依存は必要最小限
 

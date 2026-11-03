@@ -15,7 +15,7 @@ Built with Claude: Japan 2026 ハッカソン向けの個人開発です。
 
 - Cloudflare Workers + Hono + D1 + R2。画面（Vue 3 + Vite + Tailwind）も同じ Worker から配信
 - ログインは Cloudflare Access（メールに届く確認コード）
-- 記憶の想起と候補の抽出は Claude（Anthropic API）。JSON Schema で形を固定し、引用が原文にあるかを Worker 側で検証
+- 記憶の想起と候補の抽出は Claude（Anthropic API、既定 Claude Opus 5.5）。JSON Schema で形を固定し、引用が原文にあるかを Worker 側で検証
 
 ## ドキュメント
 
@@ -36,10 +36,14 @@ Built with Claude: Japan 2026 ハッカソン向けの個人開発です。
 pnpm install
 cp .dev.vars.example .dev.vars   # ANTHROPIC_API_KEY などを手で書く（git には入れない）
 pnpm db:migrate:local
-pnpm dev                         # http://localhost:8787
+pnpm dev:worker                  # Worker: http://localhost:8787
+pnpm dev                         # 画面:   http://localhost:5173（/api は 8787 に中継）
 ```
 
-ローカルでは `X-Dev-User: you@example.com` ヘッダでログイン相当になります（画面は自動で付けます）。
+ローカルの Worker は development として起動し、`X-Dev-User: you@example.com` ヘッダをログイン相当として受け付けます。
+画面の開発サーバがこのヘッダを自動で付けます（`DEV_USER=you@example.com pnpm dev` で変更）。本番ではこのヘッダは無視されます。
+
+本番と同じ形（画面を Worker から配信）で確かめるときは `pnpm preview` です。
 
 ## デプロイ
 
