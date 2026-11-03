@@ -1,0 +1,7 @@
+# ローカル用。コピーして .dev.vars を作る（git には入れない。Claude Code も書き込めない）
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-5-5
+ENVIRONMENT=development
+# ローカルでは Access を使わないので空でよい
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=
