@@ -10,3 +10,4 @@ dist/
 # iOS
 apps/mobile/**/xcuserdata/
 apps/mobile/**/DerivedData/
+web/dist/

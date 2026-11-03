@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* デザイン基盤（docs/decisions/0004-design-foundation.md）。コンポーネントは色を直書きしない。 */
+@theme {
+  --color-paper: #faf5ec;
+  --color-card: #fffdf8;
+  --color-ink: #3a3230;
+  --color-ink-soft: #6f655d;
+  --color-ink-faint: #a69c92;
+  --color-line: #e6dccd;
+  --color-ember: #c9684a;
+  --color-ember-soft: #f3ded3;
+  --color-moss: #7e9478;
+  --color-moss-soft: #e3eadf;
+
+  --font-display: "Zen Maru Gothic", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Noto Sans JP", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
+
+  --radius-card: 20px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgb(58 50 48 / 0.04), 0 8px 24px rgb(58 50 48 / 0.06);
+
+  --ease-gentle: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+    text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+  }
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  textarea::placeholder,
+  input::placeholder {
+    color: var(--color-ink-faint);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ember);
+    outline-offset: 3px;
+    border-radius: 8px;
+  }
+}
+
+@layer components {
+  .card {
+    background: var(--color-card);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 48px;
+    padding: 0 1.4rem;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-display);
+    font-weight: 700;
+    transition:
+      background-color 200ms var(--ease-gentle),
+      transform 200ms var(--ease-gentle),
+      opacity 200ms var(--ease-gentle);
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .btn-primary {
+    background: var(--color-ember);
+    color: var(--color-card);
+  }
+  .btn-primary:not(:disabled):hover {
+    background: color-mix(in oklab, var(--color-ember) 88%, black);
+  }
+  .btn-quiet {
+    background: transparent;
+    color: var(--color-ink-soft);
+    border: 1px solid var(--color-line);
+  }
+  .btn-quiet:not(:disabled):hover {
+    background: var(--color-card);
+  }
+  /* 「そういえば。」の札が現れる動き */
+  .appear {
+    animation: appear 600ms var(--ease-gentle) both;
+  }
+  @keyframes appear {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .appear {
+      animation: none;
+    }
+  }
+}
