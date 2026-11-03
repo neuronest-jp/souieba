@@ -37,6 +37,17 @@ export async function signJwt(
   return `${h}.${p}.${b64url(new Uint8Array(sig))}`;
 }
 
+// alg 混同のテスト用: RSA 公開鍵の JWK をそのまま HMAC の鍵にして HS256 で署名する
+export async function signJwtHs256WithPublicKey(key: TestKey, payload: Record<string, unknown>): Promise<string> {
+  const pub = key.jwks.keys[0]!;
+  const secret = new TextEncoder().encode(JSON.stringify({ kty: pub.kty, n: pub.n, e: pub.e }));
+  const hmac = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const h = b64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", kid: key.kid, typ: "JWT" })));
+  const p = b64url(new TextEncoder().encode(JSON.stringify(payload)));
+  const sig = await crypto.subtle.sign("HMAC", hmac, new TextEncoder().encode(`${h}.${p}`));
+  return `${h}.${p}.${b64url(new Uint8Array(sig))}`;
+}
+
 export const TEAM = "example";
 export const AUD = "aud-tag-0123456789abcdef";
 export const ISS = `https://${TEAM}.cloudflareaccess.com`;
@@ -64,6 +75,9 @@ export const fakeDb = () => {
       },
       run: async () => {
         if (sql.startsWith("INSERT INTO users")) {
+          if (args.length !== 2 || typeof args[0] !== "string" || !args[0].includes("@")) {
+            throw new Error(`users の upsert の bind が想定外: ${JSON.stringify(args)}`);
+          }
           const [id, now] = args as [string, string];
           const cur = users.get(id);
           if (cur) cur.last_seen_at = now;
@@ -73,7 +87,8 @@ export const fakeDb = () => {
       },
       first: async () => {
         if (sql.startsWith("SELECT id, display_name, created_at FROM users")) {
-          return users.get(args[0] as string) ?? null;
+          const u = users.get(args[0] as string);
+          return u ? { id: u.id, display_name: u.display_name, created_at: u.created_at } : null;
         }
         return null;
       },

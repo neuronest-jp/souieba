@@ -1,0 +1,6 @@
+{
+  "items": [
+    { "kind": "thing", "value": "青梅", "evidence": "青梅", "date_precision": "unknown" },
+    { "kind": "place", "value": "スーパー", "evidence": "スーパー", "date_precision": "unknown" }
+  ]
+}

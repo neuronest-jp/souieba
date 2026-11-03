@@ -10,6 +10,11 @@ const body = ref("");
 const today = formatDateJa(new Date());
 const remaining = computed(() => 2000 - body.value.length);
 const canSave = computed(() => body.value.trim().length > 0 && remaining.value >= 0);
+// 保存は 11/5 で API とつなぐ。それまでは押しても静かに状態を伝えるだけ。
+const notice = ref("");
+const save = () => {
+  notice.value = "いまは、まだ残せません。";
+};
 </script>
 
 <template>
@@ -30,18 +35,17 @@ const canSave = computed(() => body.value.trim().length > 0 && remaining.value >
         maxlength="2000"
       ></textarea>
       <div class="mt-3 flex items-center justify-between border-t border-line pt-3">
-        <button class="btn btn-quiet min-h-11 px-4 text-sm" type="button" disabled title="写真は明日から添えられます">
-          写真を添える
-        </button>
-        <span v-if="body.length > 1800" class="text-sm text-ink-faint">あと {{ remaining }} 文字</span>
+        <button class="btn btn-quiet min-h-11 px-4 text-sm" type="button" disabled>写真を添える</button>
+        <span v-if="body.length > 1800" class="text-sm text-ink-soft" aria-live="polite">あと {{ remaining }} 文字</span>
       </div>
     </section>
 
-    <div class="flex justify-end">
-      <button class="btn btn-primary px-8" type="button" :disabled="!canSave" title="保存は明日から">保存する</button>
+    <div class="flex items-center justify-end gap-4">
+      <p v-if="notice" class="text-sm text-ink-soft" role="status">{{ notice }}</p>
+      <button class="btn btn-primary px-8" type="button" :disabled="!canSave" @click="save">保存する</button>
     </div>
 
-    <p class="text-sm leading-relaxed text-ink-faint">
+    <p class="text-sm leading-relaxed text-ink-soft">
       保存すると、関係のある昔のひとことがあれば、ここに「そういえば。」と浮かんできます。<br />
       なければ、何も出ません。それでいいのです。
     </p>

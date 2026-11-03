@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "dev:worker": "wrangler dev --var ENVIRONMENT:development",
+    "dev:worker": "mkdir -p web/dist && wrangler dev --var ENVIRONMENT:development",
     "build:web": "vue-tsc -p web/tsconfig.json --noEmit && vite build",
     "build": "pnpm build:web && wrangler deploy --dry-run --outdir dist/worker",
     "deploy": "pnpm build:web && wrangler deploy",

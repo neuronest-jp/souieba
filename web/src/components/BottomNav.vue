@@ -16,7 +16,7 @@ const items: { id: Tab; label: string }[] = [
       <li v-for="item in items" :key="item.id" class="flex-1">
         <button
           class="font-display w-full rounded-full py-3 text-base font-bold transition-colors duration-200"
-          :class="model === item.id ? 'bg-ember-soft text-ember' : 'text-ink-soft hover:bg-card'"
+          :class="model === item.id ? 'bg-ember-soft text-ink' : 'text-ink-soft hover:bg-card'"
           :aria-current="model === item.id ? 'page' : undefined"
           @click="model = item.id"
         >

@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { requireUser } from "./auth";
+import { requireUser, type ResolveUserDeps } from "./auth";
 import { type Env, type Variables } from "./env";
 import { ApiError, errorBody } from "./errors";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
 
 // Worker 本体。/api/* だけここに来る（wrangler.toml の run_worker_first）。それ以外は Static Assets が SPA を返す。
-export const createApp = (): AppType => {
+export const createApp = (deps: ResolveUserDeps = {}): AppType => {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
   app.onError((err, c) => {
@@ -23,13 +23,12 @@ export const createApp = (): AppType => {
       ok: true,
       service: "souieba",
       version: c.env.APP_VERSION ?? "dev",
-      environment: c.env.ENVIRONMENT ?? "unknown",
       time: new Date().toISOString(),
     }),
   );
 
   const authed = new Hono<{ Bindings: Env; Variables: Variables }>();
-  authed.use("*", requireUser());
+  authed.use("*", requireUser(deps));
 
   // 自分が誰か。初回は users に作る。
   authed.get("/me", async (c) => {

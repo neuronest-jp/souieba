@@ -1,0 +1,7 @@
+{
+  "items": [
+    { "kind": "thing", "value": "桜" },
+    { "kind": "place", "value": "公園" },
+    { "kind": "thing", "value": "木" }
+  ]
+}

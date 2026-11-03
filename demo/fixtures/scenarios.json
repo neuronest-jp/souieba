@@ -1,0 +1,195 @@
+{
+  "$comment": "そういえば。 デモ4シナリオ（docs/spec.md 第11節）。preconditions は seed.sql の memory id。expected.evidence_contains は想起元の本文（seed.sql）からの逐語引用。写真は demo/photos/ に開発者が置く（ここではファイル名だけ参照）。",
+  "user_id": "demo@example.com",
+  "demo_date": "2026-11-07",
+  "scenarios": [
+    {
+      "id": "D1",
+      "title": "祖母の梅干し",
+      "principle": "想起 + 根拠（原則 2, 3）。関係のある昔の記憶が、原文の引用つきで浮かぶ",
+      "preconditions": {
+        "seed_memory_ids": ["mem_d1_01"],
+        "confirmed_facts": ["fact_d1_01_person", "fact_d1_01_thing", "fact_d1_01_place", "fact_d1_01_date"],
+        "note": "mem_d1_02（こたつとみかん）も同じおばあちゃんの記憶だが、梅とは無関係。札に出ないのが望ましい"
+      },
+      "input": {
+        "body": "スーパーで青梅を見かけた",
+        "happened_on": "2026-11-07",
+        "happened_on_precision": "day",
+        "photo": null,
+        "photo_optional": "ume.jpg（任意。開発者が権利を持つ青梅の写真があれば添える）"
+      },
+      "expected": {
+        "recalls": {
+          "count_min": 1,
+          "count_max": 1,
+          "must_include": [
+            {
+              "related_memory_id": "mem_d1_01",
+              "evidence_contains": "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた"
+            }
+          ],
+          "must_not_include": ["mem_daily_01"],
+          "note": "mem_daily_01 は「スーパー」という語が共通するだけで無関係。出たら原則 2 の失敗として扱う"
+        },
+        "facts": {
+          "candidates": [
+            { "kind": "thing", "value": "青梅", "evidence": "青梅" },
+            { "kind": "place", "value": "スーパー", "evidence": "スーパー" }
+          ],
+          "user_action": "「青梅」を「そう」、「スーパー」は触らず候補のまま残す",
+          "after": "memory_facts に thing: 青梅 が confirmed で 1 行。スーパー は candidate のまま"
+        },
+        "ai_runs": { "recall": "succeeded", "facts": "succeeded" },
+        "ui": "札が 1 枚。引用「おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた」が札に見える。札を開くと 2024年6月 の記憶の詳細に飛ぶ"
+      },
+      "stubs": { "recall": "ai/recall-d1.json", "facts": "ai/facts-d1.json" },
+      "demo_script": [
+        "きょうのひとことに「スーパーで青梅を見かけた」とだけ書いて保存します。",
+        "数秒すると「そういえば。」の札が 1 枚、静かに現れます。2年前の 6 月、おばあちゃんが縁側で梅干しを漬けていた記憶です。",
+        "札には必ず元の文章の引用が添えてあります。言い換えではなく、あのとき自分が書いた一文そのものです。",
+        "「そうだった」を押すと反応が残ります。これは学習には使わず、ただ記録するだけです。"
+      ]
+    },
+    {
+      "id": "D2",
+      "title": "電気代",
+      "principle": "関係なければ提案しない（原則 2）。0 件が正しい答え",
+      "preconditions": {
+        "seed_memory_ids": ["mem_d1_01", "mem_d4_01", "mem_daily_01", "mem_daily_02", "mem_daily_03", "mem_daily_04", "mem_daily_05", "mem_daily_06", "mem_daily_07", "mem_daily_08", "mem_daily_09", "mem_daily_10", "mem_daily_11", "mem_daily_12"],
+        "note": "D1 と D4 の想起元が入った状態で行う。日常の記憶（買い物・天気・仕事・冷蔵庫・靴）が混ざっていても、電気代に関係するものは 1 件もない"
+      },
+      "input": {
+        "body": "電気代を払った。先月より少し安かった",
+        "happened_on": "2026-11-07",
+        "happened_on_precision": "day",
+        "photo": null
+      },
+      "expected": {
+        "recalls": {
+          "count_min": 0,
+          "count_max": 0,
+          "must_include": [],
+          "must_not_include": ["mem_daily_09", "mem_daily_01"],
+          "note": "mem_daily_09（冷蔵庫が壊れた）は家電つながりで結びつけたくなるが、本文に電気代の話はない。出たら原則 2 の失敗"
+        },
+        "facts": {
+          "candidates": [
+            { "kind": "date", "value": "2026-10", "evidence": "先月", "date_precision": "month" }
+          ],
+          "user_action": "何もしない（候補は候補のまま）",
+          "after": "thing: 電気代 が候補に出ることもあるが、どちらでもよい"
+        },
+        "ai_runs": { "recall": "empty", "facts": "succeeded または empty" },
+        "ui": "札は出ない。読み込みの表示が消えたあと、画面は入力前と同じ静けさに戻る。「関係する記憶はありませんでした」のような文言も出さない"
+      },
+      "stubs": { "recall": "ai/recall-d2-empty.json" },
+      "demo_script": [
+        "今度は「電気代を払った。先月より少し安かった」と書きます。",
+        "過去には 16 件の記憶があって、買い物や天気、仕事の話も混ざっていますが、電気代に関係するものはありません。",
+        "だから、何も出ません。無理に結びつけないこと、「そういえば」が出ない日があっていいことが、このアプリの約束です。"
+      ]
+    },
+    {
+      "id": "D3",
+      "title": "公園の花",
+      "principle": "AI の推測を事実として確定しない（原則 1）。候補は「〜でしょうか」で、決めるのはユーザー",
+      "preconditions": {
+        "seed_memory_ids": [],
+        "photo_file": "park-flower.jpg",
+        "note": "写真は開発者が権利を持つものを demo/photos/park-flower.jpg に置く（Claude Code は書き込まない）。想起の札が出ても出なくても構わない（mem_daily_08 の公園が出る可能性はある）"
+      },
+      "input": {
+        "body": "公園で花が咲いていた",
+        "happened_on": "2026-11-07",
+        "happened_on_precision": "day",
+        "photo": "park-flower.jpg",
+        "photo_content_type": "image/jpeg"
+      },
+      "expected": {
+        "recalls": {
+          "count_min": 0,
+          "count_max": 1,
+          "must_include": [],
+          "note": "mem_daily_08（近所の公園で弁当）が出る可能性はあるが、出なくても正しい。この場面では札には触れない"
+        },
+        "photo_hints": {
+          "candidates": [
+            { "kind": "thing", "value": "桜", "display": "桜でしょうか" },
+            { "kind": "place", "value": "公園", "display": "公園でしょうか" }
+          ],
+          "user_action": "「桜でしょうか」に「ちがう」（実際は梅だった）",
+          "after": "memory_facts に行は作られない。再読み込みしても「桜」は出ない。本文は「公園で花が咲いていた」のまま。「梅」を勝手に書き足さない"
+        },
+        "facts": {
+          "candidates": [
+            { "kind": "place", "value": "公園", "evidence": "公園" },
+            { "kind": "thing", "value": "花", "evidence": "花" }
+          ],
+          "user_action": "「公園」を「そう」",
+          "fallback": "F7（写真候補）が間に合わない場合は、この本文候補の「公園」を「ちがう」にして rejected になることで代替する（docs/requirements.md 第7節）"
+        },
+        "ai_runs": { "photo": "succeeded", "facts": "succeeded" },
+        "ui": "写真の候補はすべて語尾が「でしょうか」。「ちがう」を押すと候補は消え、記憶の詳細にも検索にも残らない"
+      },
+      "stubs": { "photo": "ai/photo-d3.json", "facts": "ai/facts-d3.json" },
+      "demo_script": [
+        "公園の花の写真を 1 枚添えて、「公園で花が咲いていた」と書きます。",
+        "写真から「桜でしょうか」という候補が出ます。断定ではなく、いつも問いかけの形です。",
+        "実はこれは梅でした。「ちがう」を押すと、候補はそのまま消えて、記憶には何も残りません。",
+        "写真からの気づきは、あくまで手がかりです。何が事実かを決めるのは、書いた本人だけです。"
+      ]
+    },
+    {
+      "id": "D4",
+      "title": "はるとの自転車",
+      "principle": "想起 + 成長（原則 2, 3）。同じ子どもの、乗り物にまつわる昔の記憶が引用つきで浮かぶ",
+      "preconditions": {
+        "seed_memory_ids": ["mem_d4_01"],
+        "confirmed_facts": ["fact_d4_01_person", "fact_d4_01_thing", "fact_d4_01_place"],
+        "note": "mem_d4_02（初めて「ばあば」と言った）も はると の記憶だが、乗り物とは無関係。出ないのが望ましい"
+      },
+      "input": {
+        "body": "はると、今日補助輪なしで乗れた",
+        "happened_on": "2026-11-07",
+        "happened_on_precision": "day",
+        "photo": null
+      },
+      "expected": {
+        "recalls": {
+          "count_min": 1,
+          "count_max": 1,
+          "must_include": [
+            {
+              "related_memory_id": "mem_d4_01",
+              "evidence_contains": "はるとが三輪車で転んで泣いた"
+            }
+          ],
+          "must_not_include": ["mem_daily_04"],
+          "note": "mem_daily_04（雪で転びそうになった）は「転ぶ」が共通するだけ。出たら原則 2 の失敗"
+        },
+        "facts": {
+          "candidates": [
+            { "kind": "person", "value": "はると", "evidence": "はると" },
+            { "kind": "date", "value": "2026-11-07", "evidence": "今日", "date_precision": "day" }
+          ],
+          "user_action": "「はると」を「そう」",
+          "after": "memory_facts に person: はると が confirmed で 1 行"
+        },
+        "feedback": {
+          "user_action": "札に「そうだった」",
+          "after": "recalls.feedback = 'helpful'"
+        },
+        "ai_runs": { "recall": "succeeded", "facts": "succeeded" },
+        "ui": "札が 1 枚。引用「はるとが三輪車で転んで泣いた」。札を開くと 2024年4月14日 の記憶（公園の坂道）が読める"
+      },
+      "stubs": { "recall": "ai/recall-d4.json" },
+      "demo_script": [
+        "最後に「はると、今日補助輪なしで乗れた」と書きます。",
+        "2年半前、はるとが三輪車で転んで泣いた日の記憶が「そういえば。」と浮かびます。引用つきです。",
+        "転んでも、また乗りたがった子が、今日は補助輪なしで走った。書いた本人が忘れていたつながりを、静かに差し出すだけです。",
+        "「そうだった」と頷いて終わります。ここにチャットも、話し相手もいません。あるのは自分の記憶だけです。"
+      ]
+    }
+  ]
+}

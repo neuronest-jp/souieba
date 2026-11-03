@@ -27,8 +27,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* 本文なし */
     }
-    throw new ApiError(res.status, body?.error.code ?? "http_error", body?.error.message ?? res.statusText);
+    throw new ApiError(res.status, body?.error?.code ?? "http_error", body?.error?.message ?? res.statusText);
   }
+  // Access のセッション切れでログイン画面の HTML が返ることがある。JSON でなければログイン扱い。
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("application/json")) throw new ApiError(401, "not_json", "ログインが必要です");
   return (await res.json()) as T;
 }
 

@@ -28,12 +28,12 @@
   │ POST /api/memories  │                                     │
   │────────────────────▶│ D1 に memories を INSERT            │
   │                     │ ai_runs(kind=facts,  status=running)│
-  │                     │ ai_runs(kind=recall, status=running)│
+  │                     │ ai_runs(kind=recall, status=running)│  ← 過去記憶が 1 件以上あるときだけ
   │ 201 {memory}        │                                     │
   │◀────────────────────│ ctx.executionCtx.waitUntil(         │
   │                     │   runFacts(), runRecall() )  ──────▶│  C2 候補抽出
   │                     │                              ──────▶│  C1 想起
-  │ GET .../facts   (2 秒ごと、最大 15 秒)                    │
+  │ GET .../facts   (2 秒ごと、最大 30 秒 = 15 回)            │
   │────────────────────▶│ pending=true …                       │
   │                     │ 検証（引用 ⊂ 本文）→ D1 に保存       │◀── JSON
   │                     │ ai_runs を succeeded / empty / failed │
@@ -43,8 +43,9 @@
 ```
 
 - レスポンスは AI を待たずに返す。AI 呼び出しは `waitUntil` で続行する
-- 画面は facts と recalls を 2 秒間隔でポーリングし、両方の `pending` が false になるか 15 秒経ったら止める
-- 15 秒以内に終わらなかった分は、次に詳細画面を開いたときに表示される（再試行はしない。仕様 9 章）
+- 画面は facts と recalls を 2 秒間隔でポーリングし、両方の `pending` が false になるか 30 秒（15 回）経ったら止める（requirements N-2）
+- 30 秒以内に終わらなかった分は、次に詳細画面を開いたときに表示される（再試行はしない。仕様 9 章）
+- 過去記憶が 0 件のときは C1 を起動せず、`ai_runs(kind=recall)` の行も作らない（requirements N-5。6.2）
 
 ## 2. リポジトリ構成と責務
 
@@ -55,8 +56,8 @@
 | `wrangler.toml` | ルートに置く。Worker 名 `souieba`、D1 / R2 バインディング、`[assets]`、`[vars]` |
 | `vite.config.ts` | ルートに置く。`root: "web"`、`build.outDir: "dist"`（= `web/dist`）、`server.proxy` |
 | `web/index.html` | SPA の入口。Google Fonts の link と `#app` |
-| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api/`（API クライアント）、`screens/`（S0〜S3）、`components/`、`composables/` |
-| `worker/src/` | Hono。`index.ts`（app とルート登録）、`auth.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts`、`errors.ts` |
+| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアントと 5 章のレスポンス型）、`date.ts`、`screens/`（S0〜S3）、`components/`、`composables/` |
+| `worker/src/` | Hono。`index.ts`（app とルート登録）、`access.ts`（Access JWT の検証。純粋ロジック）、`auth.ts`（認証ミドルウェア。JWT と `X-Dev-User` の振り分け）、`env.ts`、`errors.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts` |
 | `worker/migrations/` | D1 マイグレーション。`0001_init.sql` のみ（変更しない） |
 | `worker/test/` | vitest（Node 環境）の単体テスト |
 | `demo/fixtures/` | デモ 4 シナリオの JSON と seed SQL |
@@ -68,9 +69,13 @@
 ```toml
 name = "souieba"
 main = "worker/src/index.ts"
-compatibility_date = "2026-10-01"
+compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]   # @anthropic-ai/sdk のため
-workers_dev = false                        # *.workers.dev を閉じ、Access 配下のカスタムドメインだけで公開
+
+# 当面（tasks J-3）: workers_dev = true（既定）のまま *.workers.dev を Access で守る。
+# カスタムドメインが用意できたら、次の 2 行をセットで有効にする（片方だけだとどの URL からも到達できなくなる）。
+# workers_dev = false
+# routes = [{ pattern = "souieba.<domain>", custom_domain = true }]
 
 [assets]
 directory = "web/dist"
@@ -82,6 +87,7 @@ run_worker_first = ["/api/*"]              # /api/* だけ Worker、それ以外
 binding = "DB"
 database_name = "souieba"
 database_id = "<setup-cloudflare.md の手順で埋める>"
+migrations_dir = "worker/migrations"       # 既定は ./migrations なので必須。無いと db:migrate:local が何も見つけない
 
 [[r2_buckets]]
 binding = "PHOTOS"
@@ -89,8 +95,8 @@ bucket_name = "souieba-photos"
 
 [vars]
 ENVIRONMENT = "production"
-ANTHROPIC_MODEL = "claude-sonnet-5-5"
-ACCESS_TEAM_DOMAIN = "<team>.cloudflareaccess.com"
+ANTHROPIC_MODEL = "claude-opus-5-5"       # 既定。コスト優先時は claude-sonnet-5-5（ADR-0003 / 0005）
+ACCESS_TEAM_DOMAIN = "<team>"             # Team 名だけ。worker/src/access.ts が https://<team>.cloudflareaccess.com を組み立てる
 ACCESS_AUD = "<Access アプリの AUD タグ>"
 APP_VERSION = "0.1.0"
 ```
@@ -106,31 +112,33 @@ APP_VERSION = "0.1.0"
 |---|---|
 | 1 | リクエストの `Cf-Access-Jwt-Assertion` ヘッダを読む。無ければ 401 |
 | 2 | JWT ヘッダの `kid` と `alg`（RS256 のみ許可）を読む |
-| 3 | JWKS を `https://${ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs` から取得し、`kid` が一致する鍵を `crypto.subtle.importKey("jwk", …, {name: "RSASSA-PKCS1-v1_5", hash: "SHA-256"})` で取り込む |
+| 3 | JWKS を `https://${ACCESS_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs` から取得し、`kid` が一致する鍵を `crypto.subtle.importKey("jwk", …, {name: "RSASSA-PKCS1-v1_5", hash: "SHA-256"})` で取り込む |
 | 4 | 署名を `crypto.subtle.verify` で検証 |
-| 5 | クレームを検証: `aud` に `ACCESS_AUD` が含まれる / `iss === "https://" + ACCESS_TEAM_DOMAIN` / `exp > now` / `nbf`（あれば）`<= now` |
+| 5 | クレームを検証: `aud` に `ACCESS_AUD` が含まれる / `iss === "https://" + ACCESS_TEAM_DOMAIN + ".cloudflareaccess.com"` / `exp > now` / `nbf`（あれば）`<= now` |
 | 6 | `email` を小文字化して `user_id` にする。`email` が無ければ 401（サービストークンは使わない） |
 | 7 | `users` に upsert（初回は `created_at`、毎回 `last_seen_at`）。Hono の `c.set("user", …)` に載せる |
 
 - JWKS キャッシュ: モジュールスコープの変数に `{fetchedAt, keys}` を持ち、10 分間再利用する。`kid` が見つからなければ 1 回だけ再取得する（鍵ローテーション対策）。Cache API や KV は使わない（依存最小限、Worker の isolate が入れ替わっても再取得するだけ）
-- JWT の検証は外部ライブラリを入れず、`worker/src/auth.ts` に WebCrypto で書く（base64url デコード、ヘッダ/ペイロード/署名の分割、検証）。この純粋ロジックが 11 章の単体テスト対象になる
+- JWT の検証は外部ライブラリを入れず、`worker/src/access.ts` に WebCrypto で書く（`auth.ts` はそれを呼ぶ Hono ミドルウェア）（base64url デコード、ヘッダ/ペイロード/署名の分割、検証）。この純粋ロジックが 11 章の単体テスト対象になる
 
 ### 3.2 ローカル代替: X-Dev-User
 
 - `ENVIRONMENT === "development"` のときだけ `X-Dev-User: <email>` を受け付け、JWT 検証を省略する
 - `ENVIRONMENT` が development 以外なら、このヘッダは読まない（存在しても無視して JWT 検証に進む）
-- `.dev.vars` に `ENVIRONMENT=development` を書く。`wrangler.toml` の `[vars]` は `production` のままなので、デプロイ先で誤って有効になることはない
+- ローカルでは `pnpm dev:worker` / `pnpm preview` が `wrangler dev --var ENVIRONMENT:development` で起動する（9.2）。`.dev.vars` に `ENVIRONMENT=development` を書いても同じ。`wrangler.toml` の `[vars]` は `production` のままなので、デプロイ先で誤って有効になることはない
 
 ### 3.3 Access を通らずに Worker へ到達できないことの担保
 
 | 対策 | 内容 |
 |---|---|
-| Access アプリの範囲 | Self-hosted アプリのドメインを `souieba.<domain>`、パスは空（ホスト全体）にする。`/api/*` も静的ファイルも `/api/health` も Access 配下 |
-| workers.dev の無効化 | `workers_dev = false`。カスタムドメイン以外の入口を作らない |
+| Access アプリの範囲 | Self-hosted アプリのドメインを公開ホスト（当面は `souieba.<account>.workers.dev`、カスタムドメイン後は `souieba.<domain>`）、パスは空（ホスト全体）にする。`/api/*` も静的ファイルも `/api/health` も Access 配下 |
+| 入口を 1 つにする | カスタムドメインが用意できるまでは `workers_dev = true` のまま `*.workers.dev` を Access で守る（tasks J-3、requirements S-10）。用意できたら `routes`（custom_domain）と `workers_dev = false` をセットで入れ、Access アプリのドメインを新ホストに付け替える。`workers_dev = false` だけ先に入れない（到達経路が無くなる） |
 | Worker 側の二重チェック | Access を信頼せず、`/api/*` は常に JWT を自前検証する。Access を剥がされた設定ミス（別ドメインのルート追加など）があっても API は 401 を返す |
 | `/api/health` | Access 配下に置く。Worker 側では JWT を検証しないが（仕様 8 章「/api/health を除く」はこの意味）、Access の前段を外さない。死活監視は Worker の外（Cloudflare のダッシュボード、`wrangler tail`）で行い、未認証の監視エージェントからの到達経路は作らない |
 
 `/api/health` を公開したい場合は Access の Bypass ポリシーをそのパスにだけ付けるが、ハッカソン期間中は不要なので行わない。
+
+したがって本番の受け入れ条件は「JWT なしの curl で `/api/memories` は Access のログインページ（302/401）、Access を迂回しても Worker が 401。`/api/health` は Access 経由（ブラウザ、または `cf-access-token` を付けた curl）なら 200」とする。requirements N-9、tasks T-1104-16、setup-cloudflare.md 7.1 の「JWT なしの curl で `/api/health` が 200」はこの形に読み替える（末尾の判断事項）。
 
 ## 4. データモデル（仕様 7 章、0001_init.sql）
 
@@ -164,7 +172,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 | kind | `person` / `place` / `date` / `thing` |
 | value | 正規化した値。`date` は `YYYY-MM-DD` / `YYYY-MM` / `YYYY` のいずれか（精度に対応） |
 | status | 下記の状態遷移 |
-| source | `user`（P1 で手入力に使う）/ `ai` |
+| source | `user`（写真候補 F7 を確定したとき。requirements 第8節 #4）/ `ai`（C2 の候補） |
 | evidence | 本文からの逐語引用。`source = 'ai'` では必須（CHECK） |
 | decided_at | confirmed / rejected にした時刻 |
 
@@ -177,7 +185,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 ```
 
 - 検索（P1）と想起の入力に使うのは `confirmed` だけ（原則 1）
-- `rejected` は画面に出さないが、同じ候補を再び出さないよう記録は残す（D3 シナリオ）
+- `rejected` は画面に出さないが、行としては残す（D3「候補は確定されず記憶に残らない」の記録。C2 は登録直後に 1 回しか走らないので、再提示の抑止には使わない）
 - 日付精度は facts には列がないため、`value` の長さ（10 / 7 / 4 文字）で表す。候補の `date_precision` は value の形に変換して保存する
 
 ### 4.4 recalls（「そういえば。」の札）
@@ -219,26 +227,27 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 - すべて `/api/*`、JSON（写真の PUT と GET を除く）。`/api/health` 以外は 3 章の認証が必要
 - 他ユーザーの資源は存在しないものとして扱い 404 を返す（403 で存在を漏らさない）
 - エラー形式: `{"error": {"code": "...", "message": "..."}}`。`message` は日本語で、画面にそのまま出せる短い文
+- requirements.md との読み替え（tasks J-7）: requirements の `{status: "pending"|"done", facts|recalls: [...]}` は本書の `{pending: boolean, items: [...]}` に、`PATCH /api/facts/:id` の `{status: confirmed|rejected}` は本書の `{decision: confirm|reject}` に読み替える。エラーコード名は requirements の短い形（`validation` / `too_large` / `unsupported_media`）に本書を揃えた
 
 | code | HTTP | 例 |
 |---|---|---|
 | `unauthorized` | 401 | JWT が無い / 無効 |
-| `validation_error` | 400 | 本文が空、精度の値が不正、日付の形式違い |
+| `validation` | 400 | 本文が空、精度の値が不正、日付の形式違い |
 | `not_found` | 404 | 記憶・候補・札が無い、または他ユーザーのもの |
-| `payload_too_large` | 413 | 写真が 10MB 超 |
-| `unsupported_media_type` | 415 | JPEG / PNG 以外 |
-| `internal_error` | 500 | D1 / R2 の失敗。詳細は返さない |
+| `too_large` | 413 | 写真が 10MB 超 |
+| `unsupported_media` | 415 | JPEG / PNG 以外 |
+| `internal` | 500 | D1 / R2 の失敗。詳細は返さない（worker/src/index.ts の `onError` が使っている名前） |
 
 ### 5.1 GET /api/health
 
 ```json
-200 {"ok": true, "service": "souieba", "version": "0.1.0", "time": "2026-11-04T01:23:45.000Z"}
+200 {"ok": true, "service": "souieba", "version": "0.1.0", "environment": "production", "time": "2026-11-04T01:23:45.000Z"}
 ```
 
 ### 5.2 GET /api/me
 
 ```json
-200 {"user_id": "you@example.com", "display_name": null}
+200 {"user_id": "dev@example.com", "display_name": null, "since": "2026-11-04T01:23:45.000Z"}
 ```
 
 ### 5.3 GET /api/memories?cursor=&limit=20
@@ -266,7 +275,8 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
      "created_at": "…", "updated_at": "…"}
 ```
 
-- 検証: `body` は trim 後 1〜2000 文字。`happened_on_precision` が `unknown` なら `happened_on` は無視して NULL。`day` は `YYYY-MM-DD`、`month` は `YYYY-MM`（`-01` を補う）、`year` は `YYYY`（`-01-01` を補う）。未来日は許可（予定を書く人もいる）
+- 検証: `body` は trim 後 1〜2000 文字（`Array.from(body).length`。F2-3）。`happened_on_precision` は省略時 `day`。`unknown` なら `happened_on` は無視して NULL。`day` は `YYYY-MM-DD`、`month` は `YYYY-MM`（`-01` を補う）、`year` は `YYYY`（`-01-01` を補う）。未来日は許可（予定を書く人もいる）
+- `happened_on` は画面がユーザーのローカル日付（JST）で必ず付ける。precision が `unknown` 以外で `happened_on` が無ければ 400 `validation`。Worker は既定値（今日）を補わない（Worker は UTC で動くため、JST の「今日」と 1 日ずれ得る）
 - 成功後、`waitUntil` で C2（facts）と C1（recall）を起動する（6 章）
 
 ### 5.5 GET /api/memories/:id
@@ -275,10 +285,18 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 200 {
   "memory": {"id": "9b1c…", "body": "…", "happened_on": "…", "happened_on_precision": "day",
              "photo_key": "…", "photo_content_type": "image/jpeg", "created_at": "…", "updated_at": "…"},
-  "facts":   {"pending": false, "items": [ …5.7 と同じ… ]},
-  "recalls": {"pending": false, "items": [ …5.9 と同じ… ]}
+  "facts":       {"pending": false, "items": [ …5.9 と同じ… ]},
+  "recalls":     {"pending": false, "items": [ …5.11 と同じ… ]},
+  "recalled_by": {"items": [
+    {"id": "r02…", "reason": "…", "evidence": "…", "feedback": "none", "created_at": "…",
+     "memory": {"id": "c3d4…", "body": "…全文…", "happened_on": "2026-11-04",
+                "happened_on_precision": "day", "photo_key": null}}
+  ]}
 }
 ```
+
+- `recalls` はこの記憶が新しい側（`memory_id`）の札、`recalled_by` はこの記憶が思い出された側（`related_memory_id`）の札。仕様 6 章 S3「関連する『そういえば。』の履歴」は両方を並べる
+- `recalled_by` の `memory` は札が付いた新しい方の記憶。`pending` は持たない（他の記憶の想起が進行中かどうかはこの画面に関係しない）
 
 ### 5.6 DELETE /api/memories/:id
 
@@ -300,6 +318,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 - `*` は 5.7 のキー全体。先頭が `photos/<自分の user_id>/` でなければ 404
 - `200` で R2 のボディを流す。`Content-Type` は保存したもの、`Cache-Control: private, max-age=3600`
 - `<img src="/api/photos/...">` で使う。Access の Cookie が同一オリジンで付くので追加の認証処理は不要
+- 仕様 8 章の `/api/photos/:key` は Hono の `/api/photos/*` で受ける（キーに `/` と `@` を含むため）。画面は `photo_key` をそのまま `/api/photos/` に連結し、スラッシュをエンコードしない
 
 ### 5.9 GET /api/memories/:id/facts
 
@@ -356,19 +375,19 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 
 ### 6.1 方式: JSON Schema による形の固定
 
-仕様 9 章は「tool use で JSON Schema を強制（`tool_choice: {type: "tool"}`）」としている。ところが既定モデル `claude-sonnet-5-5`（ADR-0003）とその上位候補 `claude-opus-5-5` は、強制 `tool_choice`（`any` / `tool`）を 400 で拒否する（`auto` のみ）。目的は「必ずスキーマ通りの JSON を 1 つ受け取る」ことなので、同じ Messages API の構造化出力 `output_config.format`（`type: "json_schema"`）で形を固定する。tool use との違いは出力が `tool_use` ブロックではなく `text` ブロックの JSON 文字列になる点だけで、Worker 側の検証と保存は変わらない。
+ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool use で JSON Schema を強制（`tool_choice: {type: "tool"}`）」としているが、既定モデル `claude-opus-5-5` とコスト優先時の `claude-sonnet-5-5`（ADR-0003 / 0005）は、強制 `tool_choice`（`any` / `tool`）を 400 で拒否する（`auto` のみ）。目的は「必ずスキーマ通りの JSON を 1 つ受け取る」ことなので、同じ Messages API の構造化出力 `output_config.format`（`type: "json_schema"`）で形を固定する。tool use との違いは出力が `tool_use` ブロックではなく `text` ブロックの JSON 文字列になる点だけで、Worker 側の検証と保存は変わらない。
 
 | 項目 | 値 |
 |---|---|
 | SDK | `@anthropic-ai/sdk`（Workers の fetch で動く。`nodejs_compat` を付ける） |
-| クライアント | `new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 1, timeout: 20_000 })`。リクエストごとに生成（Worker はモジュールスコープで env を持てない） |
-| model | `env.ANTHROPIC_MODEL` |
+| クライアント | `new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0, timeout: 20_000 })`（再試行は SDK の自動分も 0。仕様 9 章、requirements N-7）。リクエストごとに生成（Worker はモジュールスコープで env を持てない） |
+| model | `env.ANTHROPIC_MODEL`（既定 `claude-opus-5-5`。コスト優先時 `claude-sonnet-5-5`） |
 | max_tokens | 4096（出力は最大 3 件の短い JSON。`stop_reason === "max_tokens"` なら failed） |
 | thinking | 指定しない（既定の adaptive）。`output_config.effort` は C2 を `low`、C1 を `medium` から始め、10 秒の予算内に収まるよう計測して決める |
 | output_config.format | `{ type: "json_schema", schema: <6.2 / 6.3> }` |
 | 結果の取り出し | `content` から `type === "text"` の最初のブロックを `JSON.parse`。`stop_reason` が `refusal` なら failed |
 
-モデルを `claude-sonnet-5`（1 世代前）に戻せば `tool_choice: {type: "tool", name}` も使えるため、`worker/src/ai/client.ts` は「スキーマと応答 JSON」を境界にし、呼び出し方式を 1 か所に閉じ込める。
+補足: モデルを `claude-sonnet-5` / `claude-opus-5`（1 世代前）に戻せば `tool_choice: {type: "tool", name}` も使えるため、`worker/src/ai/client.ts` は「スキーマと応答 JSON」を境界にし、呼び出し方式を 1 か所に閉じ込める。
 
 ### 6.2 C1 想起: スキーマ `recall`
 
@@ -382,7 +401,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
         "type": "object",
         "properties": {
           "related_memory_id": {"type": "string", "description": "関係のある過去の記憶の id（入力に含まれるものだけ）"},
-          "reason":            {"type": "string", "description": "なぜ関係があるか。日本語で 40 文字以内の一文"},
+          "reason":            {"type": "string", "description": "なぜ関係があるか。日本語で 80 文字以内の一文"},
           "evidence":          {"type": "string", "description": "その過去の記憶の本文からの逐語引用。一字も変えない"}
         },
         "required": ["related_memory_id", "reason", "evidence"],
@@ -408,7 +427,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 ```
 
 - 過去記憶は同一ユーザーの直近 200 件（`created_at DESC`）。本文は各 2000 文字以下（スキーマ上そうなっている）。確定済み事実（`status='confirmed'`）だけを `facts` 属性に付ける
-- 過去記憶が 0 件なら API を呼ばず `ai_runs` を `empty` にする
+- 過去記憶が 0 件なら C1 を起動せず、`ai_runs(kind='recall')` の行も作らない（requirements F5-5 / N-5「過去記憶が無ければ 0 行」）。画面の `pending` 判定は「記録が無ければ false」なので影響しない
 - 本文に `</memory>` のような文字列があってもタグとして解釈されないよう、`<` `>` `&` `"` はエスケープする
 
 ### 6.3 C2 候補抽出: スキーマ `facts`
@@ -457,21 +476,22 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 
 | 検証 | 落ちたとき |
 |---|---|
-| `evidence` が引用元 body に部分文字列として含まれる（C1 は related の body、C2 は新しい記憶の body）。比較前に両者を NFC 正規化し、前後の空白だけ trim する | その項目を捨てる |
+| `evidence` が空でなく、引用元 body に部分文字列として含まれる（C1 は related の body、C2 は新しい記憶の body）。`body.includes(evidence)` だけで判定し、NFC 正規化・trim・全角半角変換はしない（requirements X-7。逐語引用の原則 3） | その項目を捨てる |
 | C1: `related_memory_id` が入力に含めた 200 件の id にある（= 同一ユーザー、存在する） | 捨てる |
 | C1: 同じ `related_memory_id` の重複 | 2 件目以降を捨てる |
 | C1: `related_memory_id` が新しい記憶自身 | 捨てる |
+| C1: `reason` が空、または 80 文字超（`Array.from` で数える。requirements F5-1） | 捨てる |
 | 件数 | 先頭 3 件に切る（C1）。C2 は 10 件に切る |
 | C2: `date` の `value` が精度に合う形（`YYYY-MM-DD` / `YYYY-MM` / `YYYY`、実在する日付） | 捨てる |
 | C2: `evidence` と `value` が空 | 捨てる |
-| C2: 同じ (kind, value) の重複、または同じ記憶に既に rejected がある | 捨てる |
+| C2: 同じ (kind, value) の重複 | 2 件目以降を捨てる |
 
 1 件も残らなければ `ai_runs.status = 'empty'`。検証関数は純粋関数にして `worker/test/` で検証する。
 
 ### 6.6 失敗時の静かな振る舞い
 
 - API エラー、タイムアウト（20 秒）、JSON パース失敗、`refusal` / `max_tokens`: 何も保存せず `ai_runs.status = 'failed'`、`error` に理由を記録。画面には何も出ない（ポーリングは `pending=false` で終わる）
-- 再試行はしない。SDK の `maxRetries: 1` だけ（429 / 5xx の 1 回）
+- 再試行はしない。SDK の自動再試行も `maxRetries: 0` で切る。429 / 5xx も 1 回で `failed`（仕様 9 章、requirements N-7。10 秒の予算内で待って再送しても打ち切りに掛かるだけ）
 - C1 と C2 は独立した `waitUntil` で走らせ、片方の失敗が他方に影響しない
 - `ANTHROPIC_API_KEY` が未設定のローカルでも登録・一覧・削除は動く（AI は failed として記録）
 
@@ -490,17 +510,17 @@ web/src/
   main.ts            createApp(App).mount("#app")
   App.vue            useScreen() で S0〜S3 を切り替える。下部に「きょう / これまで」の 2 タブ
   style.css          Tailwind v4 と @theme（8 章）
-  api/client.ts      fetch ラッパ。JSON、エラー形式の解釈、ローカルでの X-Dev-User は Vite の proxy が付けるため画面側では触らない
-  api/types.ts       5 章のレスポンス型
+  api.ts             fetch ラッパと 5 章のレスポンス型。JSON、エラー形式の解釈。ローカルでの X-Dev-User は Vite の proxy が付けるため画面側では触らない
+  date.ts            happened_on と精度の表示（「2024年6月」「いつだったか」）、ローカル日付の今日
   composables/useScreen.ts    ハッシュ ⇄ 画面
-  composables/usePolling.ts   2 秒間隔・最大 15 秒
-  screens/Welcome.vue / Today.vue / Past.vue / MemoryDetail.vue
-  components/MemoryCard.vue / FactChips.vue / RecallCard.vue / PhotoPicker.vue
+  composables/usePolling.ts   2 秒間隔・最大 30 秒（15 回）
+  screens/WelcomeScreen.vue / TodayScreen.vue / TimelineScreen.vue / MemoryDetailScreen.vue
+  components/BottomNav.vue / MemoryCard.vue / FactChips.vue / RecallCard.vue / PhotoPicker.vue
 ```
 
 ### 7.2 ポーリング
 
-- 保存直後、`usePolling(() => Promise.all([getFacts(id), getRecalls(id)]))` を開始。2 秒間隔、両方の `pending` が false になった時点で止める。15 秒（8 回目）で打ち切る
+- 保存直後、`usePolling(() => Promise.all([getFacts(id), getRecalls(id)]))` を開始。2 秒間隔、両方の `pending` が false になった時点で止める。30 秒（15 回目）で打ち切る（requirements N-2、tasks T-1106-08。API の timeout 20 秒と保存の遅延を吸収できる長さ）
 - 札（RecallCard）は結果が初めて届いたときに ADR-0004 の 600ms フェードで現れる。0 件なら何も描かない。「読み込み中」の表示も出さない（静かに待つ）
 - 候補（FactChips）は届き次第、本文の下に並ぶ。「そう」「ちがう」はその場で PATCH し、楽観更新する
 
@@ -592,7 +612,7 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8787",
         changeOrigin: false,
-        headers: { "X-Dev-User": process.env.DEV_USER ?? "you@example.com" },
+        headers: { "X-Dev-User": process.env.DEV_USER ?? "dev@example.com" },
       },
     },
   },
@@ -604,34 +624,38 @@ export default defineConfig({
 | script | 内容 |
 |---|---|
 | `dev` | `vite`（5173。別ターミナルで `dev:worker`） |
-| `dev:worker` | `wrangler dev --port 8787`（`.dev.vars` を読む） |
-| `build` | `vite build && wrangler deploy --dry-run` |
-| `deploy` | `vite build && wrangler deploy` |
-| `db:migrate:local` | `wrangler d1 migrations apply souieba --local` |
-| `db:migrate:remote` | `wrangler d1 migrations apply souieba --remote` |
-| `db:seed:local` | `wrangler d1 execute souieba --local --file demo/fixtures/seed.sql` |
-| `test` | `vitest run` |
-| `typecheck` | `vue-tsc --noEmit -p web && tsc --noEmit -p worker` |
+| `dev:worker` | `wrangler dev --var ENVIRONMENT:development`（8787。`.dev.vars` の `ANTHROPIC_API_KEY` も読む） |
+| `preview` | `pnpm build:web && wrangler dev --var ENVIRONMENT:development`（本番相当: 画面を Worker から配信、8787 一本） |
+| `build:web` | `vue-tsc -p web/tsconfig.json --noEmit && vite build` |
+| `build` | `pnpm build:web && wrangler deploy --dry-run --outdir dist/worker` |
+| `deploy` | `pnpm build:web && wrangler deploy` |
+| `db:migrate:local` / `db:migrate:remote` | `wrangler d1 migrations apply souieba --local` / `--remote` |
+| `db:seed:local` / `db:seed:remote` | `wrangler d1 execute souieba --local --file demo/fixtures/seed.sql` / `--remote` |
+| `test` / `test:watch` | `vitest run` / `vitest` |
+| `typecheck` | `tsc -p worker/tsconfig.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit` |
 
-CLAUDE.md と README は `pnpm dev` を 8787 としている。採用案では画面は 5173 で開くため、両ファイルの記述を合わせる必要がある（末尾の判断事項）。
+`ENVIRONMENT=development` は `--var` で渡す（`wrangler.toml` の `production` を上書き）。`.dev.vars` に書いても同じ結果になるのでどちらでも可。CLAUDE.md と README もこの形（画面 5173、Worker 8787）になっている。
 
 ### 9.3 .dev.vars.example
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-opus-5-5
 ENVIRONMENT=development
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=
 ```
 
-`ANTHROPIC_MODEL` などは `wrangler.toml` の `[vars]` が使われる。`.dev.vars` は gitignore 済みで、Claude Code は書き込まない。
+`ENVIRONMENT` は 9.2 の `--var` でも渡るので、ここに書かなくても動く（どちらでも可）。`ANTHROPIC_MODEL` を省けば `wrangler.toml` の `[vars]` が使われる。`.dev.vars` は gitignore 済みで、Claude Code は書き込まない。
 
 ## 10. 環境変数と secret
 
 | 名前 | 種別 | 置き場所 | 用途 |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | secret | `wrangler secret put` / ローカルは `.dev.vars` | Anthropic API |
-| `ANTHROPIC_MODEL` | var | `wrangler.toml [vars]` | 既定 `claude-sonnet-5-5`。上位切替 `claude-opus-5-5` |
-| `ENVIRONMENT` | var | `wrangler.toml` は `production`、`.dev.vars` で `development` | `X-Dev-User` の受理 |
-| `ACCESS_TEAM_DOMAIN` | var | `wrangler.toml [vars]` | `<team>.cloudflareaccess.com`。JWKS の URL と `iss` |
+| `ANTHROPIC_MODEL` | var | `wrangler.toml [vars]` | 既定 `claude-opus-5-5`。コスト優先時 `claude-sonnet-5-5`（ADR-0003 / 0005） |
+| `ENVIRONMENT` | var | `wrangler.toml` は `production`、ローカルは `wrangler dev --var ENVIRONMENT:development`（または `.dev.vars`） | `X-Dev-User` の受理。`/api/health` の `environment` |
+| `ACCESS_TEAM_DOMAIN` | var | `wrangler.toml [vars]` | Team 名だけ（例 `example`）。`https://<team>.cloudflareaccess.com` を JWKS の URL と `iss` に組み立てる |
 | `ACCESS_AUD` | var | `wrangler.toml [vars]` | Access アプリの AUD タグ |
 | `APP_VERSION` | var | `wrangler.toml [vars]` | `/api/health` の `version` |
 
@@ -651,7 +675,7 @@ type Bindings = {
 
 | 対象 | ファイル | 内容 |
 |---|---|---|
-| 引用検証 | `worker/test/evidence.test.ts` | 部分一致、NFC 正規化、空、全角半角、`related_memory_id` の所有チェック、3 件制限、重複除去 |
+| 引用検証 | `worker/test/evidence.test.ts` | 部分一致、空、全角半角や前後空白を同一視しない（正規化しない。X-7）、`reason` の長さ、`related_memory_id` の所有チェック、3 件制限、重複除去 |
 | JWT 検証 | `worker/test/access-jwt.test.ts` | `crypto.subtle.generateKey` で RSA 鍵を作り、テスト内で署名した JWT を検証。JWKS 取得は関数引数で差し替える。`aud` 不一致・`iss` 不一致・`exp` 切れ・署名改ざん・`alg: none` を拒否 |
 | 日付精度 | `worker/test/date-precision.test.ts` | `day/month/year/unknown` と `happened_on` の正規化、C2 の `date` 値の形式検証、実在しない日付の拒否 |
 | 入力検証 | `worker/test/validate.test.ts` | 本文長、精度の値、写真 MIME とサイズ |
@@ -662,22 +686,34 @@ Node 20 以上では `globalThis.crypto` が WebCrypto なので、Worker と同
 ### 11.2 Worker 統合テスト: @cloudflare/vitest-pool-workers は入れない
 
 - 理由: 依存を増やさない方針。1 人 1 週間でセットアップ（vitest の二重設定、miniflare のバインディング定義）に時間を割くより、純粋ロジックのテストと手動スモークの方が割に合う
-- 代わりに、`wrangler dev` に対する curl スモークを docs/setup-cloudflare.md または docs/tasks.md に書く
+- 代わりに `scripts/smoke.sh` を正とする（`pnpm dev:worker` を起動してから `bash scripts/smoke.sh`。health、認証なし 401、`X-Dev-User`、SPA の HTML を確認する）。記憶の API ができたら以下を同スクリプトに足す
+- 写真の PUT は手元の任意の JPEG を指定する（`demo/photos/` は開発者が置くため存在しないことがある）。`jq` が無ければ `grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4` で代用する
 
 ```sh
-H='X-Dev-User: you@example.com'
-curl -s localhost:8787/api/health
-curl -s -H "$H" localhost:8787/api/me
+H='X-Dev-User: dev@example.com'
 ID=$(curl -s -H "$H" -H 'Content-Type: application/json' \
   -d '{"body":"スーパーで青梅を見かけた","happened_on":"2026-11-04","happened_on_precision":"day"}' \
-  localhost:8787/api/memories | jq -r .id)
+  localhost:8787/api/memories | jq -r .id)        # jq が無ければ上の grep で代用
 sleep 8
 curl -s -H "$H" localhost:8787/api/memories/$ID/facts
 curl -s -H "$H" localhost:8787/api/memories/$ID/recalls
-curl -s -H "$H" -X PUT -F photo=@demo/photos/ume.jpg localhost:8787/api/memories/$ID/photo
+curl -s -H "$H" -X PUT -F photo=@/path/to/any.jpg localhost:8787/api/memories/$ID/photo
 curl -s -H "$H" -X DELETE -o /dev/null -w '%{http_code}\n' localhost:8787/api/memories/$ID
 ```
 
 ### 11.3 デモ 4 シナリオ（仕様 11 章）の確認
 
 `demo/fixtures/seed.sql` を `db:seed:local` で入れ、D1〜D4 を上のスモークと画面で通す。D2（電気代）は `recalls` が 0 件で `ai_runs.status='empty'` になること、D3（公園の花）は「ちがう」のあと `status='rejected'` で画面から消えることを確認する。
+
+## 12. 他文書との整合（判断事項）
+
+本書を正として揃えたい点。各文書の担当が追従する。
+
+| # | 内容 | 本書の立場 | 追従が必要な文書 |
+|---|---|---|---|
+| 1 | `/api/health` の受け入れ条件 | ホスト全体を Access 配下に置くため、JWT なしの curl は 302/401。Access 経由なら 200（3.3） | requirements N-9、tasks T-1104-16、setup-cloudflare.md 7.1 の表 |
+| 2 | ポーリング打ち切り | 30 秒（15 回）。requirements N-2、tasks T-1106-08 と同じ | wireframes.md 2.6（15 秒 → 30 秒） |
+| 3 | 既定モデル | `claude-opus-5-5`（ADR-0003 / 0005） | tasks J-5（sonnet 前提の記述） |
+| 4 | API レスポンスの形とエラーコード名 | `{pending, items}`、`{decision}`、`recalled_by`、`validation` / `too_large` / `unsupported_media` / `internal`（5 章） | requirements F3 / F4 / F5（tasks J-7 のとおり本書に寄せる） |
+| 5 | `ai_runs(kind='recall')` | 過去記憶 0 件なら行を作らない（6.2）。requirements N-5 と同じ | なし |
+| 6 | `ACCESS_TEAM_DOMAIN` の値 | Team 名だけ（worker/src/access.ts、setup-cloudflare.md と同じ） | なし |

@@ -27,15 +27,16 @@ const retry = () => window.location.reload();
 <template>
   <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4">
     <!-- 読み込み中は何も主張しない -->
-    <main v-if="state.kind === 'loading'" class="flex flex-1 items-center justify-center">
-      <p class="text-ink-faint">…</p>
+    <main v-if="state.kind === 'loading'" class="flex flex-1 items-center justify-center" aria-busy="true">
+      <p class="text-ink-faint" aria-hidden="true">…</p>
+      <p class="sr-only" role="status">読み込んでいます</p>
     </main>
 
     <WelcomeScreen v-else-if="state.kind === 'signed_out'" @start="retry" />
 
     <main v-else-if="state.kind === 'trouble'" class="flex flex-1 flex-col items-center justify-center gap-4 text-center">
       <h1 class="text-2xl">そういえば。</h1>
-      <p class="text-ink-soft">いま、うまくつながりません。</p>
+      <p class="text-ink-soft" role="alert">いま、うまくつながりません。</p>
       <button class="btn btn-quiet" @click="retry">もう一度</button>
     </main>
 

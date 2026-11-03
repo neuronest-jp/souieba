@@ -13,6 +13,6 @@ defineEmits<{ start: [] }>();
       </p>
     </div>
     <button class="btn btn-primary px-10" @click="$emit('start')">はじめる</button>
-    <p class="text-sm text-ink-faint">メールに届く確認コードでログインします</p>
+    <p class="text-sm text-ink-soft">メールに届く確認コードでログインします</p>
   </main>
 </template>
