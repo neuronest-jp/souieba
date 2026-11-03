@@ -84,7 +84,7 @@ INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, pho
    '新しい靴を買った。少しきつい。',
    NULL, 'unknown', NULL, NULL, '2026-10-25T09:30:00.000Z', '2026-10-25T09:30:00.000Z');
 
--- 他ユーザーの記憶（1 件）。invalid/related-other-user.json の検証用。想起の入力には絶対に含まれない。
+-- 他ユーザーの記憶（1 件）。invalid/recall-related-other-user.json の検証用。想起の入力には絶対に含まれない。
 INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, photo_key, photo_content_type, created_at, updated_at) VALUES
   ('mem_other_01', 'other@example.com',
    '梅酒を漬けた。青梅と氷砂糖を交互に入れた。',
@@ -137,21 +137,22 @@ INSERT INTO memory_facts (id, memory_id, kind, value, status, source, evidence, 
 
 -- ---------------------------------------------------------------
 -- 過去に出た「そういえば。」の札（S3 の履歴と F6 の反応の表示確認用）
+-- 人物が同じだけの組は原則 2 に反するので、本当に関係のある組（ゆきと食事）にしてある。
 -- memory_id が新しい側、related_memory_id が思い出された側。evidence は related 側本文の逐語引用。
 -- ---------------------------------------------------------------
 INSERT INTO recalls (id, memory_id, related_memory_id, reason, evidence, feedback, created_at) VALUES
-  ('recall_seed_01', 'mem_d1_02', 'mem_d4_02',
-   '同じおばあちゃんが出てくる記憶',
-   'おばあちゃんが泣いて笑った',
-   'helpful', '2025-01-12T08:30:40.000Z');
+  ('recall_seed_01', 'mem_daily_08', 'mem_daily_05',
+   'ゆきと一緒にごはんを食べた記憶',
+   'ゆきと駅前の喫茶店でパンケーキを食べた',
+   'helpful', '2026-04-06T04:00:40.000Z');
 
 -- ---------------------------------------------------------------
 -- Claude 呼び出しの記録（画面には出ない。pending 判定が false になることの確認用）
 -- ---------------------------------------------------------------
 INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, input_tokens, output_tokens, error, created_at, finished_at) VALUES
-  ('run_seed_01', 'demo@example.com', 'mem_d1_02', 'facts',  'claude-opus-5-5', 'succeeded', 820,  96, NULL,
-   '2025-01-12T08:30:05.000Z', '2025-01-12T08:30:09.000Z'),
-  ('run_seed_02', 'demo@example.com', 'mem_d1_02', 'recall', 'claude-opus-5-5', 'succeeded', 2410, 120, NULL,
-   '2025-01-12T08:30:05.000Z', '2025-01-12T08:30:12.000Z'),
+  ('run_seed_01', 'demo@example.com', 'mem_daily_08', 'facts',  'claude-opus-5-5', 'succeeded', 820,  96, NULL,
+   '2026-04-06T04:00:05.000Z', '2026-04-06T04:00:30.000Z'),
+  ('run_seed_02', 'demo@example.com', 'mem_daily_08', 'recall', 'claude-opus-5-5', 'succeeded', 2410, 120, NULL,
+   '2026-04-06T04:00:05.000Z', '2026-04-06T04:00:40.000Z'),
   ('run_seed_03', 'demo@example.com', 'mem_daily_12', 'recall', 'claude-opus-5-5', 'empty', 3120, 18, NULL,
    '2026-10-25T09:30:05.000Z', '2026-10-25T09:30:11.000Z');

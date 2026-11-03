@@ -1,5 +1,5 @@
 {
-  "$comment": "そういえば。 デモ4シナリオ（docs/spec.md 第11節）。preconditions は seed.sql の memory id。expected.evidence_contains は想起元の本文（seed.sql）からの逐語引用。写真は demo/photos/ に開発者が置く（ここではファイル名だけ参照）。",
+  "$comment": "そういえば。 デモ4シナリオ（docs/spec.md 第11節）。preconditions は seed.sql の memory id。expected.recalls.must_include[].evidence_contains の判定: 札の evidence が related 本文（seed.sql）の部分文字列であり、かつ evidence に evidence_contains が含まれれば合格。evidence_contains は docs/requirements.md F5-1 / 第7節と同じ最短の確実な部分文字列にしてあり、モデルが短い逐語引用を返しても失敗にしない。写真は demo/photos/ に開発者が置く（ここではファイル名だけ参照）。",
   "user_id": "demo@example.com",
   "demo_date": "2026-11-07",
   "scenarios": [
@@ -26,7 +26,7 @@
           "must_include": [
             {
               "related_memory_id": "mem_d1_01",
-              "evidence_contains": "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた"
+              "evidence_contains": "梅干しを漬けていた"
             }
           ],
           "must_not_include": ["mem_daily_01"],
@@ -41,7 +41,7 @@
           "after": "memory_facts に thing: 青梅 が confirmed で 1 行。スーパー は candidate のまま"
         },
         "ai_runs": { "recall": "succeeded", "facts": "succeeded" },
-        "ui": "札が 1 枚。引用「おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた」が札に見える。札を開くと 2024年6月 の記憶の詳細に飛ぶ"
+        "ui": "札が 1 枚。「梅干しを漬けていた」を含む原文の引用が札に見える（引用の長さはモデル次第。本文の部分文字列であればよい）。札を開くと 2024年6月 の記憶の詳細に飛ぶ"
       },
       "stubs": { "recall": "ai/recall-d1.json", "facts": "ai/facts-d1.json" },
       "demo_script": [
@@ -56,8 +56,9 @@
       "title": "電気代",
       "principle": "関係なければ提案しない（原則 2）。0 件が正しい答え",
       "preconditions": {
-        "seed_memory_ids": ["mem_d1_01", "mem_d4_01", "mem_daily_01", "mem_daily_02", "mem_daily_03", "mem_daily_04", "mem_daily_05", "mem_daily_06", "mem_daily_07", "mem_daily_08", "mem_daily_09", "mem_daily_10", "mem_daily_11", "mem_daily_12"],
-        "note": "D1 と D4 の想起元が入った状態で行う。日常の記憶（買い物・天気・仕事・冷蔵庫・靴）が混ざっていても、電気代に関係するものは 1 件もない"
+        "seed_memory_ids": ["mem_d4_02", "mem_daily_01", "mem_d4_01", "mem_d1_01", "mem_daily_02", "mem_daily_03", "mem_d1_02", "mem_daily_04", "mem_daily_05", "mem_daily_06", "mem_daily_07", "mem_daily_08", "mem_daily_09", "mem_daily_10", "mem_daily_11", "mem_daily_12"],
+        "all_demo_memories": true,
+        "note": "seed の demo@example.com の記憶 16 件すべて（D1 と D4 の想起元を含む）が入った状態で行う。D1 を先に通していれば 17 件になるが、件数は口に出さない。日常の記憶（買い物・天気・仕事・冷蔵庫・靴）が混ざっていても、電気代に関係するものは 1 件もない"
       },
       "input": {
         "body": "電気代を払った。先月より少し安かった",
@@ -86,7 +87,7 @@
       "stubs": { "recall": "ai/recall-d2-empty.json" },
       "demo_script": [
         "今度は「電気代を払った。先月より少し安かった」と書きます。",
-        "過去には 16 件の記憶があって、買い物や天気、仕事の話も混ざっていますが、電気代に関係するものはありません。",
+        "過去の記憶は十数件あって、買い物や天気、仕事の話も混ざっていますが、電気代に関係するものはありません。",
         "だから、何も出ません。無理に結びつけないこと、「そういえば」が出ない日があっていいことが、このアプリの約束です。"
       ]
     },
@@ -129,7 +130,7 @@
           "user_action": "「公園」を「そう」",
           "fallback": "F7（写真候補）が間に合わない場合は、この本文候補の「公園」を「ちがう」にして rejected になることで代替する（docs/requirements.md 第7節）"
         },
-        "ai_runs": { "photo": "succeeded", "facts": "succeeded" },
+        "ai_runs": { "recall": "succeeded または empty", "photo": "succeeded", "facts": "succeeded" },
         "ui": "写真の候補はすべて語尾が「でしょうか」。「ちがう」を押すと候補は消え、記憶の詳細にも検索にも残らない"
       },
       "stubs": { "photo": "ai/photo-d3.json", "facts": "ai/facts-d3.json" },
@@ -162,7 +163,7 @@
           "must_include": [
             {
               "related_memory_id": "mem_d4_01",
-              "evidence_contains": "はるとが三輪車で転んで泣いた"
+              "evidence_contains": "三輪車で転んで泣いた"
             }
           ],
           "must_not_include": ["mem_daily_04"],
@@ -181,7 +182,7 @@
           "after": "recalls.feedback = 'helpful'"
         },
         "ai_runs": { "recall": "succeeded", "facts": "succeeded" },
-        "ui": "札が 1 枚。引用「はるとが三輪車で転んで泣いた」。札を開くと 2024年4月14日 の記憶（公園の坂道）が読める"
+        "ui": "札が 1 枚。「三輪車で転んで泣いた」を含む原文の引用が札に見える。札を開くと 2024年4月14日 の記憶（公園の坂道）が読める"
       },
       "stubs": { "recall": "ai/recall-d4.json" },
       "demo_script": [

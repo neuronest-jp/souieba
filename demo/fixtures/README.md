@@ -7,7 +7,7 @@ docs/spec.md 第11節（D1〜D4）を通すための初期データと、Claude 
 
 | ファイル | 役割 |
 |---|---|
-| `seed.sql` | D1 に入れる初期データ。ユーザー `demo@example.com` の過去の記憶 16 件（2024〜2026）、確定済みの事実、過去の札 1 枚、Claude 呼び出しの記録。先頭でデモユーザーの行を消すので何度流しても同じ状態になる |
+| `seed.sql` | D1 に入れる初期データ。ユーザー `demo@example.com` の過去の記憶 16 件（2024〜2026）、確定済みの事実、過去の札 1 枚、Claude 呼び出しの記録。先頭でデモユーザーの行を消すので D1 は何度流しても同じ状態になる（R2 の写真は消えない。下の「投入」を参照） |
 | `scenarios.json` | D1〜D4 それぞれの前提（seed の memory id）、入力（本文・起きた日・写真ファイル名）、期待する結果（札の件数、想起元、引用、候補とユーザー操作）、口頭で説明する台本 |
 | `ai/recall-d1.json` | C1 想起の出力（D1）。札 1 枚、`mem_d1_01` を引用 |
 | `ai/recall-d2-empty.json` | C1 想起の出力（D2）。`items` が空 |
@@ -30,6 +30,8 @@ wrangler d1 execute souieba --local --file demo/fixtures/seed.sql
 # または pnpm db:seed:local
 ```
 
+D3 を通した後に seed を流し直すときは、先に対象の記憶を画面（または `DELETE /api/memories/:id`）で消して写真も消す。seed の DELETE は D1 の行だけを消し、R2 に上げた写真は残る（写真の削除は DELETE /api/memories 経由のみ。docs/architecture.md 4.6）。
+
 ローカルでは `X-Dev-User: demo@example.com` を付けると、この seed のユーザーとして見える（画面は `DEV_USER=demo@example.com pnpm dev`）。
 
 ## seed の中身
@@ -42,12 +44,12 @@ wrangler d1 execute souieba --local --file demo/fixtures/seed.sql
 | mem_d1_01 | 2024-06（月） | おばあちゃんが縁側で梅干しを漬けていた | D1 の想起元 |
 | mem_daily_02 | 2024-08-02 | 蝉と猛暑 | 無関係（天気） |
 | mem_daily_03 | 2024-11-18 | 終電で帰った | 無関係（仕事） |
-| mem_d1_02 | 2025-01-12 | おばあちゃんの家でこたつとみかん | おばあちゃんの別の記憶（D1 で出ないのが望ましい）。過去の札 `recall_seed_01` が付く |
+| mem_d1_02 | 2025-01-12 | おばあちゃんの家でこたつとみかん | おばあちゃんの別の記憶（D1 で出ないのが望ましい） |
 | mem_daily_04 | 2025-02-22 | 雪で転びそうになった | 無関係（「転ぶ」が D4 と共通するだけ） |
-| mem_daily_05 | 2025-05-11 | ゆきと喫茶店 | 無関係（友人）。候補 1 件が candidate のまま |
+| mem_daily_05 | 2025-05-11 | ゆきと喫茶店 | 無関係（友人）。候補 1 件が candidate のまま。過去の札 `recall_seed_01` の想起元 |
 | mem_daily_06 | 2025-10-03 | 健康診断 | 無関係 |
 | mem_daily_07 | 2026-01-04 | 初詣の甘酒 | 無関係 |
-| mem_daily_08 | 2026-04-06 | 公園でゆきと弁当 | 無関係（D3 で札が出ても可）。rejected の候補を 1 件持つ |
+| mem_daily_08 | 2026-04-06 | 公園でゆきと弁当 | 無関係（D3 で札が出ても可）。rejected の候補を 1 件持つ。過去の札 `recall_seed_01`（想起元 mem_daily_05、ゆきと食事、helpful）が付く |
 | mem_daily_09 | 2026-07-19 | 冷蔵庫が壊れた | 無関係（D2 で家電つながりに引かれないかの確認） |
 | mem_daily_10 | 2026-09-28 | 雨に降られた | 無関係 |
 | mem_daily_11 | 2026-10（月） | 古い写真の整理 | 無関係。精度 month の表示確認 |
