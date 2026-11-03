@@ -241,7 +241,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 ### 5.1 GET /api/health
 
 ```json
-200 {"ok": true, "service": "souieba", "version": "0.1.0", "environment": "production", "time": "2026-11-04T01:23:45.000Z"}
+200 {"ok": true, "service": "souieba", "version": "0.1.0", "time": "2026-11-04T01:23:45.000Z"}
 ```
 
 ### 5.2 GET /api/me
@@ -624,7 +624,7 @@ export default defineConfig({
 | script | 内容 |
 |---|---|
 | `dev` | `vite`（5173。別ターミナルで `dev:worker`） |
-| `dev:worker` | `wrangler dev --var ENVIRONMENT:development`（8787。`.dev.vars` の `ANTHROPIC_API_KEY` も読む） |
+| `dev:worker` | `mkdir -p web/dist && wrangler dev --var ENVIRONMENT:development`（8787。`web/dist` が無いと wrangler が起動を拒否するため空でも作る。`.dev.vars` の `ANTHROPIC_API_KEY` も読む） |
 | `preview` | `pnpm build:web && wrangler dev --var ENVIRONMENT:development`（本番相当: 画面を Worker から配信、8787 一本） |
 | `build:web` | `vue-tsc -p web/tsconfig.json --noEmit && vite build` |
 | `build` | `pnpm build:web && wrangler deploy --dry-run --outdir dist/worker` |
@@ -713,7 +713,7 @@ curl -s -H "$H" -X DELETE -o /dev/null -w '%{http_code}\n' localhost:8787/api/me
 |---|---|---|---|
 | 1 | `/api/health` の受け入れ条件 | ホスト全体を Access 配下に置くため、JWT なしの curl は 302/401。Access 経由なら 200（3.3） | requirements N-9、tasks T-1104-16、setup-cloudflare.md 7.1 の表 |
 | 2 | ポーリング打ち切り | 30 秒（15 回）。requirements N-2、tasks T-1106-08 と同じ | wireframes.md 2.6（15 秒 → 30 秒） |
-| 3 | 既定モデル | `claude-opus-5-5`（ADR-0003 / 0005） | tasks J-5（sonnet 前提の記述） |
+| 3 | 既定モデル | `claude-opus-5-5`（ADR-0003 / 0005） | 解消済み（tasks J-5 も opus） |
 | 4 | API レスポンスの形とエラーコード名 | `{pending, items}`、`{decision}`、`recalled_by`、`validation` / `too_large` / `unsupported_media` / `internal`（5 章） | requirements F3 / F4 / F5（tasks J-7 のとおり本書に寄せる） |
 | 5 | `ai_runs(kind='recall')` | 過去記憶 0 件なら行を作らない（6.2）。requirements N-5 と同じ | なし |
 | 6 | `ACCESS_TEAM_DOMAIN` の値 | Team 名だけ（worker/src/access.ts、setup-cloudflare.md と同じ） | なし |

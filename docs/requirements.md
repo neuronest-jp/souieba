@@ -308,7 +308,7 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | S-8 | 本番（`ENVIRONMENT` 未設定または `production`） | `X-Dev-User: you@example.com` だけで `GET /api/me` | 401。ヘッダは無視される | 単体、通し |
 | S-9 | 本番 | 有効な JWT と `X-Dev-User: other@example.com` の両方 | 200、`user_id` は JWT の `email`。`X-Dev-User` は使われない | 単体 |
 | S-10 | 本番 | ブラウザで `https://<worker>.workers.dev/` | Access のメール OTP を経て S1 きょう が表示される（S0 は出ない。F1-5）。`Cf-Access-Jwt-Assertion` が Worker に届き `GET /api/me` が 200 | 通し |
-| S-11 | 本番 | `pnpm deploy` | Static Assets から `index.html` が配信され、`/api/health` が 200。`/api/*` 配下の未知パス（例 `/api/nothing`）は `not_found` の JSON 404、それ以外の未知パスは SPA の `index.html` を返す | 通し |
+| S-11 | 本番 | `pnpm run deploy` | Static Assets から `index.html` が配信され、`/api/health` が 200。`/api/*` 配下の未知パス（例 `/api/nothing`）は `not_found` の JSON 404、それ以外の未知パスは SPA の `index.html` を返す | 通し |
 | S-12 | `web/src/style.css` | ブラウザで S1 | 背景 `#FAF5EC`、見出しが Zen Maru Gothic、本文が Noto Sans JP（読み込み前は system-ui）。本文 17px | 画面 |
 | S-13 | `.claude/settings.json` | Claude Code が `.dev.vars` または `demo/photos/x.jpg` に Write | フックが拒否する（`.dev.vars.example` は書ける） | 単体（フックに JSON を流す） |
 
@@ -342,6 +342,6 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | 13 | 第6節 S0 は「未ログイン時」の画面だが、Access がホスト全体を守るため本番の未ログインは Worker に届かない | S0 は `GET /api/me` が 401 のときだけ（ローカル未設定、Access セッション切れ）に限定し、S-10 は「OTP を経て S1」とした（F1-5）。`/api/*` だけを Access の対象にする案（(a)）は docs/setup-cloudflare.md の変更を伴うため採らない。11/4 中に開発者が (a) を選ぶなら F1-5・S-10・setup-cloudflare.md を合わせて直す |
 | 14 | `happened_on` 省略時の「今日」のタイムゾーン | Worker・画面とも `Asia/Tokyo`（第2節、F2-1）。UTC と日付が変わる時間帯（JST 0〜9 時）の検証がぶれない |
 | 15 | エラー `code` の名前が docs/architecture.md（`internal_error`, `payload_too_large`）と本書（`internal`, `too_large`）で異なる | 本書の名前を正とし、architecture.md の追従を提案。実装は 1 箇所（`worker/src/errors.ts` 相当）に集める |
-| 16 | ポーリングの打ち切りが docs/architecture.md は 15 秒、本書 N-2 は 30 秒 | 本書の 30 秒を正とする（想起は 10 秒以内が目標だが Opus の遅い応答に余裕を持たせる）。architecture.md の追従を提案 |
+| 16 | ポーリングの打ち切り | 30 秒で統一済み（本書 N-2、architecture 7.2、wireframes 2.6）。想起は 10 秒以内が目標だが Opus の遅い応答に余裕を持たせる |
 
 補足: `.dev.vars` の表記は Write ツールの対象パスだけがフックで拒否されるため、本文中に書く分には問題ない（S-13 で確認）。

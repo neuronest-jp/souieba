@@ -51,7 +51,7 @@ docs/setup-cloudflare.md を参照。
 
 ```sh
 pnpm db:migrate:remote
-pnpm deploy
+pnpm run deploy     # pnpm deploy は pnpm 組み込みコマンドと衝突するため run を付ける
 ```
 
 ## ライセンス
