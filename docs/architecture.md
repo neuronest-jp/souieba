@@ -276,7 +276,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 ```
 
 - 検証: `body` は trim 後 1〜2000 文字（`Array.from(body).length`。F2-3）。`happened_on_precision` は省略時 `day`。`unknown` なら `happened_on` は無視して NULL。`day` は `YYYY-MM-DD`、`month` は `YYYY-MM`（`-01` を補う）、`year` は `YYYY`（`-01-01` を補う）。未来日は許可（予定を書く人もいる）
-- `happened_on` は画面がユーザーのローカル日付（JST）で必ず付ける。precision が `unknown` 以外で `happened_on` が無ければ 400 `validation`。Worker は既定値（今日）を補わない（Worker は UTC で動くため、JST の「今日」と 1 日ずれ得る）
+- `happened_on` は画面がユーザーのローカル日付で付ける。省略（`undefined` / `null`）なら Worker が `Asia/Tokyo` の今日を補う（`validate.ts` の `todayInTokyo`。requirements F2 既定値）。空文字は「消した」状態なので 400 `validation`
 - 成功後、`waitUntil` で C2（facts）と C1（recall）を起動する（6 章）
 
 ### 5.5 GET /api/memories/:id

@@ -3,7 +3,7 @@ import { createApp } from "../src/index";
 import { DEV_USER_HEADER } from "../src/auth";
 import type { Env } from "../src/env";
 import { buildListSql } from "../src/db/memories";
-import { createTestD1, fakeR2, type TestD1 } from "./sqlite-d1";
+import { createTestD1, fakeExecutionCtx, fakeR2, type TestD1 } from "./sqlite-d1";
 
 const ME = "hana@example.com";
 const OTHER = "other@example.com";
@@ -65,12 +65,45 @@ describe("POST /api/memories", () => {
     expect(a.happened_on).toBe("2025-06-01");
     expect(b.happened_on).toBe("2024-01-01");
   });
-  it("afterSave が 201 の前に呼ばれ、memory と waitUntil を受け取る", async () => {
-    const calls: string[] = [];
-    const a = createApp({ memories: { afterSave: async ({ memory, userId }) => void calls.push(`${userId}:${memory.body}`) } });
-    const res = await a.request("/api/memories", { method: "POST", headers: H, body: JSON.stringify({ body: "x" }) }, env);
+  it("初めてのユーザーが /api/me を経ずに POST しても 201（users は認証時に作られる）", async () => {
+    const res = await post({ body: "初回" }, { [DEV_USER_HEADER]: "fresh@example.com", "content-type": "application/json" });
     expect(res.status).toBe(201);
-    expect(calls).toEqual([`${ME}:x`]);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM users WHERE id = 'fresh@example.com'").get()).toEqual({ n: 1 });
+  });
+
+  it("afterSave は 201 の前に呼ばれ、waitUntil に渡した処理は応答後に続く", async () => {
+    const ctx = fakeExecutionCtx();
+    let background = "not yet";
+    const a = createApp({
+      memories: {
+        afterSave: async ({ env: e, memory, userId, waitUntil }) => {
+          // 201 の前に同期で記録を残す（11/6 の ai_runs と同じ形）
+          await e.DB.prepare("INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, created_at) VALUES ('a1', ?1, ?2, 'facts', 'm', 'running', 'now')")
+            .bind(userId, memory.id)
+            .run();
+          waitUntil(Promise.resolve().then(() => void (background = "done")));
+        },
+      },
+    });
+    const res = await a.request("/api/memories", { method: "POST", headers: H, body: JSON.stringify({ body: "x" }) }, env, ctx);
+    expect(res.status).toBe(201);
+    const { id } = (await res.json()) as { id: string };
+    expect(db.raw.prepare("SELECT status FROM ai_runs WHERE memory_id = ?").get(id)).toEqual({ status: "running" });
+    expect(ctx.pending).toHaveLength(1);
+    await ctx.settle();
+    expect(background).toBe("done");
+  });
+
+  it("afterSave が例外を投げても記憶は保存され 201（AI は静かな失敗）", async () => {
+    const a = createApp({ memories: { afterSave: async () => { throw new Error("D1 down"); } } });
+    const res = await a.request("/api/memories", { method: "POST", headers: H, body: JSON.stringify({ body: "x" }) }, env, fakeExecutionCtx());
+    expect(res.status).toBe(201);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM memories").get()).toEqual({ n: 1 });
+  });
+
+  it("happened_on が空文字なら 400（消した状態を今日にしない）", async () => {
+    const res = await post({ body: "x", happened_on: "", happened_on_precision: "day" });
+    expect(res.status).toBe(400);
   });
 });
 
@@ -108,22 +141,55 @@ describe("GET /api/memories", () => {
     ]);
     expect((await bodies("/api/memories")).bodies).toEqual(["B", "A"]);
   });
-  it("F3-3: 25 件を 20 + 5 で重複も欠落もなく、2 ページ目の next_cursor は null", async () => {
-    const rows: Array<[string, string | null, string]> = [];
+  // LIST_ORDER と同じ比較で期待順を作る
+  const expectedOrder = (rows: Array<{ body: string; h: string | null; c: string; id: string }>) =>
+    [...rows]
+      .sort((a, b) => {
+        const ah = a.h ?? "";
+        const bh = b.h ?? "";
+        if (ah !== bh) return ah < bh ? 1 : -1;
+        if (a.c !== b.c) return a.c < b.c ? 1 : -1;
+        return a.id < b.id ? 1 : -1;
+      })
+      .map((r) => r.body);
+
+  it("F3-3: 25 件を 20 + 5 で、順序どおり重複も欠落もなく、2 ページ目の next_cursor は null", async () => {
+    const rows: Array<{ body: string; h: string | null; c: string; id: string }> = [];
     for (let i = 0; i < 25; i++) {
-      // 日付を 3 種類に絞って同日の多発（カーソルのタイブレーク）を確かめる
-      const day = (["2026-11-01", "2026-11-02", null] as const)[i % 3] ?? null;
-      rows.push([`m${i}`, day, `2026-11-0${(i % 3) + 1}T00:00:${String(i).padStart(2, "0")}.000Z`]);
+      const h = (["2026-11-01", "2026-11-02", null] as const)[i % 3] ?? null;
+      // 同じ (happened_on, created_at) の組を意図的に作る（i を 5 で割った商で created_at を決める）
+      const c = `2026-11-0${(i % 3) + 1}T00:00:${String(Math.floor(i / 5)).padStart(2, "0")}.000Z`;
+      const id = `id-${String(i).padStart(2, "0")}`;
+      rows.push({ body: `m${i}`, h, c, id });
+      db.raw
+        .prepare("INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .run(id, ME, `m${i}`, h, h ? "day" : "unknown", c, c);
     }
-    await seed(rows);
     const p1 = await bodies("/api/memories");
     expect(p1.bodies).toHaveLength(20);
     expect(p1.next).toBeTruthy();
     const p2 = await bodies(`/api/memories?cursor=${p1.next}`);
     expect(p2.bodies).toHaveLength(5);
     expect(p2.next).toBeNull();
-    const all = [...p1.bodies, ...p2.bodies];
-    expect(new Set(all).size).toBe(25);
+    expect([...p1.bodies, ...p2.bodies]).toEqual(expectedOrder(rows));
+  });
+
+  it("同じ起きた日・同じ created_at の行も、limit=2 で id のタイブレークにより欠落なく返る", async () => {
+    const rows = ["id-a", "id-b", "id-c", "id-d", "id-e"].map((id) => ({ body: id, h: "2026-11-01", c: "2026-11-01T00:00:00.000Z", id }));
+    for (const r of rows) {
+      db.raw
+        .prepare("INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, created_at, updated_at) VALUES (?, ?, ?, ?, 'day', ?, ?)")
+        .run(r.id, ME, r.body, r.h, r.c, r.c);
+    }
+    const got: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < 10; page++) {
+      const r = await bodies(`/api/memories?limit=2${cursor ? `&cursor=${cursor}` : ""}`);
+      got.push(...r.bodies);
+      cursor = r.next;
+      if (!cursor) break;
+    }
+    expect(got).toEqual(["id-e", "id-d", "id-c", "id-b", "id-a"]);
   });
   it("limit は 1〜50 に丸める。壊れたカーソルは 400", async () => {
     await seed([["a", "2026-11-01", "2026-11-01T00:00:00.000Z"], ["b", "2026-11-02", "2026-11-02T00:00:00.000Z"]]);

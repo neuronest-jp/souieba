@@ -80,4 +80,16 @@ describe("normalizeHappenedOn", () => {
   it("未来日は許す", () => {
     expect(normalizeHappenedOn("2099-12-31", "day", TODAY)).toBe("2099-12-31");
   });
+  it("年の範囲は 1900〜2100", () => {
+    expect(normalizeHappenedOn("1900", "year", TODAY)).toBe("1900-01-01");
+    expect(normalizeHappenedOn("2100-12-31", "day", TODAY)).toBe("2100-12-31");
+    expectValidation(() => normalizeHappenedOn("1899", "year", TODAY));
+    expectValidation(() => normalizeHappenedOn("2101-01-01", "day", TODAY));
+  });
+  it("空文字は 400、null / undefined は今日、precision null は day", () => {
+    expectValidation(() => normalizeHappenedOn("", "day", TODAY));
+    expect(normalizeHappenedOn(null, "day", TODAY)).toBe(TODAY);
+    expect(parseMemoryInput({ body: "x", happened_on_precision: null }, TODAY).happened_on_precision).toBe("day");
+    expectValidation(() => normalizeHappenedOn("2025-06-31", "month", TODAY));
+  });
 });

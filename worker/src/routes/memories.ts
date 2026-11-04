@@ -70,8 +70,13 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
     }
     const input = parseMemoryInput(json, todayInTokyo(deps.now ? deps.now() : new Date()));
     const memory = await insertMemory(c.env.DB, user.id, input, nowIso());
-    // 201 を返す前に AI 処理の記録を作る（afterSave 側の責務。waitUntil で続きを走らせる）
-    await afterSave({ env: c.env, userId: user.id, memory, waitUntil: (p) => c.executionCtx.waitUntil(p) });
+    // 201 を返す前に AI 処理の記録を作る（afterSave 側の責務。waitUntil で続きを走らせる）。
+    // ここで失敗しても記憶は保存済みなので 201 を返す。AI は「静かな失敗」（architecture 6.6）。
+    try {
+      await afterSave({ env: c.env, userId: user.id, memory, waitUntil: (p) => c.executionCtx.waitUntil(p) });
+    } catch (e) {
+      console.error("afterSave failed", memory.id, e);
+    }
     return c.json(toMemoryJson(memory), 201);
   });
 

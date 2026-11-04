@@ -29,7 +29,7 @@ export const formatDateJa = (d: Date, opts: { withYear?: boolean } = {}): string
 export const formatHappenedOn = (happenedOn: string | null, precision: Precision, now: Date = new Date()): string => {
   if (precision === "unknown" || !happenedOn) return "いつだったか";
   const p = parseYmd(happenedOn);
-  if (!p) return happenedOn;
+  if (!p) return "いつだったか";
   if (precision === "year") return `${p.y}年`;
   if (precision === "month") return `${p.y}年${p.m}月`;
   const d = new Date(p.y, p.m - 1, p.d);

@@ -22,7 +22,9 @@ export function createTestD1(): TestD1 {
     let args: unknown[] = [];
     const stmt = {
       bind: (...a: unknown[]) => {
-        args = a.map((v) => (v === undefined ? null : v));
+        // 本物の D1 は undefined を受け付けない（D1_TYPE_ERROR）。テストでも同じく失敗させる。
+        if (a.some((v) => v === undefined)) throw new Error("D1_TYPE_ERROR: Type 'undefined' not supported for value 'undefined'");
+        args = a;
         return stmt;
       },
       run: async () => {
@@ -32,13 +34,13 @@ export function createTestD1(): TestD1 {
       first: async <T>(col?: string) => {
         const row = raw.prepare(sql).get(...(args as never[])) as Record<string, unknown> | undefined;
         if (!row) return null;
+        if (col !== undefined && !(col in row)) throw new Error(`D1_COLUMN_NOTFOUND: ${col}`);
         return (col ? row[col] : { ...row }) as T;
       },
       all: async <T>() => {
         const rows = raw.prepare(sql).all(...(args as never[])) as Record<string, unknown>[];
         return { results: rows.map((r) => ({ ...r })) as T[], success: true, meta: {} };
       },
-      raw: async () => raw.prepare(sql).all(...(args as never[])).map((r) => Object.values(r as object)),
     };
     return stmt;
   };
@@ -77,4 +79,15 @@ export const fakeR2 = () => {
       for (const k of Array.isArray(key) ? key : [key]) store.delete(k);
     },
   } as unknown as R2Bucket & { store: typeof store };
+};
+
+// ExecutionContext の最小スタブ。waitUntil に渡された Promise を集め、テストから待てるようにする。
+export const fakeExecutionCtx = () => {
+  const pending: Promise<unknown>[] = [];
+  return {
+    pending,
+    waitUntil: (p: Promise<unknown>) => void pending.push(p),
+    passThroughOnException: () => {},
+    settle: () => Promise.allSettled(pending),
+  } as unknown as ExecutionContext & { pending: Promise<unknown>[]; settle: () => Promise<unknown> };
 };

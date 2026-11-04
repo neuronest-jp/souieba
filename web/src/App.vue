@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { api, ApiError, type Me } from "./api";
 import BottomNav from "./components/BottomNav.vue";
 import { useScreen } from "./composables/useScreen";
@@ -24,10 +24,17 @@ onMounted(async () => {
 });
 
 const retry = () => window.location.reload();
+
+// どの画面でも /api/* が 401 を返したら S0 へ戻す（wireframes 0 節）
+const onUnauthorized = () => {
+  state.value = { kind: "signed_out" };
+};
+onMounted(() => window.addEventListener("souieba:unauthorized", onUnauthorized));
+onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthorized));
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5">
+  <div class="mx-auto flex min-h-dvh w-full max-w-[560px] flex-col px-5">
     <!-- 読み込み中は何も主張しない -->
     <main v-if="state.kind === 'loading'" class="flex flex-1 items-center justify-center" aria-busy="true">
       <p class="text-ink-faint" aria-hidden="true">…</p>

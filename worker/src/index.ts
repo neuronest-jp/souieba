@@ -33,16 +33,10 @@ export const createApp = (deps: AppDeps = {}): AppType => {
   const authed = new Hono<{ Bindings: Env; Variables: Variables }>();
   authed.use("*", requireUser(deps));
 
-  // 自分が誰か。初回は users に作る。
+  // 自分が誰か（users の行は requireUser が作っている）。
   authed.get("/me", async (c) => {
     const user = c.get("user");
     const now = new Date().toISOString();
-    await c.env.DB.prepare(
-      `INSERT INTO users (id, display_name, created_at, last_seen_at) VALUES (?1, NULL, ?2, ?2)
-       ON CONFLICT(id) DO UPDATE SET last_seen_at = ?2`,
-    )
-      .bind(user.id, now)
-      .run();
     const row = await c.env.DB.prepare("SELECT id, display_name, created_at FROM users WHERE id = ?1")
       .bind(user.id)
       .first<{ id: string; display_name: string | null; created_at: string }>();

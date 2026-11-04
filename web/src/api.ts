@@ -29,12 +29,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* 本文なし */
     }
+    if (res.status === 401) window.dispatchEvent(new Event("souieba:unauthorized"));
     throw new ApiError(res.status, body?.error?.code ?? "http_error", body?.error?.message ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   // Access のセッション切れでログイン画面の HTML が返ることがある。JSON でなければログイン扱い。
   const ct = res.headers.get("content-type") ?? "";
-  if (!ct.includes("application/json")) throw new ApiError(401, "not_json", "ログインが必要です");
+  if (!ct.includes("application/json")) {
+    window.dispatchEvent(new Event("souieba:unauthorized"));
+    throw new ApiError(401, "not_json", "ログインが必要です");
+  }
   return (await res.json()) as T;
 }
 

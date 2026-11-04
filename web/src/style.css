@@ -16,6 +16,14 @@
   --font-display: "Zen Maru Gothic", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
   --font-body: "Noto Sans JP", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
 
+  /* 余白・文字サイズは rem ではなく px で決める（html の 17px に引きずられない。wireframes 0 節） */
+  --spacing: 4px;
+  --text-sm: 14px;
+  --text-base: 17px;
+  --text-lg: 19px;
+  --text-xl: 22px;
+  --text-2xl: 26px;
+
   --radius-card: 20px;
   --radius-pill: 999px;
 
@@ -94,23 +102,31 @@
     transform: translateY(1px);
   }
   .btn:disabled {
-    opacity: 0.45;
     cursor: default;
   }
   .btn-primary {
     background: var(--color-ember);
     color: var(--color-card);
   }
+  .btn-primary:disabled {
+    background: var(--color-ember-soft);
+    color: var(--color-ink-faint);
+  }
   .btn-primary:not(:disabled):hover {
     background: color-mix(in oklab, var(--color-ember) 88%, black);
   }
   .btn-quiet {
-    background: transparent;
-    color: var(--color-ink-soft);
+    min-height: 44px;
+    background: var(--color-card);
+    color: var(--color-ink);
     border: 1px solid var(--color-line);
+    font-size: 17px;
+  }
+  .btn-quiet:disabled {
+    color: var(--color-ink-faint);
   }
   .btn-quiet:not(:disabled):hover {
-    background: var(--color-card);
+    background: var(--color-paper);
   }
   /* 「そういえば。」の札が現れる動き */
   .appear {

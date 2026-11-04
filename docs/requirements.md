@@ -63,7 +63,7 @@ Access はホスト全体（`/` と `/api/*`）を守る構成（docs/setup-clou
 
 | 入力 | 出力 |
 |---|---|
-| `POST /api/memories` JSON `{ body, happened_on?, happened_on_precision? }` | 201、`{ memory }`（`id`, `body`, `happened_on`, `happened_on_precision`, `photo_key`, `created_at`）。201 を返す前に `ai_runs` の `facts`（常に）と `recall`（過去記憶が 1 件以上）を `running` で INSERT する（第2節） |
+| `POST /api/memories` JSON `{ body, happened_on?, happened_on_precision? }` | 201、記憶をそのまま返す（`{ id, body, happened_on, happened_on_precision, photo_key, photo_content_type, created_at, updated_at }`。architecture 5.4 と同じフラット形）。201 を返す前に `ai_runs` の `facts`（常に）と `recall`（過去記憶が 1 件以上）を `running` で INSERT する（第2節） |
 | `PUT /api/memories/:id/photo` multipart、フィールド名 `photo`、`image/jpeg` または `image/png`、10,485,760 バイト以下 | 200、`{ photo_key }`。R2 にオブジェクトがあり `memories.photo_key`, `photo_content_type` が入る。F7 が有効なら 200 を返す前に `ai_runs(kind='photo', status='running')` を INSERT する（F7 の上限を超えるときは作らない） |
 
 既定値: `happened_on` 省略時は Worker が `Asia/Tokyo` の今日を入れる（画面も同じ値を送る）。`happened_on_precision` 省略時 `day`。`precision = month` は `YYYY-MM-01`、`year` は `YYYY-01-01`、`unknown` は `happened_on = NULL`。
@@ -280,7 +280,7 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | N-1 | 想起の応答 | 過去記憶 50 件 | 登録 | `POST /api/memories` は 1 秒以内に 201 を返す（Claude 呼び出しは `ctx.waitUntil`）。札は登録から 10 秒以内に画面に出る | 通し |
 | N-2 | ポーリング | 登録直後 | S1 | `GET /facts` と `GET /recalls` を 2 秒間隔で呼び、両方 `pending = false` で止める。30 秒で `done` にならなければ止めて何も出さない | 画面 |
 | N-3 | 画面 | 幅 375px（iPhone SE 相当） | S1〜S3 | 横スクロールが出ない。本文の `font-size` が 17px 以上、行間 1.8 | 画面 |
-| N-4 | 画面 | 幅 1280px | S1〜S3 | 本文列の最大幅 640px で中央寄せ。崩れない | 画面 |
+| N-4 | 画面 | 幅 1280px | S1〜S3 | 本文列の最大幅 560px で中央寄せ。崩れない | 画面 |
 | N-5 | コスト | 1 件の記憶 | 登録から 1 分後 | `ai_runs` は `kind='facts'` 1 行、`kind='recall'` 0〜1 行（過去記憶が無ければ 0）、写真があり上限内なら `kind='photo'` 1 行。同じ `memory_id`・`kind` の 2 行目は作られない | 単体 |
 | N-6 | コスト | 過去記憶 300 件 | 登録 | Claude への過去記憶は 200 件ちょうど | 単体 |
 | N-7 | 失敗時 | Anthropic API が 500 | 登録 | 再試行しない（`maxRetries: 0`）。`ai_runs.status='failed'`, `error` に要約。`pending = false` で画面は静か | 単体 |

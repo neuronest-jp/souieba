@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // S1 きょう。入力 → 保存 → 「残しました」。候補と札は 11/6 で足す。
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { api } from "../api";
 import type { Memory, Precision } from "../api/types";
 import DateSheet from "../components/DateSheet.vue";
@@ -9,23 +9,36 @@ import { hrefFor } from "../composables/useScreen";
 
 const body = ref("");
 const precision = ref<Precision>("day");
-const dateValue = ref(toIsoDate(new Date())); // day: YYYY-MM-DD / month: YYYY-MM / year: YYYY
+const date = ref(toIsoDate(new Date())); // 常に YYYY-MM-DD。精度に応じて POST 時に切り詰める
 const sheetOpen = ref(false);
+const whenButton = ref<HTMLButtonElement | null>(null);
 const saving = ref(false);
 const error = ref("");
 const saved = ref<Memory | null>(null);
 
 const MAX = 2000;
 const remaining = computed(() => MAX - Array.from(body.value).length);
-const canSave = computed(() => body.value.trim().length > 0 && remaining.value >= 0 && !saving.value);
+const hasDate = computed(() => precision.value === "unknown" || /^\d{4}-\d{2}-\d{2}$/.test(date.value));
+const canSave = computed(() => body.value.trim().length > 0 && remaining.value >= 0 && hasDate.value && !saving.value);
 
-// 見出しの表示用に、入力中の値を起きた日の形に揃える
+// POST に入れる happened_on（day: YYYY-MM-DD / month: YYYY-MM / year: YYYY）
+const happenedOnForPost = computed(() => {
+  if (precision.value === "month") return date.value.slice(0, 7);
+  if (precision.value === "year") return date.value.slice(0, 4);
+  return date.value;
+});
+
+// 見出しは選んだ精度で丸めた起きた日
 const headingDate = computed(() => {
   if (precision.value === "unknown") return formatHappenedOn(null, "unknown");
-  const v = dateValue.value;
-  const normalized = precision.value === "day" ? v : precision.value === "month" ? `${v}-01` : `${v}-01-01`;
-  return formatHappenedOn(normalized, precision.value);
+  if (!hasDate.value) return formatHappenedOn(toIsoDate(new Date()), precision.value);
+  return formatHappenedOn(date.value, precision.value);
 });
+
+const closeSheet = () => {
+  sheetOpen.value = false;
+  void nextTick(() => whenButton.value?.focus());
+};
 
 const save = async () => {
   if (!canSave.value) return;
@@ -35,7 +48,7 @@ const save = async () => {
     saved.value = await api.createMemory({
       body: body.value.trim(),
       happened_on_precision: precision.value,
-      ...(precision.value === "unknown" ? {} : { happened_on: dateValue.value }),
+      ...(precision.value === "unknown" ? {} : { happened_on: happenedOnForPost.value }),
     });
     body.value = "";
   } catch {
@@ -48,7 +61,7 @@ const save = async () => {
 const another = () => {
   saved.value = null;
   precision.value = "day";
-  dateValue.value = toIsoDate(new Date());
+  date.value = toIsoDate(new Date());
 };
 </script>
 
@@ -57,7 +70,7 @@ const another = () => {
     <template v-if="!saved">
       <header class="flex items-baseline justify-between">
         <h1 class="text-[22px]">{{ headingDate }}</h1>
-        <button type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
+        <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
       </header>
 
       <section class="card p-4">
@@ -66,9 +79,8 @@ const another = () => {
           id="body"
           v-model="body"
           rows="5"
-          class="w-full resize-none bg-transparent leading-relaxed outline-none"
+          class="field-sizing-content w-full resize-none bg-transparent leading-relaxed outline-none"
           placeholder="きょうのひとこと"
-          :maxlength="MAX"
         ></textarea>
         <p v-if="remaining < 100" class="text-right text-sm text-ink-soft" aria-live="polite">あと {{ remaining }} 文字</p>
       </section>
@@ -77,12 +89,12 @@ const another = () => {
         <button class="btn btn-quiet min-h-11 px-4 text-sm" type="button" disabled>写真を添える</button>
       </div>
 
-      <div class="flex flex-col items-end gap-3">
-        <button class="btn btn-primary px-8" type="button" :disabled="!canSave" @click="save">保存する</button>
+      <div class="flex flex-col items-center gap-3">
+        <button class="btn btn-primary px-10" type="button" :disabled="!canSave" @click="save">保存する</button>
         <p v-if="error" class="text-sm text-ink-soft" role="alert">{{ error }}</p>
       </div>
 
-      <DateSheet v-if="sheetOpen" v-model:precision="precision" v-model:value="dateValue" @close="sheetOpen = false" />
+      <DateSheet v-if="sheetOpen" v-model:precision="precision" v-model:date="date" @close="closeSheet" />
     </template>
 
     <template v-else>

@@ -19,4 +19,6 @@ jobs:
       - run: pnpm check:hook
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
       - run: pnpm build

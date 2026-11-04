@@ -21,9 +21,22 @@ export const go = (s: Screen) => {
   window.location.hash = hrefFor(s);
 };
 
+// アプリ内で積んだ履歴の数。外のページから #memory/<id> を直接開いた場合は 0 なので、戻るでアプリの外に出ない。
+let depth = 0;
+export const canGoBack = () => depth > 0;
+export const back = (fallback: Screen) => {
+  if (canGoBack()) {
+    depth -= 2; // hashchange で +1 されるぶんを先に引く
+    window.history.back();
+  } else {
+    go(fallback);
+  }
+};
+
 export function useScreen() {
   const screen = ref<Screen>(parse(window.location.hash));
   const onChange = () => {
+    depth += 1;
     screen.value = parse(window.location.hash);
     window.scrollTo({ top: 0 });
   };

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // S3 記憶の詳細。本文、起きた日、確定済みの事実、「そういえば。」の枠、削除。
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { api, ApiError } from "../api";
 import type { MemoryDetail } from "../api/types";
 import { formatHappenedOn } from "../date";
-import { go } from "../composables/useScreen";
+import { back as goBack, go } from "../composables/useScreen";
 
 const props = defineProps<{ id: string; from: "today" | "past" }>();
 
@@ -13,6 +13,22 @@ const state = ref<"loading" | "ready" | "missing" | "error">("loading");
 const confirming = ref(false);
 const deleting = ref(false);
 const deleteError = ref("");
+const deleteButton = ref<HTMLButtonElement | null>(null);
+const cancelButton = ref<HTMLButtonElement | null>(null);
+
+const openConfirm = () => {
+  confirming.value = true;
+  void nextTick(() => cancelButton.value?.focus());
+};
+const closeConfirm = () => {
+  confirming.value = false;
+  void nextTick(() => deleteButton.value?.focus());
+};
+const onKey = (e: KeyboardEvent) => {
+  if (e.key === "Escape" && confirming.value) closeConfirm();
+};
+onMounted(() => window.addEventListener("keydown", onKey));
+onUnmounted(() => window.removeEventListener("keydown", onKey));
 
 const load = async () => {
   state.value = "loading";
@@ -34,17 +50,14 @@ const remove = async () => {
     await api.deleteMemory(props.id);
     go({ name: "past" });
   } catch {
-    confirming.value = false;
+    closeConfirm();
     deleteError.value = "消せませんでした";
   } finally {
     deleting.value = false;
   }
 };
 
-const back = () => {
-  if (window.history.length > 1) window.history.back();
-  else go({ name: props.from });
-};
+const back = () => goBack({ name: props.from });
 
 onMounted(load);
 watch(() => props.id, load);
@@ -55,9 +68,9 @@ watch(() => props.id, load);
     <button type="button" class="self-start min-h-11 text-ink-soft" @click="back">‹ {{ from === "today" ? "きょう" : "これまで" }}</button>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-faint" role="status">よみこみ中</p>
-    <p v-else-if="state === 'missing'" class="py-16 text-center text-ink-soft">この記憶は、もうありません。</p>
+    <p v-else-if="state === 'missing'" class="py-16 text-center text-ink-soft">この記憶は見つかりませんでした</p>
     <section v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-16">
-      <p class="text-ink-soft">読み込めませんでした</p>
+      <p class="text-ink-soft">この記憶は見つかりませんでした</p>
       <button type="button" class="btn btn-quiet" @click="load">もう一度</button>
     </section>
 
@@ -82,16 +95,16 @@ watch(() => props.id, load);
 
       <div class="mt-auto flex flex-col items-end gap-3 pt-6">
         <p v-if="deleteError" class="text-sm text-ink-soft" role="alert">{{ deleteError }}</p>
-        <button type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="confirming = true">消す</button>
+        <button ref="deleteButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="openConfirm">消す</button>
       </div>
 
-      <div v-if="confirming" class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="confirming = false">
-        <div class="w-full max-w-md rounded-t-[20px] bg-card p-5 shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+      <div v-if="confirming" class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="closeConfirm">
+        <div class="w-full max-w-[560px] rounded-t-[20px] bg-card p-5 shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
           <h2 id="delete-title" class="text-[22px]">この記憶を消しますか</h2>
           <p class="mt-2 text-sm text-ink-soft">写真も、この記憶から浮かんだ「そういえば。」も一緒に消えます。</p>
-          <div class="mt-5 flex items-center justify-end gap-4">
-            <button type="button" class="min-h-11 px-4 text-ink-soft" @click="confirming = false">やめる</button>
-            <button type="button" class="btn btn-primary px-8" :disabled="deleting" @click="remove">消す</button>
+          <div class="mt-5 flex flex-col items-center gap-3">
+            <button type="button" class="btn btn-primary px-10" :disabled="deleting" @click="remove">消す</button>
+            <button ref="cancelButton" type="button" class="min-h-11 px-4 text-ink-soft" @click="closeConfirm">やめる</button>
           </div>
         </div>
       </div>

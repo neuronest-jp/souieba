@@ -1,6 +1,7 @@
 // 認証ミドルウェア。本番は Cloudflare Access の JWT、ローカル（ENVIRONMENT=development）だけ X-Dev-User。
 import type { MiddlewareHandler } from "hono";
 import { AccessVerifyError, fetchJwksCached, verifyAccessJwt } from "./access";
+import { touchUser } from "./db/users";
 import { isDevelopment, type Env, type Variables } from "./env";
 import { ApiError } from "./errors";
 
@@ -59,5 +60,7 @@ export const requireUser = (deps: ResolveUserDeps = {}): MiddlewareHandler<{ Bin
       throw new ApiError(401, "unauthorized", "ログインが必要です");
     }
     c.set("user", { id: r.userId });
+    // 初回は users に行を作る（memories の外部キーの親）。以後は last_seen_at の更新だけ。
+    await touchUser(c.env.DB, r.userId, new Date().toISOString());
     await next();
   };

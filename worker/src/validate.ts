@@ -33,8 +33,9 @@ const bad = (message: string): never => {
 //   unknown: null
 export const normalizeHappenedOn = (value: unknown, precision: Precision, today: string): string | null => {
   if (precision === "unknown") return null;
-  const raw = value === undefined || value === null || value === "" ? today : value;
-  if (typeof raw !== "string") return bad("起きた日の形式が違います");
+  // 省略（undefined / null）は今日。空文字は「消した」状態なので誤って今日にせず 400 にする。
+  const raw = value === undefined || value === null ? today : value;
+  if (typeof raw !== "string" || raw === "") return bad("起きた日を入れてください");
   const m = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(raw);
   if (!m) return bad("起きた日の形式が違います");
   const y = Number(m[1]);
