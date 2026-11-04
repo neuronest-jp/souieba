@@ -1,10 +1,23 @@
-# そういえば。 仕様書 v0.2（再構成ドラフト）
+# そういえば。 仕様書 v0.3（再構成ドラフト）
 
 > **このファイルについて**
 > 開発者が書いた v0.2 の原本は、この作業ブランチの時点でリポジトリに存在しなかった。
 > 本ファイルは、開発者からの依頼文（スタック・製品原則・作成順・11/4 スコープ・デモ4シナリオ）を
 > もとに Claude Code が同じ章立てで再構成したドラフトである（docs/decisions/0001 参照）。
 > 原本が届いたら、このファイルを原本で置き換え、差分があれば docs/requirements.md 以降を追従させる。
+
+## 変更点（v0.2 → v0.3、2026-11-04）
+
+| 変更 | 内容 | 理由 |
+|---|---|---|
+| 配布形態 PWA → Capacitor | Vue 3 + Vite + Tailwind の画面を Capacitor の WebView 内で動かし、iOS / Android のネイティブアプリとして配布する。Workers の Static Assets 配信は開発用プレビューとしてのみ残す | ホーム画面のアプリとして日々開いてもらう体験を優先する。写真の撮影・ライブラリ連携と、将来の通知（P1）をネイティブ API で扱える |
+| 認証 Cloudflare Access → 招待コード + JWT | 初回起動時に招待コード（wrangler secret `INVITE_CODE`）とメールアドレスを入力し、Worker が HS256 の JWT（有効 90 日）を発行する。アプリは `@capacitor/preferences` に保存し、以降 `Authorization: Bearer` で送る。`user_id` は JWT の `sub`（メール） | WebView の `capacitor://localhost` オリジンでは Access の Cookie もログインリダイレクトも成立しない |
+| 画像入力 `<input type="file">` → `@capacitor/camera` | 撮影またはライブラリから選ぶ。Web 実行時（開発プレビュー）は `<input type="file">` にフォールバック | ネイティブのカメラとライブラリを使う。R2 へのアップロードは引き続き Worker 経由の multipart（署名付き URL は使わない） |
+| CORS | `capacitor://localhost`、`https://localhost`、`http://localhost:5173` を許可 | アプリの WebView と開発サーバから API を呼ぶ |
+| セーフエリア・ステータスバー・スプラッシュ | `env(safe-area-inset-*)` に対応し、ステータスバー色とスプラッシュを ADR-0004 のカラーに合わせる | ネイティブアプリとしての見え方 |
+| P1 通知 | `@capacitor/push-notifications` を候補にする。APNs / FCM の設定は 11/8 時点で P0 が完了している場合のみ | 期間内に完成しない機能を先に作らない |
+
+詳細は docs/decisions/0007-capacitor-and-invite-jwt.md。
 
 - 提出先: Built with Claude: Japan 2026 ハッカソン
 - 提出期限: 2026-11-10 14:00 JST
@@ -91,7 +104,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 
 | 画面 | 役割 |
 |---|---|
-| S0 ようこそ | 未ログイン時。アプリ名と一行の説明、「はじめる」（Access へ） |
+| S0 ようこそ（ログイン） | 未ログイン時。アプリ名と一行の説明、招待コードとメールアドレスの入力欄、「はじめる」。成功すると JWT を端末に保存して S1 へ。1 画面だけで、パスワードは無い |
 | S1 きょう | 入力欄と写真ボタン。保存後、候補と「そういえば。」の札がこの画面に現れる |
 | S2 これまで | 時系列の一覧 |
 | S3 記憶の詳細 | 本文、写真、確定済みの事実、関連する「そういえば。」の履歴、削除 |
@@ -131,8 +144,12 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 
 ## 10. 認証
 
-- 本番: Cloudflare Access（メール OTP）。Worker は `Cf-Access-Jwt-Assertion` を `https://<team>.cloudflareaccess.com/cdn-cgi/access/certs` の JWKS で検証し、`aud` と `iss` と `exp` を確認し、`email` を user_id にする
-- ローカル: `ENVIRONMENT=development` のときだけ `X-Dev-User: <email>` ヘッダを受け付ける。本番ではヘッダを無視する
+- 方式: 招待コード + メールアドレス → HS256 の JWT（有効 90 日）。Cloudflare Access は使わない
+- `POST /api/auth/login` に `{ invite_code, email }` を送る。Worker は `INVITE_CODE`（wrangler secret）と定数時間で比較し、一致すれば `JWT_SECRET`（wrangler secret）で署名した JWT `{ sub: <email 小文字>, iat, exp }` を返す。不一致は 401（コードとメールのどちらが違うかは言わない）
+- アプリは JWT を `@capacitor/preferences` に保存し、全 API に `Authorization: Bearer <jwt>` を付ける。期限切れや 401 を受けたら保存を消して S0 に戻る
+- Worker は Bearer を検証（署名、`exp`、`sub` がメール形式）し、`sub` を `user_id` にする。ローカル開発では `ENVIRONMENT=development` のときだけ `X-Dev-User` も受け付ける（本番では無視）
+- レート制限: `/api/auth/login` は同一 IP から 1 分に 10 回まで（D1 の `login_attempts` で数える。超えたら 429）
+- CORS: `capacitor://localhost`、`https://localhost`、`http://localhost:5173` のみ `Access-Control-Allow-Origin` に返す。`Authorization` ヘッダを許可。Cookie は使わない
 
 ## 11. デモシナリオ（4本）
 
@@ -147,8 +164,10 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 
 ## 12. スタック（変更不可）
 
-- Cloudflare Workers + Hono + D1 + R2。Workers Static Assets で Vue 3 + Vite + TypeScript + Tailwind の SPA を同一 Worker から配信
-- 認証: Cloudflare Access（メール OTP）
+- API: Cloudflare Workers + Hono + D1 + R2
+- アプリ: Capacitor（iOS / Android）の WebView で Vue 3 + Vite + TypeScript + Tailwind を動かす。`@capacitor/core`、`cli`、`ios`、`android`、`camera`、`preferences`、`status-bar`、`splash-screen`。appId `jp.neuronest.souieba`、表示名「そういえば。」
+- 開発プレビュー: Workers Static Assets で同じ画面を同一 Worker から配信（配布には使わない）
+- 認証: 招待コード + HS256 JWT（第10節）
 - AI: `@anthropic-ai/sdk`、JSON Schema による構造化出力（ADR-0005）、モデル名は環境変数
 - 秘密情報: wrangler secret のみ。`.dev.vars` は gitignore
 - パッケージ: pnpm。依存は必要最小限
@@ -159,7 +178,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 .
 ├── .claude/
 │   ├── settings.json         # フック: .dev.vars と demo/photos/ への書き込み禁止
-│   └── hooks/guard-writes.mjs
+│   └── hooks/guard-writes.mjs  # 秘密ファイル、demo/photos/、ios/ android/ の署名ファイル
 ├── CLAUDE.md                 # Claude Code 向けの作業規約
 ├── README.md
 ├── docs/
@@ -173,9 +192,12 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 ├── demo/
 │   ├── fixtures/             # デモ4シナリオの JSON と seed SQL
 │   └── photos/               # 開発者が置く（Claude Code 書き込み禁止）
-├── web/                      # Vue 3 + Vite + Tailwind（Vite root）
+├── web/                      # Vue 3 + Vite + Tailwind（Vite root。Capacitor の webDir は web/dist）
 │   ├── index.html
 │   └── src/
+├── ios/                      # Capacitor が生成（署名ファイルは書き込み禁止）
+├── android/                  # Capacitor が生成（署名ファイルは書き込み禁止）
+├── capacitor.config.ts
 ├── worker/                   # Hono
 │   ├── src/
 │   ├── migrations/
