@@ -1,7 +1,7 @@
 // Worker の API を呼ぶ薄いクライアント。エラーは { error: { code, message } } の形で返ってくる。
 // ネイティブアプリでは VITE_API_BASE（https://<api-domain>）を叩き、Web の開発では同一オリジン（/api）。
 import { clearToken, getTokenSync } from "./auth";
-import type { Memory, MemoryDetail, MemoryList, NewMemory } from "./api/types";
+import type { Fact, Memory, MemoryDetail, MemoryList, NewMemory, Recall } from "./api/types";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
 
@@ -72,6 +72,12 @@ export const api = {
     request<MemoryList>(`/api/memories${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   getMemory: (id: string) => request<MemoryDetail>(`/api/memories/${encodeURIComponent(id)}`),
   deleteMemory: (id: string) => request<void>(`/api/memories/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  getFacts: (id: string) => request<{ pending: boolean; items: Fact[] }>(`/api/memories/${encodeURIComponent(id)}/facts`),
+  getRecalls: (id: string) => request<{ pending: boolean; items: Recall[] }>(`/api/memories/${encodeURIComponent(id)}/recalls`),
+  decideFact: (id: string, status: "confirmed" | "rejected") =>
+    request<{ id: string; status: string; decided_at: string }>(`/api/facts/${encodeURIComponent(id)}`, json("PATCH", { status })),
+  recallFeedback: (id: string, feedback: "helpful" | "not_related" | "none") =>
+    request<{ id: string; feedback: string }>(`/api/recalls/${encodeURIComponent(id)}`, json("PATCH", { feedback })),
   putPhoto: (id: string, photo: Blob) => {
     const form = new FormData();
     form.set("photo", photo, "photo.jpg");

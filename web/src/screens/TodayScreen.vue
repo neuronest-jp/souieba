@@ -1,8 +1,11 @@
 <script setup lang="ts">
 // S1 きょう。入力 → 保存 → 「残しました」。候補と札は 11/6 で足す。
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { api, photoUrl } from "../api";
-import type { Memory, Precision } from "../api/types";
+import type { Fact, Memory, Precision, Recall } from "../api/types";
+import FactChips from "../components/FactChips.vue";
+import RecallCard from "../components/RecallCard.vue";
+import { usePolling } from "../composables/usePolling";
 import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
 import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
@@ -19,6 +22,26 @@ const error = ref("");
 const saved = ref<Memory | null>(null);
 const photo = ref<File | null>(null);
 const photoNote = ref("");
+
+// 保存直後: 候補と札が届くまで静かに待つ（両方の pending が false で止まる）
+const facts = ref<Fact[]>([]);
+const recalls = ref<Recall[]>([]);
+const polling = usePolling(
+  async () => {
+    const id = saved.value!.id;
+    const [f, r] = await Promise.all([api.getFacts(id), api.getRecalls(id)]);
+    return { f, r };
+  },
+  (v) => !v.f.pending && !v.r.pending,
+);
+const applyPolled = (v: { f: { items: Fact[] }; r: { items: Recall[] } } | null) => {
+  if (!v) return;
+  // 画面で確定・却下した状態を上書きしないよう、既存の status を優先する
+  const prev = new Map(facts.value.map((x) => [x.id, x.status]));
+  facts.value = v.f.items.map((x) => ({ ...x, status: prev.get(x.id) ?? x.status }));
+  recalls.value = v.r.items;
+};
+watch(() => polling.value.value, (v) => applyPolled(v));
 
 const MAX = 2000;
 const remaining = computed(() => MAX - Array.from(body.value).length);
@@ -76,10 +99,16 @@ const save = async () => {
   body.value = "";
   photo.value = null;
   saving.value = false;
+  facts.value = [];
+  recalls.value = [];
+  polling.start();
 };
 
 const another = () => {
+  polling.stop();
   saved.value = null;
+  facts.value = [];
+  recalls.value = [];
   precision.value = "day";
   date.value = toIsoDate(new Date());
 };
@@ -122,9 +151,11 @@ const another = () => {
         <div class="p-4">
           <p class="text-sm text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
           <p class="mt-1 whitespace-pre-wrap leading-relaxed">{{ saved.body }}</p>
+          <FactChips v-if="facts.length > 0" class="mt-4" :facts="facts" />
         </div>
       </article>
       <p v-if="photoNote" class="text-sm text-ink-soft" role="alert">{{ photoNote }}</p>
+      <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" />
       <div class="flex items-baseline gap-6">
         <button type="button" class="min-h-11 border-b border-ember text-ink" @click="another">もうひとつ書く</button>
         <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="min-h-11 text-ink-soft">ひらく ›</a>

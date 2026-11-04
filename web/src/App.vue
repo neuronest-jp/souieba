@@ -33,7 +33,7 @@ const boot = async () => {
 
 const onLoggedIn = (userId: string) => {
   state.value = { kind: "ready", me: { user_id: userId, display_name: null, since: new Date().toISOString() } };
-  window.location.hash = "#today";
+  if (!window.location.hash) window.location.hash = "#today"; // 深いリンクで開いていたらそのまま
 };
 
 // どの画面でも /api/* が 401 を返したら S0 へ戻す（wireframes 0 節）

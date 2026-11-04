@@ -37,6 +37,15 @@ export const formatHappenedOn = (happenedOn: string | null, precision: Precision
   return `${p.y}年${p.m}月${p.d}日`;
 };
 
+// 日付候補の表示（wireframes 2.3）。値の長さで精度を判定し、「2026年6月ごろ」のように語尾を付ける。
+export const formatFactDate = (value: string): string => {
+  const m = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/.exec(value);
+  if (!m) return value;
+  if (m[3]) return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日`;
+  if (m[2]) return `${Number(m[1])}年${Number(m[2])}月ごろ`;
+  return `${Number(m[1])}年ごろ`;
+};
+
 // 本文の最初の一行（S2 の行）。
 export const firstLine = (body: string): string => {
   const line = body.split(/\r?\n/).find((l) => l.trim().length > 0) ?? "";
