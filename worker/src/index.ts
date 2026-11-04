@@ -1,17 +1,20 @@
 import { Hono } from "hono";
 import { requireUser, type ResolveUserDeps } from "./auth";
+import { apiCors } from "./cors";
 import { type Env, type Variables } from "./env";
 import { ApiError, errorBody } from "./errors";
+import { authRoutes, type AuthDeps } from "./routes/auth";
 import { memoriesRoutes, type MemoriesDeps } from "./routes/memories";
 import { getPhotoRoute, putPhotoRoute } from "./routes/photos";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
+export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps; auth?: AuthDeps };
 
-// Worker 本体。/api/* だけここに来る（wrangler.toml の run_worker_first）。それ以外は Static Assets が SPA を返す。
-export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps };
-
+// Worker 本体。/api/* だけここに来る（wrangler.toml の run_worker_first）。それ以外は Static Assets が開発用プレビューを返す。
 export const createApp = (deps: AppDeps = {}): AppType => {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+
+  app.use("/api/*", apiCors());
 
   app.onError((err, c) => {
     if (err instanceof ApiError) return c.json(errorBody(err.code, err.message), err.status as 400);
@@ -30,6 +33,9 @@ export const createApp = (deps: AppDeps = {}): AppType => {
       time: new Date().toISOString(),
     }),
   );
+
+  // ログイン（認証不要）
+  app.route("/api/auth", authRoutes(deps.auth));
 
   const authed = new Hono<{ Bindings: Env; Variables: Variables }>();
   authed.use("*", requireUser(deps));

@@ -30,7 +30,17 @@ for p in / /anything/deep; do
   echo "$ct" | grep -q 'text/html' || fail "$p が HTML でない: $ct"
 done
 
+echo "== /api/auth/login（招待コード違いは 401、入力不足は 400）"
+code=$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -d '{"invite_code":"definitely-wrong","email":"smoke@example.com"}' "$BASE/api/auth/login")
+[ "$code" = "401" ] || fail "招待コード違いが 401 でない: $code"
+code=$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -d '{"email":"smoke@example.com"}' "$BASE/api/auth/login")
+[ "$code" = "400" ] || fail "入力不足が 400 でない: $code"
+
 if [ -z "$EXPECT_PRODUCTION" ]; then
+  echo "== /api/auth/login（開発用の招待コード dev → JWT → /api/me）"
+  tok=$(curl -sf -H 'content-type: application/json' -d "{\"invite_code\":\"dev\",\"email\":\"$DEV_USER\"}" "$BASE/api/auth/login" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+  [ -n "$tok" ] || fail "ログインで token が返らない"
+  curl -sf -H "Authorization: Bearer $tok" "$BASE/api/me" | grep -q "\"user_id\":\"$DEV_USER\"" || fail "JWT で /api/me が通らない"
   H="X-Dev-User: $DEV_USER"
   echo "== 記憶: 登録 → 一覧 → 1 件取得 → 削除 → 再取得 404"
   created=$(curl -sf -H "$H" -H 'content-type: application/json' -d '{"body":"スーパーで青梅を見かけた"}' "$BASE/api/memories") || fail "登録に失敗"

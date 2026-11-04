@@ -25,9 +25,7 @@ beforeEach(async () => {
     ASSETS: {} as Fetcher,
     ENVIRONMENT: "development",
     ANTHROPIC_MODEL: "claude-opus-5-5",
-    ACCESS_TEAM_DOMAIN: "",
-    ACCESS_AUD: "",
-    APP_VERSION: "test",
+        APP_VERSION: "test",
   } as Env;
   // /api/me で users を作っておく（FK）
   await app().request("/api/me", { headers: { [DEV_USER_HEADER]: ME } }, env);

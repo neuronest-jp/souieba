@@ -2,6 +2,6 @@
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-opus-5-5
 ENVIRONMENT=development
-# ローカルでは Access を使わないので空でよい
-ACCESS_TEAM_DOMAIN=
-ACCESS_AUD=
+# 招待コードと JWT の署名鍵（本番は wrangler secret put）。pnpm dev:worker は未設定でも開発用の既定値（dev / dev-only-secret）を使う
+INVITE_CODE=dev
+JWT_SECRET=dev-only-secret-change-me

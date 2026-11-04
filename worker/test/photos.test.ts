@@ -35,7 +35,7 @@ const putPhoto = (id: string, bytes: Uint8Array, type: string, headers = H) => {
 beforeEach(() => {
   db = createTestD1();
   r2 = fakeR2();
-  env = { DB: db, PHOTOS: r2, ASSETS: {} as Fetcher, ENVIRONMENT: "development", ANTHROPIC_MODEL: "m", ACCESS_TEAM_DOMAIN: "", ACCESS_AUD: "", APP_VERSION: "test" } as Env;
+  env = { DB: db, PHOTOS: r2, ASSETS: {} as Fetcher, ENVIRONMENT: "development", ANTHROPIC_MODEL: "m", APP_VERSION: "test" } as Env;
 });
 
 describe("sniffImageType", () => {
