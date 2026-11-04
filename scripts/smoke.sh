@@ -48,6 +48,11 @@ if [ -z "$EXPECT_PRODUCTION" ]; then
   [ -n "$id" ] || fail "登録の応答に id が無い: $created"
   curl -sf -H "$H" "$BASE/api/memories" | grep -q "\"id\":\"$id\"" || fail "一覧に出ない"
   curl -sf -H "$H" "$BASE/api/memories/$id" | grep -q '"recalled_by"' || fail "1 件取得の形が違う"
+  echo "== 候補と札: GET facts / recalls が { pending, items } を返す。ai_runs は running か failed（API キーが無いとき）"
+  curl -sf -H "$H" "$BASE/api/memories/$id/facts" | grep -q '"pending"' || fail "facts の形が違う"
+  curl -sf -H "$H" "$BASE/api/memories/$id/recalls" | grep -q '"items"' || fail "recalls の形が違う"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H "$H" -H 'content-type: application/json' -d '{"status":"confirmed"}' "$BASE/api/facts/nope")
+  [ "$code" = "404" ] || fail "無い候補の PATCH が 404 でない: $code"
   echo "== 写真: PUT（1x1 PNG）→ GET → GIF は 415"
   png=$(mktemp); printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' | base64 -d > "$png"
   put=$(curl -sf -X PUT -H "$H" -F "photo=@$png;type=image/png" "$BASE/api/memories/$id/photo") || fail "写真の PUT に失敗"
