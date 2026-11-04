@@ -30,4 +30,20 @@ for p in / /anything/deep; do
   echo "$ct" | grep -q 'text/html' || fail "$p が HTML でない: $ct"
 done
 
+if [ -z "$EXPECT_PRODUCTION" ]; then
+  H="X-Dev-User: $DEV_USER"
+  echo "== 記憶: 登録 → 一覧 → 1 件取得 → 削除 → 再取得 404"
+  created=$(curl -sf -H "$H" -H 'content-type: application/json' -d '{"body":"スーパーで青梅を見かけた"}' "$BASE/api/memories") || fail "登録に失敗"
+  id=$(echo "$created" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+  [ -n "$id" ] || fail "登録の応答に id が無い: $created"
+  curl -sf -H "$H" "$BASE/api/memories" | grep -q "\"id\":\"$id\"" || fail "一覧に出ない"
+  curl -sf -H "$H" "$BASE/api/memories/$id" | grep -q '"recalled_by"' || fail "1 件取得の形が違う"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "$H" "$BASE/api/memories/$id")
+  [ "$code" = "204" ] || fail "削除が 204 でない: $code"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "$H" "$BASE/api/memories/$id")
+  [ "$code" = "404" ] || fail "削除後が 404 でない: $code"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "$H" -H 'content-type: application/json' -d '{"body":"   "}' "$BASE/api/memories")
+  [ "$code" = "400" ] || fail "空の本文が 400 でない: $code"
+fi
+
 echo "OK: すべて通りました（$BASE${EXPECT_PRODUCTION:+, production}）"
