@@ -66,7 +66,7 @@
 | カード | （招待コード、メールアドレス、はじめる、エラーの一文） | `bg-card` + `border-line` + `rounded-card` + `shadow-card`、内側 20px、要素間 16px。説明との間 32px |
 | 招待コード | ラベル「招待コード」 | ラベルは `text-ink-soft` 14px。入力欄は `bg-paper` + `border-line`、角丸 12px、高さ 48px、文字 17px。`type="text"`、`autocomplete="one-time-code"`、`autocapitalize="off"`、`spellcheck="false"`。マスクしない（パスワードではない） |
 | メールアドレス | ラベル「メールアドレス」 | 同じ見た目。`type="email"`、`inputmode="email"`、`autocomplete="email"`、`autocapitalize="off"` |
-| はじめる | はじめる | 主ボタン、中央、左右 40px の内側余白。招待コードが空、メールが `a@b.c` の形でない、または送っている間は押せない（`bg-ember-soft` + `text-ink-faint`）。押すと `POST /api/auth/login` → 200 でトークンを `@capacitor/preferences` に保存 → S1 きょう（`#today`）。押している間も文言は変えない。Enter（送信キー）でも同じ |
+| はじめる | はじめる | 主ボタン、中央、左右 40px の内側余白。招待コードが空、メールが `a@b.c` の形でない、または送っている間は押せない（`bg-ember-soft` + `text-ink-faint`）。押すと `POST /api/auth/login` → 200 でトークンを `@capacitor/preferences` に保存 → S1 きょう（`#today`）。押している間も文言は変えない。キーボードの確定キー（`form` の submit）でも同じ |
 | 違うとき | 招待コードかメールアドレスが違うようです | 401 と 400 のとき、ボタンの下に `text-ink-soft` 14px、中央、`role="alert"`。入力は消さない。どちらが違うかは言わない（F1-12） |
 | 回数が多いとき | 少し待ってから、もう一度 | 429 のとき同じ位置（F1-13） |
 | つながらないとき | いま、うまくつながりません | 503、ネットワーク断、その他のとき同じ位置（F1-14）。トークンは消さない |

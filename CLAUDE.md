@@ -9,15 +9,16 @@ Built with Claude: Japan 2026 ハッカソン向けの個人開発。提出 2026
 
 ## スタック（変更不可）
 
-Cloudflare Workers + Hono + D1 + R2、Workers Static Assets で Vue 3 + Vite + TypeScript + Tailwind の SPA を同一 Worker から配信。
-認証は Cloudflare Access（メール OTP）。ローカルは `ENVIRONMENT=development` のときだけ `X-Dev-User`。
+API は Cloudflare Workers + Hono + D1 + R2。アプリは Capacitor（iOS / Android）の WebView で Vue 3 + Vite + TypeScript + Tailwind を動かす（appId `jp.neuronest.souieba`、webDir `web/dist`、`ios/` と `android/` はコミット）。Workers Static Assets の配信は開発用プレビューだけ（ADR-0007）。
+認証は招待コード + メールアドレス → HS256 JWT（有効 90 日）。`POST /api/auth/login` が `INVITE_CODE`（wrangler secret）と定数時間比較し、`JWT_SECRET`（wrangler secret）で署名。アプリは `@capacitor/preferences` に保持して `Authorization: Bearer` で送り、401 で消してログイン画面へ。ローカルは `ENVIRONMENT=development` のときだけ `X-Dev-User` も可。CORS は worker/src/cors.ts に固定。
 Anthropic API は `@anthropic-ai/sdk` を Worker から呼び、Structured Outputs（`output_config.format`）で JSON Schema を強制（ADR-0005。現行モデルは `tool_choice` 強制を拒否する）。モデル名は `ANTHROPIC_MODEL`（既定 `claude-opus-5-5`）。
 
 ## 守ること
 
 - 仕様からの変更・重要な判断は docs/decisions/ に ADR を書き、開発者に一言報告する
 - 期間前のコード、権利のない素材は持ち込まない。依存は必要最小限
-- `.dev.vars` と `demo/photos/` には書き込まない（フックで拒否される）
+- `.dev.vars` と `demo/photos/`、`ios/` `android/` 配下の署名ファイル（`*.mobileprovision`、`*.p12`、`*.keystore`、`key.properties`、`google-services.json`、`GoogleService-Info.plist` など）には書き込まない（フックで拒否される）
+- `INVITE_CODE` と `JWT_SECRET` の本番の値をコード・文書・チャットに書かない（`dev` / `dev-only-secret` は開発専用の既定値）
 - 製品原則: AI の推測を事実として確定しない / 関係なければ提案しない / 提案には必ず根拠（原文引用）
 - UI は「テクノロジーを意識させない温かい記憶のアプリ」。AI チャット画面を中心にしない
 - 動くことより先に、実際に使いたくなる UI/UX。ただし期間内に完成しない機能は提案しない
@@ -27,13 +28,18 @@ Anthropic API は `@anthropic-ai/sdk` を Worker から呼び、Structured Outpu
 ```sh
 pnpm install
 pnpm db:migrate:local   # D1（ローカル）
-pnpm dev:worker         # Worker（http://localhost:8787）。development として起動し X-Dev-User を受け付ける
+pnpm dev:worker         # Worker（http://localhost:8787）。development として起動し X-Dev-User を受け付ける。招待コードは開発専用の dev
 pnpm dev                # 画面（http://localhost:5173）。/api を 8787 に中継し X-Dev-User を付ける
-pnpm preview            # 本番相当: 画面をビルドして Worker から配信（http://localhost:8787）
+pnpm preview            # 本番相当: 画面をビルドして Worker から配信（http://localhost:8787）。ログイン画面に dev とメールで入る
 pnpm test               # vitest
 pnpm typecheck
 pnpm build              # 画面ビルド + wrangler deploy --dry-run
+pnpm cap:sync           # 画面ビルド + cap sync（ios/ android/ に web/dist を同期。VITE_API_BASE は web/.env.* で）
+pnpm cap:ios            # cap:sync + Xcode を開く（Mac）
+pnpm cap:android        # cap:sync + Android Studio を開く（Mac）
 ```
+
+この環境（Linux）では iOS / Android のビルドと実機確認はできない。手順は docs/setup-capacitor.md。
 
 ## 報告の形
 
