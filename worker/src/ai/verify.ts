@@ -14,6 +14,23 @@ export type VerifyStats = { kept: number; dropped: Array<{ reason: string; item:
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
+// プロンプトでは本文の & < > " をエスケープして渡す（prompts.ts）。Claude が見たままを引用すると
+// evidence にエスケープ済みの記号が混じるので、逆変換した形でも照合する。保存するのは元の記号の方。
+export const unescapeXml = (s: string): string =>
+  s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+// body に逐語で含まれる形の evidence を返す（無ければ null）。正規化や trim はしない（X-7）。
+export const matchEvidence = (evidence: string, body: string): string | null => {
+  if (evidence.length === 0) return null;
+  if (body.includes(evidence)) return evidence;
+  const un = unescapeXml(evidence);
+  if (un !== evidence && un.length > 0 && body.includes(un)) return un;
+  return null;
+};
+
+// reason は 80 文字で切り詰める（捨てない。requirements 第2節）。evidence は切らない。
+export const clampReason = (reason: string): string => Array.from(reason).slice(0, REASON_MAX).join("");
+
 const parseItems = (out: unknown): unknown[] | null => {
   if (!isObj(out) || !Array.isArray(out.items)) return null;
   return out.items;
@@ -49,17 +66,17 @@ export function verifyRecall(out: unknown, pastBodies: Map<string, string>, self
       stats.dropped.push({ reason: "duplicate", item: raw });
       continue;
     }
-    if (raw.evidence.length === 0 || !body.includes(raw.evidence)) {
+    const evidence = matchEvidence(raw.evidence, body);
+    if (evidence === null) {
       stats.dropped.push({ reason: "evidence_not_in_body", item: raw });
       continue;
     }
-    const reasonLen = countChars(raw.reason);
-    if (reasonLen === 0 || reasonLen > REASON_MAX) {
+    if (countChars(raw.reason) === 0) {
       stats.dropped.push({ reason: "reason_length", item: raw });
       continue;
     }
     seen.add(id);
-    kept.push({ related_memory_id: id, reason: raw.reason, evidence: raw.evidence });
+    kept.push({ related_memory_id: id, reason: clampReason(raw.reason), evidence });
   }
   stats.kept = kept.length;
   return { items: kept, stats };
@@ -110,7 +127,8 @@ export function verifyFacts(out: unknown, body: string): { items: VerifiedFact[]
       stats.dropped.push({ reason: "empty", item: raw });
       continue;
     }
-    if (!body.includes(raw.evidence)) {
+    const evidence = matchEvidence(raw.evidence, body);
+    if (evidence === null) {
       stats.dropped.push({ reason: "evidence_not_in_body", item: raw });
       continue;
     }
@@ -124,7 +142,7 @@ export function verifyFacts(out: unknown, body: string): { items: VerifiedFact[]
       continue;
     }
     seen.add(key);
-    kept.push({ kind: raw.kind as VerifiedFact["kind"], value: raw.value, evidence: raw.evidence });
+    kept.push({ kind: raw.kind as VerifiedFact["kind"], value: unescapeXml(raw.value), evidence });
   }
   stats.kept = kept.length;
   return { items: kept, stats };

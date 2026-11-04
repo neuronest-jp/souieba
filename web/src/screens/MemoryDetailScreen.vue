@@ -132,7 +132,7 @@ watch(() => props.id, load);
         <article v-for="r in detail.recalled_by.items" :key="r.id" class="card border-l-[3px] border-l-ember p-4">
           <p class="text-sm text-ink-soft">{{ formatHappenedOn(r.memory.happened_on, r.memory.happened_on_precision) }}のひとことから</p>
           <a :href="`#memory/${encodeURIComponent(r.memory.id)}`" class="mt-1 block truncate text-sm text-ink-soft">{{ r.memory.body.split(/\r?\n/)[0] }}</a>
-          <p class="mt-2 leading-relaxed text-ink">「{{ r.evidence }}」</p>
+          <p class="mt-2 line-clamp-3 leading-relaxed text-ink">「{{ r.evidence }}」</p>
           <p class="mt-1 text-sm text-ink-soft">{{ r.reason }}</p>
           <div class="mt-3 flex gap-2">
             <button type="button" class="min-h-11 rounded-full border px-3.5 text-base" :class="r.feedback === 'helpful' ? 'border-moss bg-moss-soft text-ink' : 'border-line bg-card text-ink'" :aria-pressed="r.feedback === 'helpful'" @click="react(r, 'helpful')">そうだった</button>

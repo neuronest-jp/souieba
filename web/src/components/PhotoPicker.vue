@@ -12,6 +12,10 @@ const choose = async () => {
   message.value = "";
   const picked = await pickPhoto("prompt");
   if (!picked) return;
+  if ("error" in picked) {
+    message.value = "写真を使う許可が必要です（端末の設定から変えられます）";
+    return;
+  }
   const f = picked.file;
   if (f.type !== "image/jpeg" && f.type !== "image/png") {
     message.value = "JPEG か PNG の写真だけ添えられます";

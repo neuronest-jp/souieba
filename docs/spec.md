@@ -148,6 +148,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 - `POST /api/auth/login` に `{ invite_code, email }` を送る。Worker は `INVITE_CODE`（wrangler secret）と定数時間で比較し、一致すれば `JWT_SECRET`（wrangler secret）で署名した JWT `{ sub: <email 小文字>, iat, exp }` を返す。不一致は 401（コードとメールのどちらが違うかは言わない）
 - アプリは JWT を `@capacitor/preferences` に保存し、全 API に `Authorization: Bearer <jwt>` を付ける。期限切れや 401 を受けたら保存を消して S0 に戻る
 - Worker は Bearer を検証（署名、`exp`、`sub` がメール形式）し、`sub` を `user_id` にする。ローカル開発では `ENVIRONMENT=development` のときだけ `X-Dev-User` も受け付ける（本番では無視）
+- 制約: メールの所有確認はしない（招待コードを渡した相手だけが使う前提。ADR-0007 の「既知の制約」）
 - レート制限: `/api/auth/login` は同一 IP から 1 分に 10 回まで（D1 の `login_attempts` で数える。超えたら 429）
 - CORS: `capacitor://localhost`、`https://localhost`、`http://localhost:5173` のみ `Access-Control-Allow-Origin` に返す。`Authorization` ヘッダを許可。Cookie は使わない
 

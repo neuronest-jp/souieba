@@ -23,11 +23,20 @@ Cloudflare Access の Cookie もログインリダイレクトも成立しない
    - `/api/auth/login` は同一 IP から 1 分 10 回まで（D1 `login_attempts`）。招待コードの総当たりを遅らせる
 3. **CORS**: `capacitor://localhost`、`https://localhost`、`http://localhost:5173` を許可。`Authorization` ヘッダを許可。Cookie は使わない
 4. **画像入力**: `@capacitor/camera`（撮影 / ライブラリ）。Web 実行時は `<input type="file">` にフォールバック。R2 へのアップロードは Worker 経由の multipart のまま
-5. **見た目**: `env(safe-area-inset-*)`、`@capacitor/status-bar` で地の色（`#FAF5EC`）、`@capacitor/splash-screen` も同じ色
+5. **見た目**: `env(safe-area-inset-*)`、`@capacitor/status-bar` は文字色だけ（Android 16 以降は背景色が効かず常に重なる。上余白は CSS の env()）、`@capacitor/splash-screen` の背景は `#FAF5EC`
 6. **secret**: `INVITE_CODE` と `JWT_SECRET` は wrangler secret。コードや文書に値を書かない。ローカルは開発者が `.dev.vars` に書く。
    `pnpm dev:worker` は開発専用の既定値（`INVITE_CODE=dev`、`JWT_SECRET=dev-only-secret`）を `--var` で渡す（`ENVIRONMENT=development` のときだけ使われる）
 7. **フック**: `ios/` `android/` 配下の署名ファイル（`*.mobileprovision`、`*.p12`、`*.cer`、`ExportOptions.plist`、`*.keystore`、`*.jks`、`key.properties`、`google-services.json`、`GoogleService-Info.plist`）への書き込みを禁止する
 8. **P1 通知**: `@capacitor/push-notifications` を候補にする。APNs / FCM は 11/8 時点で P0 完了のときだけ
+
+## 既知の制約（脅威）
+
+- **メールの所有確認をしない。** 招待コードが一致すれば、入力したメールアドレスをそのまま `sub`（user_id）にする。
+  つまり招待コードを共有された人は、他の利用者のメールを入れるだけでその人の記憶と写真を読み書きできる。
+  ハッカソン期間中は「招待コードを渡した相手だけが使う」前提の割り切りとし、提出後に続けるなら
+  (a) 招待コードを 1 人 1 つにして code → email の対応表で固定する、(b) メールに 6 桁コードを送る OTP に戻す、のどちらかにする
+- レート制限は IP 単位（1 分 10 回）で、コード全体の上限は無い。`login_attempts` は 1 時間で掃除する
+- JWT の失効はログアウト以外に無い。`JWT_SECRET` のローテーションで全員ログアウトになる
 
 ## 影響
 

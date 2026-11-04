@@ -47,26 +47,39 @@ describe("verifyRecall（デモのフィクスチャ）", () => {
     expect(r.stats.dropped.some((d) => d.reason === "over_max" || d.reason === "evidence_not_in_body")).toBe(true);
   });
   it("自分自身、重複、reason の長さ、形式不正を落とす", () => {
-    const b = new Map([["a", "本文 A です"], ["b", "本文 B です"]]);
+    const b = new Map([["a", "本文 A です"], ["b", "本文 B です"], ["c", "本文 C です"], ["d", "本文 D です"]]);
     const out = {
       items: [
         { related_memory_id: "self", reason: "x", evidence: "本文" },
         { related_memory_id: "a", reason: "ok", evidence: "本文 A" },
         { related_memory_id: "a", reason: "dup", evidence: "本文 A" },
-        { related_memory_id: "b", reason: "あ".repeat(81), evidence: "本文 B" },
-        { related_memory_id: "b", reason: "", evidence: "本文 B" },
-        { related_memory_id: "b", evidence: "本文 B" },
-        { related_memory_id: "b", reason: "空の引用", evidence: "" },
+        { related_memory_id: "b", reason: "あ".repeat(81), evidence: "本文 B" }, // 切り詰めて残す
+        { related_memory_id: "c", reason: "", evidence: "本文 C" },
+        { related_memory_id: "c", evidence: "本文 C" },
+        { related_memory_id: "d", reason: "空の引用", evidence: "" },
       ],
     };
     const r = verifyRecall(out, new Map([...b, ["self", "self body"]]), "self");
-    expect(r.items.map((i) => i.related_memory_id)).toEqual(["a"]);
-    expect(r.stats.dropped.map((d) => d.reason)).toEqual(["self", "duplicate", "reason_length", "reason_length", "malformed", "evidence_not_in_body"]);
+    expect(r.items.map((i) => i.related_memory_id)).toEqual(["a", "b"]);
+    expect(r.stats.dropped.map((d) => d.reason)).toEqual(["self", "duplicate", "reason_length", "malformed", "evidence_not_in_body"]);
   });
   it("NFC 正規化や空白除去はしない（完全一致のみ）", () => {
     const b = new Map([["a", "おばあちゃんは毎年6月に"]]);
     expect(verifyRecall({ items: [{ related_memory_id: "a", reason: "r", evidence: "おばあちゃんは 毎年6月に" }] }, b, "x").items).toEqual([]);
     expect(verifyRecall({ items: [{ related_memory_id: "a", reason: "r", evidence: "おばあちゃんは毎年６月に" }] }, b, "x").items).toEqual([]);
+  });
+  it("エスケープされた記号を含む引用は逆変換して照合し、元の記号で保存する", () => {
+    const b = new Map([["a", 'A&W で "ルートビア" を飲んだ <最高>']]);
+    const r = verifyRecall({ items: [{ related_memory_id: "a", reason: "r", evidence: "A&amp;W で &quot;ルートビア&quot;" }] }, b, "x");
+    expect(r.items[0]!.evidence).toBe('A&W で "ルートビア"');
+    const f = verifyFacts({ items: [{ kind: "thing", value: "&quot;ルートビア&quot;", evidence: "&lt;最高&gt;", date_precision: "unknown" }] }, b.get("a")!);
+    expect(f.items[0]).toEqual({ kind: "thing", value: '"ルートビア"', evidence: "<最高>" });
+  });
+  it("reason が 80 文字を超えたら切り詰めて残す（捨てない）", () => {
+    const b = new Map([["a", "本文"]]);
+    const r = verifyRecall({ items: [{ related_memory_id: "a", reason: "あ".repeat(100), evidence: "本文" }] }, b, "x");
+    expect(r.items).toHaveLength(1);
+    expect(Array.from(r.items[0]!.reason).length).toBe(80);
   });
   it("items が無い出力は malformed", () => {
     expect(verifyRecall({ foo: 1 }, new Map(), "x").stats.dropped[0]!.reason).toBe("malformed");

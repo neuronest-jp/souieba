@@ -42,6 +42,7 @@ export async function verifyJwt(token: string, secret: string, now: number = Mat
   } catch {
     throw new JwtError("malformed");
   }
+  if (typeof header !== "object" || header === null) throw new JwtError("malformed");
   if (header.alg !== "HS256") throw new JwtError("bad_alg");
   const key = await hmacKey(secret, ["verify"]);
   let ok = false;
@@ -60,6 +61,7 @@ export async function verifyJwt(token: string, secret: string, now: number = Mat
   if (typeof claims.exp !== "number" || claims.exp <= now) throw new JwtError("expired");
   if (typeof claims.sub !== "string" || !claims.sub.includes("@")) throw new JwtError("bad_sub");
   if (typeof claims.iat !== "number") throw new JwtError("malformed");
+  if (claims.iat > now + 60) throw new JwtError("not_yet_valid"); // 未来に発行されたことになっている
   return { sub: claims.sub, iat: claims.iat, exp: claims.exp };
 }
 

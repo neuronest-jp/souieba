@@ -38,6 +38,13 @@ describe("HS256 JWT", () => {
     await expectReason(verifyJwt(t, SECRET, NOW), "bad_sub");
     await expectReason(verifyJwt("abc", SECRET, NOW), "malformed");
   });
+  it("iat が 60 秒より未来なら拒否。header が null なら malformed", async () => {
+    const t = await signJwt({ sub: "a@example.com", iat: NOW + 120, exp: NOW + 1000 }, SECRET);
+    await expectReason(verifyJwt(t, SECRET, NOW), "not_yet_valid");
+    const h = btoa("null").replace(/=+$/, "");
+    const p = btoa(JSON.stringify({ sub: "a@example.com", iat: NOW, exp: NOW + 100 })).replace(/=+$/, "");
+    await expectReason(verifyJwt(`${h}.${p}.x`, SECRET, NOW), "malformed");
+  });
   it("timingSafeEqual", () => {
     expect(timingSafeEqual("abc", "abc")).toBe(true);
     expect(timingSafeEqual("abc", "abd")).toBe(false);

@@ -50,7 +50,7 @@ onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthori
 </script>
 
 <template>
-  <div class="safe-area mx-auto flex min-h-dvh w-full max-w-[560px] flex-col px-5">
+  <div class="safe-area mx-auto flex min-h-dvh w-full max-w-[560px] flex-col">
     <!-- 読み込み中は何も主張しない -->
     <main v-if="state.kind === 'loading'" class="flex flex-1 items-center justify-center" aria-busy="true">
       <p class="text-ink-faint" aria-hidden="true">…</p>

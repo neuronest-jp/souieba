@@ -9,18 +9,21 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (v: T) => boole
   const active = ref(false);
   let timer: ReturnType<typeof setTimeout> | null = null;
   let tries = 0;
+  let generation = 0; // start / stop のたびに進める。飛行中の古い fetch の結果は捨てる
 
   const stop = () => {
+    generation += 1;
     active.value = false;
     if (timer) clearTimeout(timer);
     timer = null;
   };
 
-  const tick = async () => {
-    if (!active.value) return;
+  const tick = async (gen: number) => {
+    if (!active.value || gen !== generation) return;
     tries += 1;
     try {
       const v = await fetcher();
+      if (gen !== generation) return; // その間に stop / start された
       value.value = v;
       if (isDone(v)) {
         stop();
@@ -28,12 +31,13 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (v: T) => boole
       }
     } catch {
       /* 失敗は静かに。次の tick でまた試す */
+      if (gen !== generation) return;
     }
     if (tries >= POLL_MAX_TRIES) {
       stop();
       return;
     }
-    timer = setTimeout(() => void tick(), POLL_INTERVAL_MS);
+    timer = setTimeout(() => void tick(gen), POLL_INTERVAL_MS);
   };
 
   const start = () => {
@@ -41,7 +45,7 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (v: T) => boole
     tries = 0;
     value.value = null;
     active.value = true;
-    void tick();
+    void tick(generation);
   };
 
   onUnmounted(stop);

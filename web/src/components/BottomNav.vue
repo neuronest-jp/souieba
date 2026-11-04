@@ -9,7 +9,7 @@ const items = [
 
 <template>
   <nav
-    class="sticky bottom-0 -mx-5 mt-auto border-t border-line bg-paper/95 px-4 pb-[max(env(safe-area-inset-bottom),8px)] backdrop-blur"
+    class="sticky bottom-0 -mx-[20px] mt-auto border-t border-line bg-paper/95 px-4 pb-[max(env(safe-area-inset-bottom),8px)] backdrop-blur"
     aria-label="画面の切り替え"
   >
     <ul class="flex">

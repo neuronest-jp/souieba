@@ -75,10 +75,47 @@ describe("POST /api/auth/login", () => {
     expect(res.status).toBe(503);
   });
 
-  it("同一 IP から 1 分に 10 回を超えると 429、別 IP は影響しない", async () => {
-    for (let i = 0; i < 10; i++) expect((await login({ invite_code: "wrong", email: "a@example.com" })).status).toBe(401);
-    expect((await login({ invite_code: "secret-code", email: "a@example.com" })).status).toBe(429);
+  it("同一 IP から 1 分に 10 回を超えると 429（Retry-After 付き）、別 IP は影響しない。成功も数える", async () => {
+    for (let i = 0; i < 9; i++) expect((await login({ invite_code: "wrong", email: "a@example.com" })).status).toBe(401);
+    expect((await login({ invite_code: "secret-code", email: "a@example.com" })).status).toBe(200); // 10 回目（成功も数える）
+    const blocked = await login({ invite_code: "secret-code", email: "a@example.com" });
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBe("60");
     expect((await login({ invite_code: "secret-code", email: "a@example.com" }, baseEnv(), { "cf-connecting-ip": "203.0.113.2" })).status).toBe(200);
+  });
+
+  it("時間窓: 59 秒後はまだ 429、60 秒後に解除される", async () => {
+    let now = NOW;
+    const at = (body: unknown) =>
+      createApp({ auth: { now: () => now } }).request(
+        "/api/auth/login",
+        { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.9" }, body: JSON.stringify(body) },
+        baseEnv(),
+      );
+    for (let i = 0; i < 10; i++) await at({ invite_code: "wrong", email: "a@example.com" });
+    expect((await at({ invite_code: "secret-code", email: "a@example.com" })).status).toBe(429);
+    now = NOW + 59;
+    expect((await at({ invite_code: "secret-code", email: "a@example.com" })).status).toBe(429);
+    now = NOW + 60;
+    expect((await at({ invite_code: "secret-code", email: "a@example.com" })).status).toBe(200);
+  });
+
+  it("並行に 30 回送っても 10 回を超えて判定されない（記録してから数える）", async () => {
+    const results = await Promise.all(Array.from({ length: 30 }, () => login({ invite_code: "wrong", email: "a@example.com" })));
+    const codes = results.map((r) => r.status);
+    expect(codes.filter((c) => c === 401).length).toBeLessThanOrEqual(10);
+    expect(codes.filter((c) => c === 429).length).toBeGreaterThanOrEqual(20);
+  });
+
+  it("JWT_SECRET が短ければ本番は 503、development は通す", async () => {
+    expect((await login({ invite_code: "secret-code", email: "a@example.com" }, baseEnv({ JWT_SECRET: "short" }))).status).toBe(503);
+    expect((await login({ invite_code: "secret-code", email: "a@example.com" }, baseEnv({ JWT_SECRET: "short", ENVIRONMENT: "development" }))).status).toBe(200);
+  });
+
+  it("login_attempts は 1 時間より古い行が消える", async () => {
+    db.raw.prepare("INSERT INTO login_attempts (id, ip, ok, created_at) VALUES ('old', 'x', 0, ?)").run(new Date((NOW - 3601) * 1000).toISOString());
+    await login({ invite_code: "wrong", email: "a@example.com" });
+    expect(db.raw.prepare("SELECT count(*) AS n FROM login_attempts WHERE id = 'old'").get()).toEqual({ n: 0 });
   });
 
   it("CORS: 許可オリジンには Allow-Origin を返し、他には返さない", async () => {
@@ -89,6 +126,17 @@ describe("POST /api/auth/login", () => {
     }
     const bad = await createApp().request("/api/health", { headers: { origin: "https://evil.example" } }, baseEnv());
     expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+    const pre = await createApp().request("/api/me", { method: "OPTIONS", headers: { origin: "https://evil.example", "access-control-request-method": "GET" } }, baseEnv());
+    expect(pre.headers.get("access-control-allow-origin")).toBeNull();
+    const noOrigin = await createApp().request("/api/me", { method: "OPTIONS", headers: { "access-control-request-method": "GET" } }, baseEnv());
+    expect(noOrigin.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("CORS: X-Dev-User は development のときだけ許可ヘッダに出る", async () => {
+    const req = (env: Env) =>
+      createApp().request("/api/me", { method: "OPTIONS", headers: { origin: "capacitor://localhost", "access-control-request-method": "GET", "access-control-request-headers": "authorization" } }, env);
+    expect((await req(baseEnv())).headers.get("access-control-allow-headers")?.toLowerCase()).not.toContain("x-dev-user");
+    expect((await req(baseEnv({ ENVIRONMENT: "development" }))).headers.get("access-control-allow-headers")?.toLowerCase()).toContain("x-dev-user");
   });
 });
 

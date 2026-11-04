@@ -451,7 +451,7 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 | SDK | `@anthropic-ai/sdk`（Workers の fetch で動く。`nodejs_compat` を付ける） |
 | クライアント | `new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0, timeout: 20_000 })`（再試行は SDK の自動分も 0。仕様 9 章、requirements N-7）。リクエストごとに生成（Worker はモジュールスコープで env を持てない） |
 | model | `env.ANTHROPIC_MODEL`（既定 `claude-opus-5-5`。コスト優先時 `claude-sonnet-5-5`） |
-| max_tokens | 4096（出力は最大 3 件の短い JSON。`stop_reason === "max_tokens"` なら failed） |
+| max_tokens | 16000。既定の adaptive thinking（Opus 5.5 / Sonnet 5.5 では切れない）も max_tokens に数えられるため、出力の JSON（最大 3 件）だけで見積もらない。`stop_reason === "max_tokens"` なら failed |
 | thinking | 指定しない（既定の adaptive）。`output_config.effort` は C2 を `low`、C1 を `medium` から始め、10 秒の予算内に収まるよう計測して決める |
 | output_config.format | `{ type: "json_schema", schema: <6.2 / 6.3> }` |
 | 結果の取り出し | `content` から `type === "text"` の最初のブロックを `JSON.parse`。`stop_reason` が `refusal` なら failed |
@@ -545,11 +545,11 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 
 | 検証 | 落ちたとき |
 |---|---|
-| `evidence` が空でなく、引用元 body に部分文字列として含まれる（C1 は related の body、C2 は新しい記憶の body）。`body.includes(evidence)` だけで判定し、NFC 正規化・trim・全角半角変換はしない（requirements X-7。逐語引用の原則 3） | その項目を捨てる |
+| `evidence` が空でなく、引用元 body に部分文字列として含まれる（C1 は related の body、C2 は新しい記憶の body）。`body.includes(evidence)` で判定し、NFC 正規化・trim・全角半角変換はしない。ただしプロンプトで `& < > "` をエスケープして渡しているため、`&amp;` 等を元の記号に戻した形でも照合し、保存は元の記号で行う（requirements X-7。逐語引用の原則 3） | その項目を捨てる |
 | C1: `related_memory_id` が入力に含めた 200 件の id にある（= 同一ユーザー、存在する） | 捨てる |
 | C1: 同じ `related_memory_id` の重複 | 2 件目以降を捨てる |
 | C1: `related_memory_id` が新しい記憶自身 | 捨てる |
-| C1: `reason` が空、または 80 文字超（`Array.from` で数える。requirements F5-1） | 捨てる |
+| C1: `reason` が空 | 捨てる。80 文字超は `Array.from` で 80 文字に切り詰めて残す（requirements 第2節。`evidence` は切らない） |
 | 件数 | 先頭 3 件に切る（C1）。C2 は 10 件に切る |
 | C2: `date` の `value` が精度に合う形（`YYYY-MM-DD` / `YYYY-MM` / `YYYY`、実在する日付） | 捨てる |
 | C2: `evidence` と `value` が空 | 捨てる |

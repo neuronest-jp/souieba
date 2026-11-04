@@ -80,7 +80,7 @@ cd android && ./gradlew assembleDebug
 
 ## 4. 見た目
 
-- ステータスバー: `web/src/native.ts` が `#FAF5EC`（ADR-0004 の `paper`）に合わせる。iOS は `Style.Light`（明るい地に濃い文字）
+- ステータスバー: `web/src/native.ts` が文字色を `Style.Light`（明るい地に濃い文字）にする。Android 16（API 36）以降ではステータスバーは常に画面に重なり、背景色の指定は効かない。上の余白は `web/src/style.css` の `.safe-area` が `env(safe-area-inset-top)` で取る
 - スプラッシュ: `capacitor.config.ts` の `SplashScreen.backgroundColor` が `#FAF5EC`。画像（ロゴ）は未作成。作るなら `@capacitor/assets` で生成する（依存を増やすので提出直前に判断）
 - アイコン: Capacitor の既定のまま。`ios/App/App/Assets.xcassets/AppIcon.appiconset` と `android/app/src/main/res/mipmap-*` を差し替える。素材は開発者が権利を持つものだけ
 - セーフエリア: `web/src/style.css` の `.safe-area` と下部ナビの `env(safe-area-inset-bottom)`

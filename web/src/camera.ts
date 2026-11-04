@@ -2,7 +2,7 @@
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { isNative } from "./native";
 
-export type PickedPhoto = { file: File };
+export type PickedPhoto = { file: File } | { error: "denied" };
 
 const pickWithInput = (): Promise<PickedPhoto | null> =>
   new Promise((resolve) => {
@@ -41,7 +41,10 @@ export async function pickPhoto(source: "prompt" | "camera" | "photos" = "prompt
     });
     if (!photo.dataUrl) return null;
     return { file: await dataUrlToFile(photo.dataUrl, `photo.${photo.format || "jpeg"}`) };
-  } catch {
-    return null; // キャンセルや権限なし
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/cancel/i.test(msg)) return null; // やめた
+    if (/denied|permission/i.test(msg)) return { error: "denied" };
+    return null;
   }
 }

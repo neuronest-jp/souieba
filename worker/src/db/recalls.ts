@@ -15,10 +15,17 @@ export async function listPastMemories(db: D1Database, userId: string, excludeId
   return results ?? [];
 }
 
-// UNIQUE (memory_id, related_memory_id) の衝突は無視する。
+// UNIQUE (memory_id, related_memory_id) の衝突は INSERT OR IGNORE で無視する。
+// 外部キー違反は OR IGNORE では無視されないため、Claude を待つ間に消された相手の札は先に除く（他の札を道連れにしない）。
 export async function insertRecalls(db: D1Database, memoryId: string, recalls: VerifiedRecall[], now: string): Promise<void> {
   if (recalls.length === 0) return;
-  const stmts = recalls.map((r) =>
+  const ids = recalls.map((r) => r.related_memory_id);
+  const placeholders = ids.map((_, i) => `?${i + 1}`).join(",");
+  const { results } = await db.prepare(`SELECT id FROM memories WHERE id IN (${placeholders})`).bind(...ids).all<{ id: string }>();
+  const alive = new Set((results ?? []).map((r) => r.id));
+  const kept = recalls.filter((r) => alive.has(r.related_memory_id));
+  if (kept.length === 0) return;
+  const stmts = kept.map((r) =>
     db
       .prepare("INSERT OR IGNORE INTO recalls (id, memory_id, related_memory_id, reason, evidence, feedback, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'none', ?6)")
       .bind(crypto.randomUUID(), memoryId, r.related_memory_id, r.reason, r.evidence, now),

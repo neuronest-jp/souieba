@@ -102,7 +102,11 @@ describe("D1 祖母の梅干し", () => {
   });
 
   it("引用が原文に無ければ札は保存されず empty（原則 3）", async () => {
-    const call = fakeCall((req) => (req.system.includes("過去の記憶") ? { items: [{ related_memory_id: "whatever", reason: "r", evidence: "梅干しを作っていた" }] } : { items: [] }));
+    const call = fakeCall((req) => {
+      if (!req.system.includes("過去の記憶")) return { items: [] };
+      const m = /<memory id="([^"]+)"/.exec(req.user); // 本物の id を使い、引用だけ本文に無いものにする
+      return { items: [{ related_memory_id: m![1], reason: "r", evidence: "梅干しを作っていた" }] };
+    });
     const app = appWith(call);
     const first = await post(app, "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた");
     await first.ctx.settle();
@@ -110,6 +114,31 @@ describe("D1 祖母の梅干し", () => {
     await ctx.settle();
     expect(runs(memory.id).find((r) => r.kind === "recall")!.status).toBe("empty");
     expect(db.raw.prepare("SELECT count(*) AS n FROM recalls").get()).toEqual({ n: 0 });
+  });
+});
+
+describe("相手の記憶が途中で消えたとき", () => {
+  it("消えた相手の札だけ落とし、残りの札は保存される", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const call = fakeCall((req) => {
+      if (!req.system.includes("過去の記憶")) return { items: [] };
+      const ids = [...req.user.matchAll(/<memory id="([^"]+)"/g)].map((m) => m[1]);
+      return { items: ids.map((id) => ({ related_memory_id: id, reason: "r", evidence: "梅" })) };
+    }, gate);
+    const app = appWith(call);
+    const quiet = appWith(fakeCall(() => ({ items: [] })));
+    const a = await post(quiet, "梅 その一");
+    const b = await post(quiet, "梅 その二");
+    await a.ctx.settle();
+    await b.ctx.settle();
+    const { memory, ctx } = await post(app, "青梅");
+    expect((await app.request(`/api/memories/${a.memory.id}`, { method: "DELETE", headers: H }, env)).status).toBe(204);
+    release();
+    await ctx.settle();
+    expect(runs(memory.id).find((r) => r.kind === "recall")!.status).toBe("succeeded");
+    const rows = db.raw.prepare("SELECT related_memory_id FROM recalls WHERE memory_id = ?").all(memory.id) as Array<{ related_memory_id: string }>;
+    expect(rows.map((r) => r.related_memory_id)).toEqual([b.memory.id]);
   });
 });
 

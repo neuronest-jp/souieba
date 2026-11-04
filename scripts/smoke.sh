@@ -32,6 +32,7 @@ done
 
 echo "== /api/auth/login（招待コード違いは 401、入力不足は 400）"
 code=$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -d '{"invite_code":"definitely-wrong","email":"smoke@example.com"}' "$BASE/api/auth/login")
+[ "$code" = "429" ] && fail "ログインのレート制限中（同じ IP から 1 分 10 回）。1 分待ってから再実行してください"
 [ "$code" = "401" ] || fail "招待コード違いが 401 でない: $code"
 code=$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -d '{"email":"smoke@example.com"}' "$BASE/api/auth/login")
 [ "$code" = "400" ] || fail "入力不足が 400 でない: $code"

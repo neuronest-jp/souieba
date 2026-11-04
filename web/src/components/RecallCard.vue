@@ -13,7 +13,7 @@ withDefaults(defineProps<{ recall: Recall; from: "today" | "past"; heading?: boo
     <p class="mt-1 text-sm text-ink-soft">
       {{ formatHappenedOn(recall.related_memory.happened_on, recall.related_memory.happened_on_precision) }}のひとこと
     </p>
-    <p class="mt-2 leading-relaxed text-ink">「{{ recall.evidence }}」</p>
+    <p class="mt-2 line-clamp-3 leading-relaxed text-ink">「{{ recall.evidence }}」</p>
     <p class="mt-1 text-sm text-ink-soft">{{ recall.reason }}</p>
     <p v-if="firstLine(recall.related_memory.body) !== recall.evidence" class="mt-2 truncate text-sm text-ink-soft">
       {{ firstLine(recall.related_memory.body) }}

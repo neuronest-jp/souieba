@@ -21,6 +21,7 @@ export function createTestD1(): TestD1 {
   const prepare = (sql: string) => {
     let args: unknown[] = [];
     const stmt = {
+      sql,
       bind: (...a: unknown[]) => {
         // 本物の D1 は undefined を受け付けない（D1_TYPE_ERROR）。テストでも同じく失敗させる。
         if (a.some((v) => v === undefined)) throw new Error("D1_TYPE_ERROR: Type 'undefined' not supported for value 'undefined'");
@@ -41,15 +42,26 @@ export function createTestD1(): TestD1 {
         const rows = raw.prepare(sql).all(...(args as never[])) as Record<string, unknown>[];
         return { results: rows.map((r) => ({ ...r })) as T[], success: true, meta: {} };
       },
+      // batch 用の同期版。SELECT なら results、それ以外は changes を返す
+      runSync: () => {
+        if (/^\s*select/i.test(sql)) {
+          const rows = raw.prepare(sql).all(...(args as never[])) as Record<string, unknown>[];
+          return { results: rows.map((r) => ({ ...r })), success: true, meta: {} };
+        }
+        const r = raw.prepare(sql).run(...(args as never[]));
+        return { success: true, meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) }, results: [] };
+      },
     };
     return stmt;
   };
 
+  // D1 の batch は 1 トランザクションで直列に実行される。ここでも await を挟まず同期で回す
+  // （await を挟むと並行する batch の BEGIN が交互に入り、本物に無い失敗が起きる）。
   const batch = async (stmts: Array<ReturnType<typeof prepare>>) => {
     const out = [];
     raw.exec("BEGIN");
     try {
-      for (const s of stmts) out.push(await s.run());
+      for (const s of stmts) out.push(s.runSync());
       raw.exec("COMMIT");
     } catch (e) {
       raw.exec("ROLLBACK");

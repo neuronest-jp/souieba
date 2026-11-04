@@ -25,7 +25,9 @@ export async function resolveUserId(
   if (authz) {
     const m = /^Bearer\s+(.+)$/i.exec(authz.trim());
     if (!m || !m[1]) return { userId: null, reason: "bad_authorization" };
-    if (!env.JWT_SECRET) return { userId: null, reason: "not_configured" };
+    if (!env.JWT_SECRET || (env.ENVIRONMENT !== "development" && env.JWT_SECRET.length < 32)) {
+      return { userId: null, reason: "not_configured" };
+    }
     try {
       const claims = await verifyJwt(m[1], env.JWT_SECRET, deps.now ? deps.now() : undefined);
       const email = normalizeEmail(claims.sub);

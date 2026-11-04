@@ -17,7 +17,9 @@ ios/App/Pods/
 ios/App/App.xcworkspace/xcuserdata/
 ios/App/App.xcodeproj/xcuserdata/
 ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
-ios/App/public/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
 ios/App/build/
 ios/App/output/
 ios/DerivedData/
@@ -26,6 +28,8 @@ android/.idea/
 android/build/
 android/app/build/
 android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.*.json
+android/app/src/main/res/xml/config.xml
 android/capacitor-cordova-android-plugins/build/
 android/local.properties
 *.mobileprovision

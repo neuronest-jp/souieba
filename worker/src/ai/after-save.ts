@@ -5,10 +5,13 @@ import { beginRecall, runRecall, type RecallDeps } from "./recall";
 
 export const aiAfterSave = (deps: { facts?: FactsDeps; recall?: RecallDeps } = {}): AfterSave =>
   async ({ env, userId, memory, waitUntil }) => {
-    // 201 の前: running の記録を作る（画面の pending 判定に使う）
+    // 201 の前: running の記録を作る（画面の pending 判定に使う）。facts はすぐ waitUntil に渡し、recall の失敗に巻き込まれない。
     const factsRunId = await beginFacts(env, userId, memory, deps.facts);
-    const recall = await beginRecall(env, userId, memory, deps.recall);
-    // 201 の後: それぞれ独立に実行
     waitUntil(runFacts(env, factsRunId, memory, deps.facts));
-    if (recall) waitUntil(runRecall(env, recall.runId, memory, recall.past, deps.recall));
+    try {
+      const recall = await beginRecall(env, userId, memory, deps.recall);
+      if (recall) waitUntil(runRecall(env, recall.runId, memory, recall.past, deps.recall));
+    } catch (e) {
+      console.error("beginRecall failed", memory.id, e);
+    }
   };

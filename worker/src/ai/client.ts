@@ -19,7 +19,8 @@ export type AiResult =
 export type AiCaller = (env: Pick<Env, "ANTHROPIC_API_KEY" | "ANTHROPIC_MODEL">, req: AiRequest) => Promise<AiResult>;
 
 export const TIMEOUT_MS = 20_000;
-export const MAX_TOKENS = 4096;
+// thinking（既定の adaptive。切れない）も max_tokens に数えられるため、出力の JSON だけで見積もらない。
+export const MAX_TOKENS = 16000;
 
 export const callClaude: AiCaller = async (env, req) => {
   const model = env.ANTHROPIC_MODEL;
