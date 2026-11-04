@@ -21,7 +21,10 @@
     "typecheck": "tsc -p worker/tsconfig.json --noEmit && tsc -p worker/tsconfig.test.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check:hook": "node scripts/check-hook.mjs"
+    "check:hook": "node scripts/check-hook.mjs",
+    "cap:sync": "pnpm build:web && cap sync",
+    "cap:ios": "pnpm cap:sync && cap open ios",
+    "cap:android": "pnpm cap:sync && cap open android"
   },
   "dependencies": {
     "@capacitor/camera": "^8.2.6",
