@@ -6,6 +6,9 @@ import { ApiError, errorBody } from "./errors";
 import { authRoutes, type AuthDeps } from "./routes/auth";
 import { memoriesRoutes, type MemoriesDeps } from "./routes/memories";
 import { getPhotoRoute, putPhotoRoute } from "./routes/photos";
+import { factsRoute, memoryFactsRoute } from "./routes/facts";
+import { memoryRecallsRoute, recallsRoute } from "./routes/recalls";
+import { aiAfterSave } from "./ai/after-save";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
 export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps; auth?: AuthDeps };
@@ -54,7 +57,11 @@ export const createApp = (deps: AppDeps = {}): AppType => {
     });
   });
 
-  authed.route("/memories", memoriesRoutes(deps.memories));
+  authed.route("/memories", memoriesRoutes({ afterSave: aiAfterSave(), ...deps.memories }));
+  authed.route("/memories", memoryFactsRoute());
+  authed.route("/memories", memoryRecallsRoute());
+  authed.route("/facts", factsRoute());
+  authed.route("/recalls", recallsRoute());
   authed.route("/memories", putPhotoRoute());
   authed.route("/photos", getPhotoRoute());
 

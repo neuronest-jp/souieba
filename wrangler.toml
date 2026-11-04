@@ -2,6 +2,7 @@
 name = "souieba"
 main = "worker/src/index.ts"
 compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]  # @anthropic-ai/sdk のため
 
 # 画面（web/dist）は同じ Worker から配信する。/api/* だけ Worker のコードが先に処理する。
 [assets]
