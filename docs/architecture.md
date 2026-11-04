@@ -227,7 +227,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 - すべて `/api/*`、JSON（写真の PUT と GET を除く）。`/api/health` 以外は 3 章の認証が必要
 - 他ユーザーの資源は存在しないものとして扱い 404 を返す（403 で存在を漏らさない）
 - エラー形式: `{"error": {"code": "...", "message": "..."}}`。`message` は日本語で、画面にそのまま出せる短い文
-- requirements.md との読み替え（tasks J-7）: requirements の `{status: "pending"|"done", facts|recalls: [...]}` は本書の `{pending: boolean, items: [...]}` に、`PATCH /api/facts/:id` の `{status: confirmed|rejected}` は本書の `{decision: confirm|reject}` に読み替える。エラーコード名は requirements の短い形（`validation` / `too_large` / `unsupported_media`）に本書を揃えた
+- requirements.md との読み替え（tasks J-7）: requirements の `{status: "pending"|"done", facts|recalls: [...]}` は本書の `{pending: boolean, items: [...]}` に、`PATCH /api/facts/:id` の本体は requirements と同じ `{status: "confirmed" | "rejected"}`（tasks J-7 (2)。保存する値と同じ語）。エラーコード名は requirements の短い形（`validation` / `too_large` / `unsupported_media`）に本書を揃えた
 
 | code | HTTP | 例 |
 |---|---|---|
@@ -338,7 +338,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 ### 5.10 PATCH /api/facts/:id
 
 ```json
-→ {"decision": "confirm"}      または {"decision": "reject"}
+→ {"status": "confirmed"}      または {"status": "rejected"}
 200 {"id": "f01…", "status": "confirmed", "decided_at": "…"}
 ```
 
@@ -714,6 +714,6 @@ curl -s -H "$H" -X DELETE -o /dev/null -w '%{http_code}\n' localhost:8787/api/me
 | 1 | `/api/health` の受け入れ条件 | ホスト全体を Access 配下に置くため、JWT なしの curl は 302/401。Access 経由なら 200（3.3） | requirements N-9、tasks T-1104-16、setup-cloudflare.md 7.1 の表 |
 | 2 | ポーリング打ち切り | 30 秒（15 回）。requirements N-2、tasks T-1106-08 と同じ | wireframes.md 2.6（15 秒 → 30 秒） |
 | 3 | 既定モデル | `claude-opus-5-5`（ADR-0003 / 0005） | 解消済み（tasks J-5 も opus） |
-| 4 | API レスポンスの形とエラーコード名 | `{pending, items}`、`{decision}`、`recalled_by`、`validation` / `too_large` / `unsupported_media` / `internal`（5 章） | requirements F3 / F4 / F5（tasks J-7 のとおり本書に寄せる） |
+| 4 | API レスポンスの形とエラーコード名 | `{pending, items}`、`{status: confirmed|rejected}`（J-7 (2)）、`recalled_by`、`validation` / `too_large` / `unsupported_media` / `internal`（5 章） | requirements F3 / F4 / F5（tasks J-7 のとおり本書に寄せる） |
 | 5 | `ai_runs(kind='recall')` | 過去記憶 0 件なら行を作らない（6.2）。requirements N-5 と同じ | なし |
 | 6 | `ACCESS_TEAM_DOMAIN` の値 | Team 名だけ（worker/src/access.ts、setup-cloudflare.md と同じ） | なし |

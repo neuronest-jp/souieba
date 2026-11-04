@@ -55,7 +55,7 @@ Access はホスト全体（`/` と `/api/*`）を守る構成（docs/setup-clou
 | F1-5 | `GET /api/me` が 401 を返す（ローカルで `X-Dev-User` を外す、または本番で Access のセッションが切れた） | `/` を表示 | S0 ようこそ（アプリ名、一行の説明、「はじめる」）が出る。「はじめる」は `/` を再読み込みし、本番では Access のログイン画面へ、ローカルでは S0 のまま。メールアドレス入力やパスワード欄はない | 画面（ローカル） |
 | F1-6 | ログイン済み | `/` を表示 | S1 きょう が開く。画面にメールアドレス入力やパスワード欄はない | 画面 |
 
-エラー時: 401 のとき画面は S0 に戻す。JWKS 取得に失敗したときも 401（200 にしない）。
+エラー時: 401 のとき画面は S0 に戻す。JWKS の取得に失敗したとき（上流の障害）は 503 `auth_unavailable`（200 にしない。401 と区別し、画面は「いま、うまくつながりません」を出す。T-1104-08）。
 
 ### F2 記憶の登録（P0）
 
@@ -94,7 +94,7 @@ Access はホスト全体（`/` と `/api/*`）を守る構成（docs/setup-clou
 | 入力 | 出力 |
 |---|---|
 | `GET /api/memories?cursor=` | `{ items: [{ id, body, happened_on, happened_on_precision, photo_key, created_at }], next_cursor }`。1ページ 20 件 |
-| `GET /api/memories/:id` | `{ memory, facts: [...], recalls: [...], recalled_by: [...] }`。`facts` は全 status（candidate / confirmed / rejected）を返す。`recalls` はこの記憶が新しい側の札、`recalled_by` はこの記憶が思い出された側の札 |
+| `GET /api/memories/:id` | `{ memory, facts: { pending, items }, recalls: { pending, items }, recalled_by: { items } }`（J-7）。`facts` は全 status（candidate / confirmed / rejected）を返す。`recalls` はこの記憶が新しい側の札、`recalled_by` はこの記憶が思い出された側の札 |
 | `DELETE /api/memories/:id` | 204 |
 
 事実の表示: API は全 status を返す。S1（保存直後）は candidate と confirmed を並べ、rejected は薄く残す（F4-4）。S3 は confirmed だけを「確定済みの事実」として見せる（第6節 S3）。
@@ -121,7 +121,7 @@ Access はホスト全体（`/` と `/api/*`）を守る構成（docs/setup-clou
 | 入力 | 出力 |
 |---|---|
 | Claude（Structured Outputs、スキーマ名 `extract_facts`。ADR-0005）へ: `body` のみ | `[{ kind, value, evidence }]`。`evidence` は `body` の逐語引用 |
-| `GET /api/memories/:id/facts` | `{ status: "pending" \| "done", facts: [{ id, kind, value, status, source, evidence }] }`。`status` の導出は第2節「AI 処理の状態」 |
+| `GET /api/memories/:id/facts` | `{ pending: boolean, items: [{ id, kind, value, status, source, evidence }] }`。`pending` の導出は第2節「AI 処理の状態」 |
 | `PATCH /api/facts/:id` JSON `{ status: "confirmed" \| "rejected" }` | 200、更新後の fact。`decided_at` を設定 |
 
 Worker の検証と保存（この順に適用する）: (1) `evidence` が空、または `body` の部分文字列でないもの（X-6, X-7）、`kind` が 4 種以外のものを捨てる → (2) `(kind, value)` が同じものは最初の 1 件を残して除く → (3) 残りを `source='ai'`, `status='candidate'` で保存。0 件なら `ai_runs.status='empty'`。
@@ -132,16 +132,16 @@ Worker の検証と保存（この順に適用する）: (1) `evidence` が空�
 
 | ID | Given | When | Then | 検証 |
 |---|---|---|---|---|
-| F4-1 | `body = "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた"` を登録 | 10 秒以内に `GET /facts` | `status = "done"`。`kind='person'` と `kind='thing'` の候補が 1 件以上あり、すべて `status = 'candidate'`, `source = 'ai'`、`evidence` はすべて本文の部分文字列 | 通し |
+| F4-1 | `body = "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた"` を登録 | 10 秒以内に `GET /facts` | `pending = false`。`kind='person'` と `kind='thing'` の候補が 1 件以上あり、すべて `status = 'candidate'`, `source = 'ai'`、`evidence` はすべて本文の部分文字列 | 通し |
 | F4-2 | Claude が `evidence = "祖母"` の候補を返した（本文に「祖母」はない） | Worker の検証 | その候補は D1 に保存されず、画面にも出ない。他の候補は残る | 単体 |
 | F4-3 | 候補 C（candidate） | `PATCH /api/facts/C { status: "confirmed" }` | 200。`status = 'confirmed'`, `decided_at` が非 NULL。画面では「そう」が moss 色で選択状態になる | 単体、画面 |
 | F4-4 | 候補 C（candidate） | `{ status: "rejected" }` | `status = 'rejected'`。画面からは薄く消える（行自体は削除しない）。F5 と F9 の入力に含まれない | 単体、画面 |
-| F4-5 | Claude のモックが空配列を返す | `GET /facts` | `status = "done"`, `facts = []`、`ai_runs(kind='facts', status='empty')`。画面には候補の枠も見出しも出ない | 単体、画面（モック） |
+| F4-5 | Claude のモックが空配列を返す | `GET /facts` | `pending = false`, `items = []`、`ai_runs(kind='facts', status='empty')`。画面には候補の枠も見出しも出ない | 単体、画面（モック） |
 | F4-6 | 他人の候補 C | `PATCH /api/facts/C` | 404 | 単体 |
 | F4-7 | Claude が `thing: 梅干し` を 2 件（evidence はどちらも本文にある）返した | Worker の検証 | 保存は 1 件 | 単体 |
 | F4-8 | Claude が `kind='date', value='2026-06'` を返した | 画面 | 「2026年6月ごろ」と表示される | 単体（表示関数）、画面 |
 
-エラー時: Claude 呼び出し失敗（HTTP エラー、タイムアウト、JSON 不正、`stop_reason='max_tokens'`）は `ai_runs(kind='facts', status='failed')` を記録し、`status = "done"`, `facts = []` を返す。`stop_reason='refusal'`（HTTP 200）も失敗と同じ扱い: `status='failed'`、`error` に `refusal:<stop_details.category>` を記録、画面は静か（ADR-0005）。再試行はしない（第9節）。
+エラー時: Claude 呼び出し失敗（HTTP エラー、タイムアウト、JSON 不正、`stop_reason='max_tokens'`）は `ai_runs(kind='facts', status='failed')` を記録し、`pending = false`, `items = []` を返す。`stop_reason='refusal'`（HTTP 200）も失敗と同じ扱い: `status='failed'`、`error` に `refusal:<stop_details.category>` を記録、画面は静か（ADR-0005）。再試行はしない（第9節）。
 
 ### F5 そういえば（P0、C1）
 
@@ -150,24 +150,24 @@ Worker の検証と保存（この順に適用する）: (1) `evidence` が空�
 | 入力 | 出力 |
 |---|---|
 | Claude（Structured Outputs、スキーマ名 `recall`。ADR-0005）へ: 新しい記憶の `body` + 過去記憶 `[{ id, happened_on, body, facts(confirmed のみ) }]` を `created_at DESC` で最大 200 件 | `[{ related_memory_id, reason, evidence }]` 最大 3 件。`evidence` は related 側 `body` の逐語引用 |
-| `GET /api/memories/:id/recalls` | `{ status: "pending" \| "done", recalls: [{ id, related_memory: { id, body, happened_on, photo_key }, reason, evidence, feedback }] }`。`status` の導出は第2節「AI 処理の状態」 |
+| `GET /api/memories/:id/recalls` | `{ pending: boolean, items: [{ id, related_memory: { id, body, happened_on, photo_key }, reason, evidence, feedback }] }`。`pending` の導出は第2節「AI 処理の状態」 |
 
 受け入れ条件
 
 | ID | Given | When | Then | 検証 |
 |---|---|---|---|---|
-| F5-1 | 過去に「おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた」がある | 「スーパーで青梅を見かけた」を登録し 10 秒以内に `GET /recalls` | `status = "done"`, 札 1 枚。`related_memory_id` が梅干しの記憶、`evidence` がその本文の部分文字列、`reason` が 1〜80 文字 | 通し |
-| F5-2 | 過去に梅干し・三輪車など 2 件 | 「電気代を払った。先月より少し安かった」を登録 | `status = "done"`, `recalls = []`。画面には札も「関連なし」の文言も出ない。`ai_runs(kind='recall', status='empty')` | 通し |
+| F5-1 | 過去に「おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた」がある | 「スーパーで青梅を見かけた」を登録し 10 秒以内に `GET /recalls` | `pending = false`, 札 1 枚。`related_memory_id` が梅干しの記憶、`evidence` がその本文の部分文字列、`reason` が 1〜80 文字 | 通し |
+| F5-2 | 過去に梅干し・三輪車など 2 件 | 「電気代を払った。先月より少し安かった」を登録 | `pending = false`, `items = []`。画面には札も「関連なし」の文言も出ない。`ai_runs(kind='recall', status='empty')` | 通し |
 | F5-3 | Claude が 5 件返した | Worker の検証 | この順に適用する: (1) `evidence` が空または related 側 `body` に含まれないもの、`related_memory_id` が自分の記憶でない・送った 200 件に無い・新しい記憶自身と同じものを捨てる → (2) `related_memory_id` の重複を除く（最初の 1 件を残す） → (3) 残りの先頭から最大 3 件を保存。残り 0 なら `status='empty'` | 単体 |
-| F5-4 | 過去の記憶が 0 件 | 最初の記憶を登録 | `ai_runs(kind='recall')` を作らず、Claude の recall も呼ばない。`recalls = []`, `status = "done"` | 単体 |
+| F5-4 | 過去の記憶が 0 件 | 最初の記憶を登録 | `ai_runs(kind='recall')` を作らず、Claude の recall も呼ばない。`items = []`, `pending = false` | 単体 |
 | F5-5 | 過去の記憶が 250 件 | 登録 | Claude へ送るのは `created_at DESC` 上位 200 件。`ai_runs.input_tokens` が記録される | 単体（モックで入力件数を数える） |
 | F5-6 | 札が 1 枚ある | 札を開く | S3 相当の詳細（昔の本文全文、写真、起きた日）と根拠の引用が本文中で強調される。「そうだった」「関係ないかも」が押せる | 画面 |
 | F5-7 | Claude が同じ `related_memory_id` を 2 件返した | Worker の検証 | 保存は 1 件。`recalls` の `UNIQUE (memory_id, related_memory_id)` で INSERT が失敗しない | 単体 |
 | F5-8 | Claude が 5 件返し、先頭 3 件のうち 2 件の `evidence` が本文に無い | Worker の検証 | 保存は 3 件（有効な 4〜5 件目が繰り上がる） | 単体 |
-| F5-9 | `POST` 直後、`waitUntil` がまだ `ai_runs` を更新していない | `GET /recalls` | `status = "pending"`（`running` の行があるため）。`done` と誤判定しない | 単体 |
-| F5-10 | `ai_runs(kind='recall', status='running')` の `created_at` が 61 秒前 | `GET /recalls` | `status = "done"`, `recalls = []` | 単体 |
+| F5-9 | `POST` 直後、`waitUntil` がまだ `ai_runs` を更新していない | `GET /recalls` | `pending = true`（`running` の行があるため）。`done` と誤判定しない | 単体 |
+| F5-10 | `ai_runs(kind='recall', status='running')` の `created_at` が 61 秒前 | `GET /recalls` | `pending = false`, `items = []` | 単体 |
 
-エラー時: 失敗（HTTP エラー、タイムアウト、JSON 不正、`max_tokens`）は `ai_runs.status = 'failed'`、`status = "done"`, `recalls = []`。`stop_reason='refusal'`（HTTP 200）も同じ扱いで `error` に `refusal:<stop_details.category>` を記録（ADR-0005）。画面は静かなまま。再試行しない。
+エラー時: 失敗（HTTP エラー、タイムアウト、JSON 不正、`max_tokens`）は `ai_runs.status = 'failed'`、`pending = false`, `items = []`。`stop_reason='refusal'`（HTTP 200）も同じ扱いで `error` に `refusal:<stop_details.category>` を記録（ADR-0005）。画面は静かなまま。再試行しない。
 
 ### F6 反応（P0）
 
@@ -263,7 +263,7 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | X-2 | 1 | 候補のままの fact | F5・F9 の入力生成 | `status='confirmed'` 以外は含まれない。`memories.body` も変更されない | 単体 |
 | X-3 | 1 | 日付候補を確定 | PATCH | `memories.happened_on` は自動では変わらない（変えるのはユーザーの編集だけ。編集は P2） | 単体 |
 | X-4 | 2 関係なければ提案しない | Claude が空配列 | recalls | `ai_runs.status='empty'`。画面に札も「見つかりませんでした」等の文言も出ない。S1 は保存直後の静かな状態のまま | 単体、画面（モック） |
-| X-5 | 2 | 札が 0 件 | 1 分経過 | 画面は変わらない（ポーリングは `status="done"` で止まる） | 画面 |
+| X-5 | 2 | 札が 0 件 | 1 分経過 | 画面は変わらない（ポーリングは `pending = false` で止まる） | 画面 |
 | X-6 | 3 根拠 | `evidence` が引用元 body の部分文字列でない本文由来の提案（候補・札・語りの段落） | Worker の検証 | 保存も表示もされない。`evidence` が空文字のものも同じ。写真由来の候補（`evidence` が `photo:` で始まる）は対象外（F7） | 単体 |
 | X-7 | 3 | `evidence` を照合 | 比較 | 正規化（空白除去、全角半角変換）をしない。完全な部分文字列一致（`body.includes(evidence)`）だけを採用する | 単体 |
 | X-8 | 3 | 札を表示 | 画面 | `reason` と `evidence` の両方が札に見える。引用は「」で囲む | 画面 |
@@ -278,12 +278,12 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | ID | 項目 | Given | When | Then | 検証 |
 |---|---|---|---|---|---|
 | N-1 | 想起の応答 | 過去記憶 50 件 | 登録 | `POST /api/memories` は 1 秒以内に 201 を返す（Claude 呼び出しは `ctx.waitUntil`）。札は登録から 10 秒以内に画面に出る | 通し |
-| N-2 | ポーリング | 登録直後 | S1 | `GET /facts` と `GET /recalls` を 2 秒間隔で呼び、両方 `status="done"` で止める。30 秒で `done` にならなければ止めて何も出さない | 画面 |
+| N-2 | ポーリング | 登録直後 | S1 | `GET /facts` と `GET /recalls` を 2 秒間隔で呼び、両方 `pending = false` で止める。30 秒で `done` にならなければ止めて何も出さない | 画面 |
 | N-3 | 画面 | 幅 375px（iPhone SE 相当） | S1〜S3 | 横スクロールが出ない。本文の `font-size` が 17px 以上、行間 1.8 | 画面 |
 | N-4 | 画面 | 幅 1280px | S1〜S3 | 本文列の最大幅 640px で中央寄せ。崩れない | 画面 |
 | N-5 | コスト | 1 件の記憶 | 登録から 1 分後 | `ai_runs` は `kind='facts'` 1 行、`kind='recall'` 0〜1 行（過去記憶が無ければ 0）、写真があり上限内なら `kind='photo'` 1 行。同じ `memory_id`・`kind` の 2 行目は作られない | 単体 |
 | N-6 | コスト | 過去記憶 300 件 | 登録 | Claude への過去記憶は 200 件ちょうど | 単体 |
-| N-7 | 失敗時 | Anthropic API が 500 | 登録 | 再試行しない（`maxRetries: 0`）。`ai_runs.status='failed'`, `error` に要約。`status="done"` で画面は静か | 単体 |
+| N-7 | 失敗時 | Anthropic API が 500 | 登録 | 再試行しない（`maxRetries: 0`）。`ai_runs.status='failed'`, `error` に要約。`pending = false` で画面は静か | 単体 |
 | N-7b | 失敗時 | Anthropic API が HTTP 200 で `stop_reason='refusal'` | 登録 | `ai_runs.status='failed'`, `error = 'refusal:<stop_details.category>'`（category が null なら `refusal:unknown`）。保存 0 件、画面は静か（ADR-0005） | 単体 |
 | N-8 | セキュリティ | リポジトリ | `git ls-files` | `.dev.vars` が含まれない（`.dev.vars.example` は含む）。`wrangler.toml` に `ANTHROPIC_API_KEY` の値が無い | 単体（シェル） |
 | N-9 | セキュリティ | 本番 | `curl` で JWT なし `/api/memories` | 401 または Access の 302。`/api/health` は Access 設定前は 200、設定後は Access 配下（docs/setup-cloudflare.md 第 8 節） | 通し |

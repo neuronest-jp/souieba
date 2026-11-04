@@ -2,7 +2,7 @@
 
 - 根拠: docs/spec.md 第6節（画面一覧）、第3.1節（主要な流れ）、第5節（非機能）。受け入れ条件は docs/requirements.md の ID で参照する
 - デザイン: ADR-0004（カラー・フォント・動き）。トークン名は `web/src/style.css` の `@theme` と同じ（本文フォントは `font-body`）
-- API の形: docs/architecture.md 第5節を正とする（`{pending, items}`、`PATCH /api/facts/:id` は `{decision}`、`GET /api/memories/:id` に `recalled_by`）。requirements.md の `{status: "pending"|"done"}` / `{status: "confirmed"}` は tasks J-7 のとおり読み替える（第8節 #12）
+- API の形: docs/architecture.md 第5節を正とする（`{pending, items}`、`PATCH /api/facts/:id` は `{status: "confirmed" | "rejected"}`（tasks J-7）、`GET /api/memories/:id` に `recalled_by`）。requirements.md の `{status: "pending"|"done"}` / `{status: "confirmed"}` は tasks J-7 のとおり読み替える（第8節 #12）
 - 画面遷移: docs/architecture.md 第7節（ハッシュ `#today` / `#past` / `#memory/<id>`、vue-router なし）
 - 想定幅: スマホ縦 375px。図の枠は内側 40 セル（全角 1 文字 = 2 セル）。PC では中央 560px に収めて同じ構成
 - 図中の `[ ]` はボタン、`( )` は入力欄、`▭` は写真、`‹` は戻る、`▒` は本文中の引用の強調
@@ -198,8 +198,8 @@ F2「起きた日（既定: 今日。精度: 日/月/年/不明）」は過去�
 | 候補の行 | 人 / 場所 / 日 / もの + 値 | 種別は `text-ink-faint` 14px、値は `text-ink` 17px。行の高さ 44px（根拠の行があるときはその分伸びる）。`kind` の表示は person=人、place=場所、date=日、thing=もの |
 | 日付候補の表示 | 2025年6月15日 / 2025年6月 / 2025年 | `kind = 'date'` の `value` は `YYYY-MM-DD` / `YYYY-MM` / `YYYY` のいずれかで、形に合わないものは Worker が捨てる（architecture 4.3 / 6.5）。画面は `value` の長さ（10 / 7 / 4 文字）で精度を判定し、S2 の起きた日と同じ表記で出す。「毎年6月」のような文字列が値になることはない。本文に年が無いとき Claude がどの年を入れるかは候補にすぎず、「そう」と答えても `memories.happened_on` は変わらない（X-3） |
 | 根拠 | 「おばあちゃん」/ 「毎年6月になると」 | `evidence` は必ず画面に出す（原則 3、X-8 の「引用は「」で囲む」）。値と `evidence` が同じ文字列のときは値そのものを「」で囲んで出す（値がそのまま本文からの引用であることを示す）。違うときは値を「」なしで出し、その下に `text-ink-soft` 14px で「`evidence`」を出す |
-| そう | そう | 小さな選択。押すと `PATCH /api/facts/:id {"decision":"confirm"}`（architecture 5.10）、`bg-moss-soft` + `border-moss` で選択状態（F4-3）。「ちがう」は消える |
-| ちがう | ちがう | 押すと `{"decision":"reject"}`。行が `opacity-50` になり「そう」「ちがう」は消える（F4-4） |
+| そう | そう | 小さな選択。押すと `PATCH /api/facts/:id {"status":"confirmed"}`（architecture 5.10、J-7）、`bg-moss-soft` + `border-moss` で選択状態（F4-3）。「ちがう」は消える |
+| ちがう | ちがう | 押すと `{"status":"rejected"}`。行が `opacity-50` になり「そう」「ちがう」は消える（F4-4） |
 | もうひとつ書く | もうひとつ書く | `text-ink` 17px のテキストボタン、下に 1px の `bg-ember` 線、タップ領域 44px。押すと 2.1 に戻る。記録したものは S2 から見られる |
 | 保存に失敗したとき | うまく保存できませんでした。もう少ししてから、もう一度 | 2.1 のまま本文を消さず、保存ボタンの下に `text-ink-soft` 14px で一文（F2 エラー時、requirements 第2節、tasks T-1105-08。第8節 #14）。写真だけ失敗なら「写真だけ、あとでもう一度」 |
 
@@ -611,7 +611,7 @@ S1 の札「ひらく ›」から来た場合は、`recall_id` をクエリ（`
 | 9 | 写真の原寸表示（4.1）は要件に無い | 簡易ビューア（`<dialog>` に `<img>`、ピンチはブラウザ任せ）。間に合わなければ写真はタップ不可のままでよい |
 | 10 | S4 に必要な API が足りない。(a) 確定済み `person` の一覧を返す API が spec 第8節・architecture 5 章・requirements F8 のどこにも無い。(b) 段落の「引用元の月」は `paragraphs[]` に `memory_id` しか無く、段落数だけ `GET /api/memories/:id` を呼ぶことになる。(c) エンドポイント自体も requirements F8 は `POST /api/retrospects {person?, from?, to?}`、architecture 5.13 は `POST /api/memories/:id/retrospect {axis, value|from, to}` で食い違う | 最小案: 「だれのこと」は自由入力、月表示は省く（5 節）。一覧が要るなら `GET /api/facts?kind=person&status=confirmed` を足すか、retrospect API の前段で返す。月を出すなら `paragraphs[].happened_on` をレスポンスに含める。エンドポイントは architecture 側（ただし `:id` に依らない形）に揃えることを提案。入口「ふりかえる」と `#retrospect` は architecture 7.1 の 3 ハッシュに無く、F8 を作るときだけ追加。P0 では置かない |
 | 11 | 下部ナビを S3 でも出すかは仕様に無い | 出す（現在地が分かる）。S0 と削除確認シートでは出さない |
-| 12 | API の形が requirements と architecture で異なる。`PATCH /api/facts/:id` の本体は architecture 5.10 が `{"decision": "confirm"|"reject"}`、requirements F4 が `{status: "confirmed"|"rejected"}`。`GET /facts` / `GET /recalls` の完了判定は architecture が `pending: false`、requirements が `status: "done"`。`GET /api/memories/:id` の `recalled_by` は architecture 5.5 が `{items}`（`pending` なし）、requirements F3 が配列 | architecture 5 章に揃える（tasks J-7、architecture 12 #4 のとおり）。本書の記述は `{decision}`、`pending`、`recalled_by.items` で統一した。requirements F3 / F4 / F5 の追従が必要 |
+| 12 | API の形が requirements と architecture で異なる。`PATCH /api/facts/:id` の本体は architecture 5.10 が `{"decision": "confirm"| 解消済み（tasks J-7、T-1105-00）。`{pending, items}` と `{status: confirmed\|rejected}` で統一 |"rejected"}`。`GET /facts` / `GET /recalls` の完了判定は architecture が `pending: false`、requirements が `status: "done"`。`GET /api/memories/:id` の `recalled_by` は architecture 5.5 が `{items}`（`pending` なし）、requirements F3 が配列 | architecture 5 章に揃える（tasks J-7、architecture 12 #4 のとおり）。本書の記述は `{decision}`、`pending`、`recalled_by.items` で統一した。requirements F3 / F4 / F5 の追従が必要 |
 | 13 | ポーリング打ち切りが旧版の本書（2.6）で 15 秒、requirements N-2 と architecture 7.2 / 12 #2 では 30 秒（2 秒間隔 15 回） | 30 秒を採用（2.6 を修正）。D2 の受け入れ条件 N-2 は 30 秒で検証される |
 | 14 | 保存失敗の文言が 2 系統ある。requirements 第2節と tasks T-1105-08 は「うまく保存できませんでした。もう少ししてから、もう一度」、architecture 7.3 と旧版の本書は「保存できませんでした。もう一度お試しください」 | requirements 側を採用（0 節の「敬体を使わない」に合う）。architecture 7.3 の追従を提案 |
 | 15 | エラー時の画面が未定義だった（requirements F3 エラー時、F1 エラー時、S3 の 404） | 一覧失敗「読み込めませんでした」+ 副ボタン「もう一度」（3.2）、削除失敗「消せませんでした」（4.3）、S3 の 404 / 失敗「この記憶は見つかりませんでした」+ ‹ これまで（4 節冒頭）、401 は S0 へ戻す（0 節）。tasks T-1105-09 / T-1105-10 / T-1108-03 の文言と揃えた |
