@@ -15,6 +15,10 @@ const FORBIDDEN = [
   // .dev.vars と .dev.vars.<env> は禁止。テンプレートの .dev.vars.example だけ許す。
   { pattern: /\.dev\.vars(?!\.example\b)/, label: ".dev.vars" },
   { pattern: /demo\/photos(\/|$|[\s"'`])/, label: "demo/photos/" },
+  // ios/ と android/ 配下の署名ファイル（ADR-0007）。拡張子は場所を問わず禁止。
+  { pattern: /\.(mobileprovision|p12|cer|keystore|jks)(?![\w.])/, label: "署名ファイル（証明書・鍵）" },
+  { pattern: /(^|[\/\s"'`=])(ios\/[^\s"'`]*ExportOptions\.plist|android\/[^\s"'`]*key\.properties)/, label: "署名設定（ExportOptions.plist / key.properties）" },
+  { pattern: /(google-services\.json|GoogleService-Info\.plist)/, label: "Firebase 設定ファイル" },
 ];
 
 // 区間の先頭コマンドがこれだけなら「読むだけ」とみなす。

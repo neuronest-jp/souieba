@@ -24,10 +24,18 @@
     "check:hook": "node scripts/check-hook.mjs"
   },
   "dependencies": {
+    "@capacitor/camera": "^8.2.6",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
     "hono": "^4.13.16",
     "vue": "^3.5.44"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
     "@cloudflare/workers-types": "^5.20261103.1",
     "@tailwindcss/vite": "^4.3.4",
     "@types/node": "^22.20.5",

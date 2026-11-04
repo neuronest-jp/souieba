@@ -44,6 +44,19 @@ const cases = [
   [DENY, "Bash", { command: `python3 - <<'EOF'\nopen('${V}','w')\nEOF` }],
   // ヒアドキュメントの出力先が禁止パスなら拒否
   [DENY, "Bash", { command: `cat > ${V} <<'EOF'\nA=1\nEOF` }],
+  // ios/ android/ の署名ファイル（ADR-0007）
+  [DENY, "Write", { file_path: "/x/ios/App/App/ExportOptions.plist" }],
+  [DENY, "Write", { file_path: "/x/ios/certs/dist.mobileprovision" }],
+  [DENY, "Edit", { file_path: "/x/android/key.properties" }],
+  [DENY, "Write", { file_path: "/x/android/app/release.keystore" }],
+  [DENY, "Write", { file_path: "/x/android/app/google-services.json" }],
+  [DENY, "Write", { file_path: "/x/ios/App/App/GoogleService-Info.plist" }],
+  [DENY, "Bash", { command: "cp ~/dist.p12 ios/App/" }],
+  [DENY, "Bash", { command: "keytool -genkey -keystore android/app/upload.jks" }],
+  [ALLOW, "Write", { file_path: "/x/ios/App/App/Info.plist" }],
+  [ALLOW, "Edit", { file_path: "/x/android/app/build.gradle" }],
+  [ALLOW, "Bash", { command: "ls ios/App/App/ExportOptions.plist" }],
+  [ALLOW, "Bash", { command: "cat android/gradle.properties" }],
   // 実行系と文書のヒアドキュメントが混在しても、文書側の本文は判定しない
   [ALLOW, "Bash", { command: `python3 - <<'PY'\nprint(1)\nPY\ncat > docs/x.md <<'EOF'\n- \`cat ${V}\` のような読み取り\nEOF\necho ok` }],
   [DENY, "Bash", { command: `python3 - <<'PY'\nopen('${V}','w')\nPY\ncat > docs/x.md <<'EOF'\n本文\nEOF` }],
