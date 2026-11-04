@@ -4,6 +4,8 @@ import { computed, nextTick, ref } from "vue";
 import { api } from "../api";
 import type { Memory, Precision } from "../api/types";
 import DateSheet from "../components/DateSheet.vue";
+import PhotoPicker from "../components/PhotoPicker.vue";
+import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
 import { formatHappenedOn, toIsoDate } from "../date";
 import { hrefFor } from "../composables/useScreen";
 
@@ -15,6 +17,8 @@ const whenButton = ref<HTMLButtonElement | null>(null);
 const saving = ref(false);
 const error = ref("");
 const saved = ref<Memory | null>(null);
+const photo = ref<File | null>(null);
+const photoNote = ref("");
 
 const MAX = 2000;
 const remaining = computed(() => MAX - Array.from(body.value).length);
@@ -44,18 +48,34 @@ const save = async () => {
   if (!canSave.value) return;
   saving.value = true;
   error.value = "";
+  photoNote.value = "";
+  let memory: Memory;
   try {
-    saved.value = await api.createMemory({
+    memory = await api.createMemory({
       body: body.value.trim(),
       happened_on_precision: precision.value,
       ...(precision.value === "unknown" ? {} : { happened_on: happenedOnForPost.value }),
     });
-    body.value = "";
   } catch {
     error.value = "うまく保存できませんでした。もう少ししてから、もう一度";
-  } finally {
     saving.value = false;
+    return;
   }
+  // 記憶は残った。写真だけ失敗しても記憶は消さない（requirements F2 エラー時）
+  if (photo.value) {
+    try {
+      const blob = await shrinkPhoto(photo.value);
+      if (blob.size > PHOTO_MAX_BYTES) throw new Error("too large");
+      const r = await api.putPhoto(memory.id, blob);
+      memory = { ...memory, photo_key: r.photo_key, photo_content_type: r.photo_content_type };
+    } catch {
+      photoNote.value = "写真だけ、あとでもう一度";
+    }
+  }
+  saved.value = memory;
+  body.value = "";
+  photo.value = null;
+  saving.value = false;
 };
 
 const another = () => {
@@ -85,9 +105,7 @@ const another = () => {
         <p v-if="remaining < 100" class="text-right text-sm text-ink-soft" aria-live="polite">あと {{ remaining }} 文字</p>
       </section>
 
-      <div>
-        <button class="btn btn-quiet min-h-11 px-4 text-sm" type="button" disabled>写真を添える</button>
-      </div>
+      <PhotoPicker v-model="photo" />
 
       <div class="flex flex-col items-center gap-3">
         <button class="btn btn-primary px-10" type="button" :disabled="!canSave" @click="save">保存する</button>
@@ -99,11 +117,15 @@ const another = () => {
 
     <template v-else>
       <p class="text-sm text-ink-soft" role="status">残しました</p>
-      <article class="card appear p-4">
-        <p class="text-sm text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
-        <p class="mt-1 whitespace-pre-wrap leading-relaxed">{{ saved.body }}</p>
+      <article class="card appear overflow-hidden">
+        <img v-if="saved.photo_key" :src="`/api/photos/${saved.photo_key}`" alt="" class="h-[200px] w-full object-cover" />
+        <div class="p-4">
+          <p class="text-sm text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
+          <p class="mt-1 whitespace-pre-wrap leading-relaxed">{{ saved.body }}</p>
+        </div>
       </article>
-      <div class="flex items-center gap-6">
+      <p v-if="photoNote" class="text-sm text-ink-soft" role="alert">{{ photoNote }}</p>
+      <div class="flex items-baseline gap-6">
         <button type="button" class="min-h-11 border-b border-ember text-ink" @click="another">もうひとつ書く</button>
         <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="min-h-11 text-ink-soft">ひらく ›</a>
       </div>

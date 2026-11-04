@@ -3,6 +3,7 @@ import { requireUser, type ResolveUserDeps } from "./auth";
 import { type Env, type Variables } from "./env";
 import { ApiError, errorBody } from "./errors";
 import { memoriesRoutes, type MemoriesDeps } from "./routes/memories";
+import { getPhotoRoute, putPhotoRoute } from "./routes/photos";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
 
@@ -48,6 +49,8 @@ export const createApp = (deps: AppDeps = {}): AppType => {
   });
 
   authed.route("/memories", memoriesRoutes(deps.memories));
+  authed.route("/memories", putPhotoRoute());
+  authed.route("/photos", getPhotoRoute());
 
   app.route("/api", authed);
   return app;

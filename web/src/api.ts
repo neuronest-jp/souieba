@@ -56,4 +56,12 @@ export const api = {
     request<MemoryList>(`/api/memories${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   getMemory: (id: string) => request<MemoryDetail>(`/api/memories/${encodeURIComponent(id)}`),
   deleteMemory: (id: string) => request<void>(`/api/memories/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  putPhoto: (id: string, photo: Blob) => {
+    const form = new FormData();
+    form.set("photo", photo, "photo.jpg");
+    return request<{ photo_key: string; photo_content_type: string }>(`/api/memories/${encodeURIComponent(id)}/photo`, {
+      method: "PUT",
+      body: form,
+    });
+  },
 };

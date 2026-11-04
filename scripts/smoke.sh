@@ -38,8 +38,21 @@ if [ -z "$EXPECT_PRODUCTION" ]; then
   [ -n "$id" ] || fail "登録の応答に id が無い: $created"
   curl -sf -H "$H" "$BASE/api/memories" | grep -q "\"id\":\"$id\"" || fail "一覧に出ない"
   curl -sf -H "$H" "$BASE/api/memories/$id" | grep -q '"recalled_by"' || fail "1 件取得の形が違う"
+  echo "== 写真: PUT（1x1 PNG）→ GET → GIF は 415"
+  png=$(mktemp); printf 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' | base64 -d > "$png"
+  put=$(curl -sf -X PUT -H "$H" -F "photo=@$png;type=image/png" "$BASE/api/memories/$id/photo") || fail "写真の PUT に失敗"
+  key=$(echo "$put" | sed -n 's/.*"photo_key":"\([^"]*\)".*/\1/p')
+  [ -n "$key" ] || fail "photo_key が無い: $put"
+  ct=$(curl -s -o /dev/null -w '%{content_type}' -H "$H" "$BASE/api/photos/$key")
+  [ "$ct" = "image/png" ] || fail "写真の GET の content-type が違う: $ct"
+  gif=$(mktemp); printf 'GIF89a' > "$gif"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT -H "$H" -F "photo=@$gif;type=image/gif" "$BASE/api/memories/$id/photo")
+  [ "$code" = "415" ] || fail "GIF が 415 でない: $code"
+  rm -f "$png" "$gif"
   code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "$H" "$BASE/api/memories/$id")
   [ "$code" = "204" ] || fail "削除が 204 でない: $code"
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "$H" "$BASE/api/photos/$key")
+  [ "$code" = "404" ] || fail "削除後も写真が残っている: $code"
   code=$(curl -s -o /dev/null -w '%{http_code}' -H "$H" "$BASE/api/memories/$id")
   [ "$code" = "404" ] || fail "削除後が 404 でない: $code"
   code=$(curl -s -o /dev/null -w '%{http_code}' -H "$H" -H 'content-type: application/json' -d '{"body":"   "}' "$BASE/api/memories")
