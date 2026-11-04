@@ -2,7 +2,7 @@
 
 - 根拠: docs/spec.md 第14節（作成順と日程）、第4節（P0 / P1）、第11節（デモ4シナリオ）
 - 受け入れ条件: docs/requirements.md の条件 ID（`F2-3`、`S-4`、`X-6`、`N-1` の形）を参照する
-- 既定値: ADR-0003。デザイン: ADR-0004。AI 出力の形とモデル: ADR-0005。D1 スキーマ: worker/migrations/0001_init.sql（変更しない）
+- 既定値: ADR-0003。デザイン: ADR-0004。AI 出力の形とモデル: ADR-0005。配布（Capacitor）と認証（招待コード + JWT）: ADR-0007（11/4。コミット f05308d / 3872c37 / e6908c6 / a48ebc0）。D1 スキーマ: worker/migrations/0001_init.sql（記憶。変更しない）と 0002_login_attempts.sql（ログインのレート制限）
 - 粒度: 0.25〜2 時間。ID は `T-mmdd-nn`。状態は「未着手 / 進行中 / 完了 / 保留」。着手時に書き換える
 - 1 日の持ち時間は 8 時間を上限とする。各日の合計は見積(h) 列を機械的に足した値（`awk` で検算。セル内の `\|` を除いてから分割する）。超える日は P1 を落とす
 
@@ -10,9 +10,9 @@
 
 | # | 項目 | 必要になる日 | 内容 | 決まらない場合の既定 |
 |---|---|---|---|---|
-| J-1 | クレデンシャル投入 | 11/4 | `wrangler login`（Cloudflare）、`wrangler secret put ANTHROPIC_API_KEY`、ローカルは `.dev.vars` に `ANTHROPIC_API_KEY` と `ENVIRONMENT=development` を手で書く。Claude Code は `.dev.vars` に書けない | 投入されるまで AI 呼び出しは `ai_runs.status='failed'` で記録され、登録・一覧・削除だけ動く |
+| J-1 | クレデンシャル投入 | 11/4 | `wrangler login`（Cloudflare）、`wrangler secret put ANTHROPIC_API_KEY`、`wrangler secret put INVITE_CODE`（開発者が決める 12 文字以上のランダム文字列。アプリのログイン画面で入力する）、`wrangler secret put JWT_SECRET`（32 文字以上。`openssl rand -base64 48`）。ローカルは `.dev.vars` に `ANTHROPIC_API_KEY` と `ENVIRONMENT=development` を手で書く（`INVITE_CODE` / `JWT_SECRET` は `pnpm dev:worker` が開発用の既定値 `dev` / `dev-only-secret` を渡すので省いてよい）。Claude Code は `.dev.vars` に書けない。手順は docs/setup-cloudflare.md 4.1 | `ANTHROPIC_API_KEY` が無い間は AI 呼び出しが `ai_runs.status='failed'` で記録され、登録・一覧・削除だけ動く。`INVITE_CODE` / `JWT_SECRET` が無い間は本番の `POST /api/auth/login` が 503 でログインできない |
 | J-2 | D1 / R2 の作成 | 11/4 | `wrangler d1 create souieba` の `database_id` を wrangler.toml に貼る。`wrangler r2 bucket create souieba-photos` | 現在の `database_id` はダミー。埋まるまで `db:migrate:remote` と本番 deploy は通らない |
-| J-3 | ドメイン | 11/4 | Access で守るホスト名（例 `souieba.neuronest.jp`）。wrangler.toml に `routes`（custom_domain）を追加し `workers_dev = false` にする。Access の Self-hosted アプリをそのホスト全体に設定し、`ACCESS_TEAM_DOMAIN` と `ACCESS_AUD` を `[vars]` に書く | 当面は `souieba.<account>.workers.dev` を Access で守る（requirements S-10 の記述どおり）。architecture 3.3 の `workers_dev = false` は提出前の切替候補 |
+| J-3 | API のカスタムドメイン（アプリが叩く） | 11/8 まで | アプリは `VITE_API_BASE` に書いた URL の `/api/*` だけを呼ぶ。独自ドメイン（例 `souieba.neuronest.jp`）にするなら wrangler.toml に `routes`（custom_domain）を追加し `workers_dev = false` にして deploy し、`web/.env.production` の `VITE_API_BASE` を変えてアプリをビルドし直す（docs/setup-cloudflare.md 5.3 / 8 節）。認証は Worker 自身が行うので Cloudflare 側のアクセス制御（Access）は不要 | 当面は `https://souieba.<account>.workers.dev` を `VITE_API_BASE` にする。独自ドメインは提出前の切替候補。切り替えるとアプリの再ビルドと再インストールが要るので 11/8 の実機確認（T-1108-08）より前に決める |
 | J-4 | 写真素材 | 11/7 | 開発者が権利を持つ写真（JPEG、10MB 以下）を次のファイル名で `demo/photos/` に置く。**`demo/photos/park-flower.jpg`**（D3 の公園の花。梅。必須）、**`demo/photos/ume.jpg`**（D1 の青梅。任意）。D4 用の自転車の写真は不要。ファイル名は demo/fixtures/scenarios.json と demo/fixtures/README.md に合わせたもので、demo/photos/README.md の例 `d3-park-flower.jpg` は古い（T-1107-03 で開発者に修正を依頼する） | 写真なしで D3 を F4 の候補「場所: 公園」を「ちがう」にする代替手順（requirements 第7節）で通す |
 | J-5 | モデル | 11/6 | `ANTHROPIC_MODEL` は `claude-opus-5-5`（ADR-0005、wrangler.toml と .dev.vars.example の現在値）。コストや所要秒数で困ったら `claude-sonnet-5-5` に下げる | opus のまま。11/6 の T-1106-10 で token 数と所要秒数を出し、下げるかを判断する |
 | J-7 | API レスポンスの形 | 11/5 | requirements と architecture の差を次のとおり決める。(1) `GET /facts` `GET /recalls` と `GET /api/memories/:id` の中は architecture 5 章の `{ pending: boolean, items: [...] }`（`recalled_by` は `{ items }` のみ）。(2) `PATCH /api/facts/:id` のボディは requirements の `{ status: "confirmed" \| "rejected" }`（保存する値と同じ語。architecture 5.10 の `{ decision }` は使わない）。(3) エラー `code` は requirements 第2節の短い名 `validation` / `unauthorized` / `not_found` / `too_large` / `unsupported_media` と、500 は既存 worker/src/errors.ts・index.ts の `internal`。(4) ポーリングの打ち切りは requirements N-2 の 30 秒（2 秒間隔 15 回）。(5) 写真候補（F7）は requirements F7 のとおり `memory_facts` に `source='ai'`, `evidence='photo:<photo_key>'` で保存し、確定・却下は同じ `PATCH /api/facts/:id`。ユーザー由来の fact を作る API は増やさない | 上記のとおり。文書の追従は T-1105-00 で行う |
@@ -25,7 +25,7 @@ J-6（AI 出力の形: tool use か `output_config.format` か）は ADR-0005 �
 | 日 | 主眼 | 合計見積 | 終わりの確認 |
 |---|---|---|---|
 | 11/3 | ドキュメント（本書を含む） | 完了 | `docs/` が揃う |
-| 11/4 | 雛形の確認、D1、デザイン基盤、`/api/health`、Access、deploy | 7.0h | 本番でログインして S1 が開く |
+| 11/4 | 雛形の確認、D1、デザイン基盤、`/api/health`、ログイン（招待コード + JWT）、deploy | 7.0h | 本番の `/api/auth/login` に招待コードで入れて `/api/me` が返る。画面で S0 → S1 |
 | 11/5 | 文書の整合、F2 登録（写真を除く）、F3 一覧・詳細・削除 | 7.75h | 書いて、一覧で見て、消せる |
 | 11/6 | F4 候補抽出、F5 そういえば、引用検証 | 8.0h | D1（梅干し）と D2（電気代）が通る |
 | 11/7 | 写真 R2、F6 反応、デモ4本の通し。F7 写真候補は残時間があれば | 7.25h（F7 の 2.5h は別枠） | 本番で D1〜D4 が通る |

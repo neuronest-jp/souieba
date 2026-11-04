@@ -22,9 +22,11 @@
 
 | 項目 | 内容 |
 |---|---|
-| ユーザーの単位 | `user_id` はログインメールアドレス（第10節）。すべての API は自分の `user_id` のデータだけを返す。他人のデータは存在しないものとして扱い 404 を返す |
+| ユーザーの単位 | `user_id` はログイン時に入力したメールアドレス（小文字化。JWT の `sub`。第10節）。すべての API は自分の `user_id` のデータだけを返す。他人のデータは存在しないものとして扱い 404 を返す |
+| 配布と呼び出し元 | アプリは Capacitor（iOS / Android）の WebView で動き、API を `VITE_API_BASE`（ビルド時の環境変数。`https://<api-domain>`）に向けて呼ぶ。Web の開発（`pnpm dev`）では `VITE_API_BASE` を空にし、同一オリジンの `/api` を Vite が 8787 に中継する。Workers Static Assets の配信は開発用プレビューだけ（第12節） |
+| CORS | Worker は `capacitor://localhost`（iOS）、`https://localhost`（Android）、`http://localhost:5173`（Vite）、`http://localhost` だけを `Access-Control-Allow-Origin` に返す（worker/src/cors.ts で固定。設定項目ではない）。許可ヘッダは `Authorization` / `Content-Type` / `X-Dev-User`。Cookie は使わない（`credentials: false`） |
 | ID と日時 | ID は UUID 文字列。日時は ISO 8601（UTC）。起きた日は `YYYY-MM-DD`。「今日」は `Asia/Tokyo` の今日（日本語のみのアプリ、第3.2節） |
-| エラー形式 | `{ "error": { "code": string, "message": string } }`。`code` は `validation`（400）、`unauthorized`（401）、`not_found`（404）、`too_large`（413）、`unsupported_media`（415）、`internal`（500。D1・R2 の失敗や想定外の例外。詳細は返さない）のいずれか |
+| エラー形式 | `{ "error": { "code": string, "message": string } }`。`code` は `validation`（400）、`unauthorized`（401）、`not_found`（404）、`too_large`（413）、`unsupported_media`（415）、`too_many`（429。ログインの回数制限）、`internal`（500。D1・R2 の失敗や想定外の例外。詳細は返さない）、`auth_unavailable`（503。`INVITE_CODE` / `JWT_SECRET` が未設定）のいずれか |
 | Claude の出力形式 | ADR-0005 に従う。JSON Schema の強制は Structured Outputs（`output_config.format`）で行い、`tool_choice` の強制（`any` / `tool`）は使わない（現行モデルは 400 を返す）。スキーマ名は `extract_facts` / `recall` / `photo_hints` / `retrospect` |
 | AI 処理の状態 | `ai_runs` は Claude を呼ぶ処理の「予約票」でもある。`POST /api/memories` のハンドラ内（201 を返す前）に `status='running'` の行を同期的に INSERT し、`ctx.waitUntil` の中で `succeeded` / `empty` / `failed` に更新する。`kind='facts'` は常に、`kind='recall'` は過去記憶が 1 件以上あるときだけ、`kind='photo'` は `PUT /api/memories/:id/photo` のハンドラ内で作る。`GET /facts` `GET /recalls` の `status` は「当該 `memory_id`・`kind` に `running` の行があれば `pending`、それ以外（行なしを含む）は `done`」。`running` のまま `created_at` から 60 秒を超えた行は GET 時に `done` 扱いにする（画面は何も出さない）。`waitUntil` の中は全体を try/catch で包み、例外時は `failed` に更新する |
 | 文字数の扱い | 文字数は JS の `Array.from(s).length` で数える。Claude の出力の `reason`（80 文字）、`text`（200 文字）を超えた場合は末尾を切り詰めて保存する（破棄しない）。引用 `evidence` は切り詰めない（切ると部分文字列でなくなり得る。長くてもそのまま X-7 の検証に回す） |
@@ -36,26 +38,38 @@
 
 ### F1 ログイン（P0）
 
-概要: Cloudflare Access（メール OTP）でログインする。Worker は `Cf-Access-Jwt-Assertion` を JWKS で検証し、`email` を `user_id` にする（第10節）。
+概要: 招待コードとメールアドレスでログインする（第10節、ADR-0007）。パスワードは無い。アプリは `POST /api/auth/login { invite_code, email }` を呼び、Worker は `INVITE_CODE`（wrangler secret）と定数時間で比較して、一致すれば `JWT_SECRET`（wrangler secret）で署名した HS256 の JWT `{ sub: <email 小文字>, iat, exp }`（有効 90 日）を返す。アプリは JWT を `@capacitor/preferences`（ネイティブは端末の設定領域、Web は localStorage）に保存し、以後すべての API に `Authorization: Bearer <jwt>` を付ける。Worker は署名・`exp`・`sub` の形を検証し、`sub` を `user_id` にする。
 
-Access はホスト全体（`/` と `/api/*`）を守る構成（docs/setup-cloudflare.md 第6節）。したがって本番で未ログインのブラウザは Worker に届く前に Access のログイン画面へ送られ、S0 ようこそ は本番の通常経路では表示されない。S0 は「`GET /api/me` が 401 を返したとき」だけの画面と定義する（ローカルで `X-Dev-User` が付かないとき、本番で Access のセッションが切れたとき）。
+S0 ようこそ はログイン画面そのもの。保存したトークンが無いとき、または `/api/*` が 401 を返したときに表示する（トークンは消す）。ログアウトや JWT の失効は作らない（90 日で切れる。`JWT_SECRET` を変えると全員がログアウトになる）。
 
 | 入力 | 出力 |
 |---|---|
-| ヘッダ `Cf-Access-Jwt-Assertion`（本番）、または `X-Dev-User`（`ENVIRONMENT=development` のみ） | `GET /api/me` → `{ user_id, display_name }`。初回は `users` に行を作る |
+| `POST /api/auth/login` JSON `{ invite_code, email }`（認証不要） | 200 `{ token, expires_at, user_id }`。`expires_at` は ISO 8601、`user_id` は小文字化したメール |
+| ヘッダ `Authorization: Bearer <jwt>`（本番・ローカルとも）、または `X-Dev-User`（`ENVIRONMENT=development` のみ） | `GET /api/me` → `{ user_id, display_name, since }`。初回は `users` に行を作る |
+
+ログインのエラー: 400 `validation`（コードかメールが空、JSON でない、メールの形が違う）、401 `unauthorized`「招待コードかメールアドレスが違います」（コードとメールのどちらが違うかは言わない）、429 `too_many`（同一 IP から 1 分に 10 回を超えた。D1 `login_attempts` で数える。worker/migrations/0002_login_attempts.sql）、503 `auth_unavailable`（`INVITE_CODE` か `JWT_SECRET` が未設定）。
 
 受け入れ条件
 
 | ID | Given | When | Then | 検証 |
 |---|---|---|---|---|
-| F1-1 | 本番環境、有効な JWT（`aud`・`iss` が設定値と一致、`exp` が未来、`email` = `a@example.com`） | `GET /api/me` | 200、`user_id = "a@example.com"`。`users` に `id = "a@example.com"` の行があり `last_seen_at` が更新される | 単体（JWKS をモック） |
-| F1-2 | 本番環境、JWT なし | `GET /api/me` | 401、`error.code = "unauthorized"`。D1 にも R2 にも触れない | 単体 |
-| F1-3 | 本番環境、`exp` が過去の JWT | `GET /api/memories` | 401 | 単体 |
-| F1-4 | 本番環境、`aud` が別アプリの JWT | `GET /api/memories` | 401 | 単体 |
-| F1-5 | `GET /api/me` が 401 を返す（ローカルで `X-Dev-User` を外す、または本番で Access のセッションが切れた） | `/` を表示 | S0 ようこそ（アプリ名、一行の説明、「はじめる」）が出る。「はじめる」は `/` を再読み込みし、本番では Access のログイン画面へ、ローカルでは S0 のまま。メールアドレス入力やパスワード欄はない | 画面（ローカル） |
-| F1-6 | ログイン済み | `/` を表示 | S1 きょう が開く。画面にメールアドレス入力やパスワード欄はない | 画面 |
+| F1-1 | `INVITE_CODE` と `JWT_SECRET` が設定済み | `POST /api/auth/login { invite_code: <正しいコード>, email: "A@Example.com" }` | 200。`token` は 3 分割の JWT で、ヘッダ `alg = "HS256"`、ペイロード `sub = "a@example.com"`、`exp - iat = 7776000`（90 日）。`user_id = "a@example.com"`、`expires_at` は `exp` と同じ時刻 | 単体 |
+| F1-2 | 同上 | F1-1 の `token` を `Authorization: Bearer` に付けて `GET /api/me` | 200、`user_id = "a@example.com"`。`users` に `id = "a@example.com"` の行があり、2 回目で `last_seen_at` が更新される | 単体 |
+| F1-3 | 同上 | `invite_code` が違う（1 文字違い、長さ違いを含む） | 401 `unauthorized`、`message = "招待コードかメールアドレスが違います"`。`login_attempts` に `ok = 0` の行が 1 行増える。トークンは返さない | 単体 |
+| F1-4 | 同上 | `invite_code` または `email` が空、本文が JSON でない、`email` が `a@b.c` の形でない、または 255 文字以上 | 400 `validation`。`login_attempts` には書かない | 単体 |
+| F1-5 | 同一 IP（`cf-connecting-ip`）から直近 1 分に 10 回の試行がある | 11 回目の `POST /api/auth/login`（コードが正しくても） | 429 `too_many`。トークンは返さない。1 分後の試行は再び受け付ける | 単体（`now` を差し替える） |
+| F1-6 | `INVITE_CODE` または `JWT_SECRET` が未設定 | `POST /api/auth/login` | 503 `auth_unavailable`。401 と区別する。画面は「いま、うまくつながりません」 | 単体 |
+| F1-7 | `exp` が過去の JWT、署名が別の secret の JWT、`alg` が `none` / `RS256` の JWT、3 分割でない文字列 | `GET /api/memories` | いずれも 401 `unauthorized`。本文に理由は出さず、`console.warn("auth rejected", { reason, path })` にだけ残す | 単体 |
+| F1-8 | 本番（`ENVIRONMENT` が `development` 以外） | `X-Dev-User: a@example.com` だけで `GET /api/me` | 401。ヘッダは無視される | 単体、通し |
+| F1-9 | `pnpm dev:worker`（`ENVIRONMENT=development`） | `X-Dev-User: you@example.com` で `GET /api/me` | 200、`user_id = "you@example.com"`。`Authorization` と `X-Dev-User` の両方があれば JWT を使う | API |
+| F1-10 | アプリにトークンが無い（初回起動、または 401 で消した後） | 起動 | S0 ようこそ（アプリ名、一行の説明、招待コードとメールアドレスの入力欄、「はじめる」）が出る。コードとメールの両方が入るまで「はじめる」は押せない | 画面 |
+| F1-11 | S0 | 正しいコードとメールで「はじめる」 | `POST /api/auth/login` が 200 → トークンを `@capacitor/preferences`（キー `souieba.token`）に保存 → S1 きょう が開く。アプリを終了して再起動しても S0 を経ずに S1 が開く（トークンの保持） | 画面（Web はブラウザの再読み込み、ネイティブはアプリの再起動） |
+| F1-12 | S0 | コードが違う（401）、または入力の形が違う（400） | 「招待コードかメールアドレスが違うようです」を一文だけ `text-ink-soft` で出す。入力は消さない | 画面 |
+| F1-13 | S0 | 429 | 「少し待ってから、もう一度」 | 画面 |
+| F1-14 | S0 | 503、ネットワーク断、その他 | 「いま、うまくつながりません」 | 画面 |
+| F1-15 | ログイン済み（S1〜S3 のどこか） | いずれかの `/api/*` が 401 を返す（期限切れ、`JWT_SECRET` の変更） | 保存したトークンを消し、`souieba:unauthorized` イベントで S0 に戻る。文言は出さない | 画面 |
 
-エラー時: 401 のとき画面は S0 に戻す。JWKS の取得に失敗したとき（上流の障害）は 503 `auth_unavailable`（200 にしない。401 と区別し、画面は「いま、うまくつながりません」を出す。T-1104-08）。
+エラー時: 401 のとき画面はトークンを消して S0 に戻す。503 `auth_unavailable` は 401 と区別し、画面は「いま、うまくつながりません」を出す（トークンは消さない）。
 
 ### F2 記憶の登録（P0）
 
@@ -285,30 +299,33 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | N-6 | コスト | 過去記憶 300 件 | 登録 | Claude への過去記憶は 200 件ちょうど | 単体 |
 | N-7 | 失敗時 | Anthropic API が 500 | 登録 | 再試行しない（`maxRetries: 0`）。`ai_runs.status='failed'`, `error` に要約。`pending = false` で画面は静か | 単体 |
 | N-7b | 失敗時 | Anthropic API が HTTP 200 で `stop_reason='refusal'` | 登録 | `ai_runs.status='failed'`, `error = 'refusal:<stop_details.category>'`（category が null なら `refusal:unknown`）。保存 0 件、画面は静か（ADR-0005） | 単体 |
-| N-8 | セキュリティ | リポジトリ | `git ls-files` | `.dev.vars` が含まれない（`.dev.vars.example` は含む）。`wrangler.toml` に `ANTHROPIC_API_KEY` の値が無い | 単体（シェル） |
-| N-9 | セキュリティ | 本番 | `curl` で JWT なし `/api/memories` | 401 または Access の 302。`/api/health` は Access 設定前は 200、設定後は Access 配下（docs/setup-cloudflare.md 第 8 節） | 通し |
+| N-8 | セキュリティ | リポジトリ | `git ls-files` | `.dev.vars`、`web/.env.production`、`web/.env.local`、`ios/` `android/` 配下の署名ファイル（`*.mobileprovision`、`*.p12`、`*.keystore`、`*.jks`、`key.properties`、`google-services.json`、`GoogleService-Info.plist`）が含まれない（`.dev.vars.example`、`web/.env.example` は含む）。`wrangler.toml` と文書に `ANTHROPIC_API_KEY` / `INVITE_CODE` / `JWT_SECRET` の値が無い（`dev` / `dev-only-secret` は開発専用の既定値で秘密ではない） | 単体（シェル） |
+| N-9 | セキュリティ | 本番 | `curl` で `Authorization` なし `/api/memories`、`X-Dev-User` だけの `/api/me` | いずれも 401。`/api/health` と `POST /api/auth/login` だけが認証なしで到達できる（`/api/health` は 200） | 通し |
+| N-9b | セキュリティ | 本番 | `POST /api/auth/login` を同一 IP から 1 分に 11 回 | 11 回目が 429。招待コードの総当たりを遅らせる（F1-5） | 通し |
+| N-9c | セキュリティ | 本番 | `Origin: https://evil.example` で `OPTIONS /api/me` | `Access-Control-Allow-Origin` が返らない。`Origin: capacitor://localhost` なら同じ値が返る（第2節 CORS） | 通し |
 | N-10 | 可用性 | `wrangler.toml` | 確認 | D1 バインディング 1 本（`souieba`）、R2 バケット 1 本（`souieba-photos`）、Worker 名 `souieba` | 単体（grep） |
 | N-11 | デザイン基盤 | `web/src/style.css` | 確認 | ADR-0004 の 10 トークンが `@theme` に定義され、`.vue` に `#` 始まりの色指定が無い | 単体（grep） |
 | N-12 | 札の動き | 札が出る | 表示 | 600ms のフェード + 上方向スライド。音や通知は出ない | 画面 |
 
 ## 6. 11/4 スコープの受け入れ条件
 
-対象: プロジェクト雛形、D1 マイグレーション適用、デザイン基盤、`/api/health`、Access 疎通、`wrangler deploy`。
+対象: プロジェクト雛形、D1 マイグレーション適用、デザイン基盤、`/api/health`、招待コード + JWT のログイン疎通、`wrangler deploy`。当初は Cloudflare Access の疎通だったが ADR-0007 で置き換えた（コミット e6908c6）。
 
 | ID | Given | When | Then | 検証 |
 |---|---|---|---|---|
 | S-1 | クリーンな clone | `pnpm install && pnpm typecheck && pnpm test && pnpm build` | すべて終了コード 0。`pnpm build` は `wrangler deploy --dry-run` まで通る | API（シェル） |
-| S-2 | ローカル | `pnpm db:migrate:local` | `users`, `memories`, `memory_facts`, `recalls`, `ai_runs` の 5 テーブルができる。二度目の実行は何も適用せず成功する | API（シェル） |
-| S-3 | リモート | `pnpm db:migrate:remote` | 同じ 5 テーブル。`wrangler d1 migrations list souieba --remote` で 0001 が適用済み | 通し |
+| S-2 | ローカル | `pnpm db:migrate:local` | `users`, `memories`, `memory_facts`, `recalls`, `ai_runs`, `login_attempts` の 6 テーブルができる（0001 と 0002）。二度目の実行は何も適用せず成功する | API（シェル） |
+| S-3 | リモート | `pnpm db:migrate:remote` | 同じ 6 テーブル。`wrangler d1 migrations list souieba --remote` で 0001 と 0002 が適用済み | 通し |
 | S-4 | `pnpm dev:worker` | `GET http://localhost:8787/api/health` | 200、`{ ok: true, service: "souieba", version: string, time: ISO8601 }`。認証ヘッダ不要 | API |
 | S-5 | `pnpm dev:worker`（`ENVIRONMENT=development`） | `GET /api/me` に `X-Dev-User: you@example.com` | 200、`user_id = "you@example.com"` | API |
-| S-5b | `pnpm dev:worker` と `pnpm dev` | ブラウザで `http://localhost:5173/`、開発者ツールで `/api/me` | 画面の開発サーバが `X-Dev-User` を自動で付け、`/api/me` が 200。S1 が開く | 画面 |
+| S-5b | `pnpm dev:worker` と `pnpm dev` | ブラウザで `http://localhost:5173/`、開発者ツールで `/api/me` | 画面の開発サーバが `X-Dev-User` を自動で付け、`/api/me` が 200。S0 を経ずに S1 が開く | 画面 |
+| S-5c | `pnpm dev:worker` | `POST /api/auth/login { invite_code: "dev", email: "you@example.com" }`（`dev:worker` が渡す開発専用の既定値）→ 返った `token` で `GET /api/me` | 200 → 200、`user_id = "you@example.com"`。`bash scripts/smoke.sh` がこの流れを含む | API |
 | S-6 | `pnpm dev:worker`（`ENVIRONMENT=development`） | `X-Dev-User` なしで `GET /api/me` | 401 | API |
 | S-7 | `pnpm dev:worker`（`ENVIRONMENT=development`） | `X-Dev-User: not-an-email` | 401（`@` を含む簡易検証） | API |
 | S-8 | 本番（`ENVIRONMENT` 未設定または `production`） | `X-Dev-User: you@example.com` だけで `GET /api/me` | 401。ヘッダは無視される | 単体、通し |
-| S-9 | 本番 | 有効な JWT と `X-Dev-User: other@example.com` の両方 | 200、`user_id` は JWT の `email`。`X-Dev-User` は使われない | 単体 |
-| S-10 | 本番 | ブラウザで `https://<worker>.workers.dev/` | Access のメール OTP を経て S1 きょう が表示される（S0 は出ない。F1-5）。`Cf-Access-Jwt-Assertion` が Worker に届き `GET /api/me` が 200 | 通し |
-| S-11 | 本番 | `pnpm run deploy` | Static Assets から `index.html` が配信され、`/api/health` が 200。`/api/*` 配下の未知パス（例 `/api/nothing`）は `not_found` の JSON 404、それ以外の未知パスは SPA の `index.html` を返す | 通し |
+| S-9 | 本番 | 有効な JWT と `X-Dev-User: other@example.com` の両方 | 200、`user_id` は JWT の `sub`。`X-Dev-User` は使われない | 単体 |
+| S-10 | 本番 | `curl -d '{"invite_code":"<本物>","email":"you@example.com"}' https://<api-domain>/api/auth/login` → 返った `token` で `GET /api/me` | 200 → 200、`user_id = "you@example.com"`。`X-Dev-User` だけでは 401（S-8）。アプリ（または `pnpm preview` の画面）から同じコードとメールで「はじめる」→ S1 が開く | 通し |
+| S-11 | 本番 | `pnpm run deploy` | `/api/health` が 200。`/api/*` 配下の未知パス（例 `/api/nothing`）は `not_found` の JSON 404。開発用プレビューとして Static Assets から `index.html` が配信され、それ以外の未知パスは SPA の `index.html` を返す（配布には使わない。第12節） | 通し |
 | S-12 | `web/src/style.css` | ブラウザで S1 | 背景 `#FAF5EC`、見出しが Zen Maru Gothic、本文が Noto Sans JP（読み込み前は system-ui）。本文 17px | 画面 |
 | S-13 | `.claude/settings.json` | Claude Code が `.dev.vars` または `demo/photos/x.jpg` に Write | フックが拒否する（`.dev.vars.example` は書ける） | 単体（フックに JSON を流す） |
 
@@ -331,7 +348,7 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | 2 | 第9節は失敗時 `failed` のみ記すが、スキーマは `empty` を持つ | 0 件は `empty`、検証で全件破棄も `empty`（X-4） |
 | 3 | C2 は日付候補に精度を付けるが `memory_facts` に精度の列が無い | `value` の長さ（10/7/4 文字）で表し、画面は「〜ごろ」で精度を見せる（F4）。確定しても起きた日には反映しない（X-3）。日付候補の確定時に起きた日へ反映するかは開発者判断（反映するなら P2 の編集と同じ扱い） |
 | 4 | C3 写真候補は本文の引用を持てないが、スキーマは `source='ai'` に `evidence` 必須 | 写真候補も `memory_facts` に `source='ai'`, `status='candidate'` で保存し、`evidence` に `photo:<photo_key>` を入れる（F7）。引用検証（X-6/X-7）は本文由来だけに限定する。これにより候補 → PATCH で確定の流れが F4 と共通になり、AI 由来の痕跡が残る（原則 1）。Worker はステートレスで、D1 以外に候補を置く場所がない（KV/DO はスタック外）ための判断。ADR を書いて開発者に報告する |
-| 5 | F2「HEIC 変換済み」の変換主体が不明。ブラウザで HEIC を JPEG に変換するには依存追加が要る | 受け付けるのは JPEG/PNG のみ、HEIC は端末側で変換済みの前提（F2-7）。iPhone の Safari は `accept="image/jpeg,image/png"` で自動変換することが多い。画面の縮小（Canvas）も JPEG/PNG だけを対象にする |
+| 5 | F2「HEIC 変換済み」の変換主体が不明。ブラウザで HEIC を JPEG に変換するには依存追加が要る | 受け付けるのは JPEG/PNG のみ、HEIC は端末側で変換済みの前提（F2-7）。ネイティブでは `@capacitor/camera` が JPEG で返す（#17）。Web の `<input type="file">` フォールバックでは iPhone の Safari が `accept="image/jpeg,image/png"` で自動変換することが多い。画面の縮小（Canvas）も JPEG/PNG だけを対象にする |
 | 6 | 精度 month/year のときの `happened_on` の値が未定義 | `YYYY-MM-01` / `YYYY-01-01` を置く（F2 既定値）。並び順の都合 |
 | 7 | 第8節 F8 の API は `POST /api/memories/:id/retrospect` だが、語りの軸は人物/期間で記憶単位ではない | `POST /api/retrospects` に変更を提案（F8）。語りは保存しない（保存先のテーブルが無い） |
 | 8 | F9 検索の API が第8節に無い | `GET /api/memories?q=` を提案 |
@@ -339,7 +356,8 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | 10 | D3 の「桜でしょうか」は写真由来の候補で、F7（P1）に依存する | F7 が間に合わない場合の代替手順を第7節に記した |
 | 11 | 第3.1節 5 の「学習には使わず記録のみ」を F6-4 で検証可能にした（Claude 入力に `feedback` を含めない） | 仕様の意図どおり |
 | 12 | 第2節・第9節の「tool use による JSON Schema 強制」 | ADR-0005 に従い Structured Outputs（`output_config.format`）で行う。スキーマ名（`extract_facts` 等）はログと単体テストの識別子として残す |
-| 13 | 第6節 S0 は「未ログイン時」の画面だが、Access がホスト全体を守るため本番の未ログインは Worker に届かない | S0 は `GET /api/me` が 401 のときだけ（ローカル未設定、Access セッション切れ）に限定し、S-10 は「OTP を経て S1」とした（F1-5）。`/api/*` だけを Access の対象にする案（(a)）は docs/setup-cloudflare.md の変更を伴うため採らない。11/4 中に開発者が (a) を選ぶなら F1-5・S-10・setup-cloudflare.md を合わせて直す |
+| 13 | 旧 v0.2 では Cloudflare Access がホスト全体を守るため S0 が本番で表示されず、S0 の定義に無理があった | ADR-0007 で認証を招待コード + JWT に変え、S0 をログイン画面そのものにした（F1-10〜F1-15）。Access・JWKS・OTP 前提の記述は本書から除いた。JWT の失効（ログアウト）は作らない。`JWT_SECRET` のローテーションで全員ログアウト |
+| 17 | `@capacitor/camera` が返す写真の形式 | ネイティブでは `CameraResultType.DataUrl`（JPEG、品質 85、長辺 1600px）で受け取るため HEIC は来ない。Web の `<input type="file">` フォールバックは #5 のまま。縮小（F2-10）は両経路で画面側が行う |
 | 14 | `happened_on` 省略時の「今日」のタイムゾーン | Worker・画面とも `Asia/Tokyo`（第2節、F2-1）。UTC と日付が変わる時間帯（JST 0〜9 時）の検証がぶれない |
 | 15 | エラー `code` の名前が docs/architecture.md（`internal_error`, `payload_too_large`）と本書（`internal`, `too_large`）で異なる | 本書の名前を正とし、architecture.md の追従を提案。実装は 1 箇所（`worker/src/errors.ts` 相当）に集める |
 | 16 | ポーリングの打ち切り | 30 秒で統一済み（本書 N-2、architecture 7.2、wireframes 2.6）。想起は 10 秒以内が目標だが Opus の遅い応答に余裕を持たせる |

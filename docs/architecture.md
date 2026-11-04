@@ -1,25 +1,28 @@
 # アーキテクチャ
 
 「そういえば。」の技術構成。基本要件は docs/spec.md（以下「仕様」）。章番号は仕様のもの。
-既定値は ADR-0003、デザインは ADR-0004 に従う。D1 スキーマは worker/migrations/0001_init.sql を正とする。
+既定値は ADR-0003、デザインは ADR-0004、配布（Capacitor）と認証（招待コード + JWT）は ADR-0007 に従う。D1 スキーマは worker/migrations/（0001_init.sql、0002_login_attempts.sql）を正とする。
 
 ## 1. 全体図
 
 ```
- スマホ / PC のブラウザ（Vue 3 SPA）
-        │  HTTPS（カスタムドメイン）
-        ▼
- Cloudflare Access（メール OTP）  … アプリ全体（/ と /api/* の両方）を保護
-        │  Cf-Access-Jwt-Assertion ヘッダを付与
-        ▼
+ Capacitor アプリ（iOS / Android の WebView で Vue 3 SPA）        開発プレビュー（ブラウザ）
+   origin: capacitor://localhost（iOS）/ https://localhost（Android）    http://localhost:5173（vite dev）
+        │  HTTPS、VITE_API_BASE（https://<api-domain>）                   │  /api を 8787 へ中継（X-Dev-User を付与）
+        │  Authorization: Bearer <JWT>                                    │  または pnpm preview（8787 一本）
+        ▼                                                                ▼
  Cloudflare Worker「souieba」
-   ├─ /api/*          → Hono（run_worker_first）
-   │     ├─ Access JWT 検証 → user_id（= email）
-   │     ├─ D1 "souieba"            … users / memories / memory_facts / recalls / ai_runs
+   ├─ /api/*          → Hono（run_worker_first）。CORS は許可オリジン固定（3.4）
+   │     ├─ POST /api/auth/login   … 招待コード + メール → HS256 JWT（90 日）。IP ごとに 1 分 10 回
+   │     ├─ Bearer JWT 検証 → user_id（= sub = email）。development のみ X-Dev-User も可
+   │     ├─ D1 "souieba"            … users / memories / memory_facts / recalls / ai_runs / login_attempts
    │     ├─ R2 "souieba-photos"     … 写真の実体
    │     └─ Anthropic API（@anthropic-ai/sdk）… C1 想起 / C2 候補抽出
-   └─ それ以外        → Workers Static Assets（web/dist、SPA フォールバック）
+   └─ それ以外        → Workers Static Assets（web/dist、SPA フォールバック）。開発用プレビューだけで、配布には使わない
 ```
+
+- 配布はアプリストア経由ではなく、ハッカソン期間中は Xcode / Android Studio からのインストール（docs/setup-capacitor.md）。App Store / Play への提出は対象外
+- アプリは画面を端末内に持ち、Worker には `/api/*` だけを呼ぶ。Worker の URL はビルド時の `VITE_API_BASE` で決まる
 
 ### 1.1 記憶を保存したときの流れ（仕様 5 章: 10 秒以内）
 
@@ -55,10 +58,13 @@
 |---|---|
 | `wrangler.toml` | ルートに置く。Worker 名 `souieba`、D1 / R2 バインディング、`[assets]`、`[vars]` |
 | `vite.config.ts` | ルートに置く。`root: "web"`、`build.outDir: "dist"`（= `web/dist`）、`server.proxy` |
-| `web/index.html` | SPA の入口。Google Fonts の link と `#app` |
-| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアントと 5 章のレスポンス型）、`date.ts`、`screens/`（S0〜S3）、`components/`、`composables/` |
-| `worker/src/` | Hono。`index.ts`（app とルート登録）、`access.ts`（Access JWT の検証。純粋ロジック）、`auth.ts`（認証ミドルウェア。JWT と `X-Dev-User` の振り分け）、`env.ts`、`errors.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts` |
-| `worker/migrations/` | D1 マイグレーション。`0001_init.sql` のみ（変更しない） |
+| `capacitor.config.ts` | ルートに置く。appId `jp.neuronest.souieba`、appName「そういえば。」、`webDir: "web/dist"`、地の色 `#FAF5EC`、SplashScreen / StatusBar の設定 |
+| `ios/` `android/` | `cap add` が生成したネイティブプロジェクト。git にコミットする（`Pods/`、`build/`、`public/`、署名ファイルは除く。.gitignore とフックで保護） |
+| `web/index.html` | SPA の入口。Google Fonts の link と `#app`。`viewport-fit=cover` |
+| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアント。`VITE_API_BASE`、Bearer、401 で `souieba:unauthorized`）、`auth.ts`（トークンの保持。`@capacitor/preferences`）、`camera.ts`（写真の取得。ネイティブは `@capacitor/camera`、Web は `<input type="file">`）、`native.ts`（ステータスバーとスプラッシュ。Web では何もしない）、`photo.ts`（縮小）、`date.ts`、`screens/`（S0〜S3）、`components/`、`composables/` |
+| `web/.env.example` | `VITE_API_BASE` の見本。実際の値は `web/.env.production` / `web/.env.local`（git に入れない） |
+| `worker/src/` | Hono。`index.ts`（app とルート登録）、`jwt.ts`（HS256 の署名と検証、定数時間比較。純粋ロジック）、`auth.ts`（認証ミドルウェア。Bearer と `X-Dev-User` の振り分け）、`cors.ts`（許可オリジン）、`routes/auth.ts`（`POST /api/auth/login`）、`env.ts`、`errors.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts` |
+| `worker/migrations/` | D1 マイグレーション。`0001_init.sql`（記憶のスキーマ。変更しない）と `0002_login_attempts.sql`（ログインのレート制限） |
 | `worker/test/` | vitest（Node 環境）の単体テスト |
 | `demo/fixtures/` | デモ 4 シナリオの JSON と seed SQL |
 | `demo/photos/` | 開発者が置く。Claude Code は書き込まない |
@@ -72,8 +78,9 @@ main = "worker/src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]   # @anthropic-ai/sdk のため
 
-# 当面（tasks J-3）: workers_dev = true（既定）のまま *.workers.dev を Access で守る。
+# 当面（tasks J-3）: workers_dev = true（既定）のまま *.workers.dev を API の URL にする（アプリの VITE_API_BASE に書く）。
 # カスタムドメインが用意できたら、次の 2 行をセットで有効にする（片方だけだとどの URL からも到達できなくなる）。
+# URL を変えたらアプリを VITE_API_BASE を変えてビルドし直す。
 # workers_dev = false
 # routes = [{ pattern = "souieba.<domain>", custom_domain = true }]
 
@@ -96,49 +103,85 @@ bucket_name = "souieba-photos"
 [vars]
 ENVIRONMENT = "production"
 ANTHROPIC_MODEL = "claude-opus-5-5"       # 既定。コスト優先時は claude-sonnet-5-5（ADR-0003 / 0005）
-ACCESS_TEAM_DOMAIN = "<team>"             # Team 名だけ。worker/src/access.ts が https://<team>.cloudflareaccess.com を組み立てる
-ACCESS_AUD = "<Access アプリの AUD タグ>"
 APP_VERSION = "0.1.0"
+# 秘密（ANTHROPIC_API_KEY, INVITE_CODE, JWT_SECRET）は wrangler secret put で入れる。ここには書かない
 ```
 
 - `/api/*` 以外は Worker のコードを通らず Static Assets が返す。SPA の深いパス（`/#/...` ではなく `/memories/x` のような形）を使わないので `single-page-application` でも実害はないが、念のため指定する
-- `web/dist` は git に入れない。`pnpm build` が生成する
+- `web/dist` は git に入れない。`pnpm build:web` が生成し、Static Assets（開発プレビュー）と `cap sync`（アプリ）の両方がこれを使う
 
-## 3. 認証（仕様 10 章、F1）
+## 3. 認証（仕様 10 章、F1、ADR-0007）
 
-### 3.1 本番: Cloudflare Access の JWT 検証
+招待コード + メールアドレスで Worker が JWT を発行し、アプリはそれを保持して `Authorization: Bearer` で送る。Cloudflare 側の前段認証は置かない（Capacitor の WebView の origin `capacitor://localhost` では Cookie もログインリダイレクトも成立しない。ADR-0007）。パスワード、メール送信、外部 IdP は無い。
+
+### 3.1 ログイン: POST /api/auth/login（worker/src/routes/auth.ts）
 
 | 手順 | 内容 |
 |---|---|
-| 1 | リクエストの `Cf-Access-Jwt-Assertion` ヘッダを読む。無ければ 401 |
-| 2 | JWT ヘッダの `kid` と `alg`（RS256 のみ許可）を読む |
-| 3 | JWKS を `https://${ACCESS_TEAM_DOMAIN}.cloudflareaccess.com/cdn-cgi/access/certs` から取得し、`kid` が一致する鍵を `crypto.subtle.importKey("jwk", …, {name: "RSASSA-PKCS1-v1_5", hash: "SHA-256"})` で取り込む |
-| 4 | 署名を `crypto.subtle.verify` で検証 |
-| 5 | クレームを検証: `aud` に `ACCESS_AUD` が含まれる / `iss === "https://" + ACCESS_TEAM_DOMAIN + ".cloudflareaccess.com"` / `exp > now` / `nbf`（あれば）`<= now` |
-| 6 | `email` を小文字化して `user_id` にする。`email` が無ければ 401（サービストークンは使わない） |
+| 1 | `INVITE_CODE` と `JWT_SECRET`（wrangler secret）が無ければ 503 `auth_unavailable`「いま、ログインの準備ができていません」。`console.error` に残す |
+| 2 | 本文 JSON `{ invite_code, email }` を読む。JSON でない、どちらかが空、`email` が `^[^\s@]+@[^\s@]+\.[^\s@]+$` に合わない、または 255 文字以上なら 400 `validation`。`email` は trim して小文字化 |
+| 3 | レート制限: 呼び出し元 IP（`cf-connecting-ip`、無ければ `getConnInfo`、取れなければ `"unknown"`）で `login_attempts` を数え、直近 60 秒に 10 件以上なら 429 `too_many`「少し待ってから、もう一度お試しください」。この時点では行を増やさない |
+| 4 | `invite_code` と `INVITE_CODE` を定数時間比較（`timingSafeEqual`。長さ違いも同じ時間）。結果を `login_attempts (id, ip, ok, created_at)` に 1 行 INSERT |
+| 5 | 不一致なら 401 `unauthorized`「招待コードかメールアドレスが違います」。コードとメールのどちらが違うかは言わない |
+| 6 | 一致なら `{ sub: email, iat: now, exp: now + 90 日 }` を `JWT_SECRET` で HS256 署名し、200 `{ token, expires_at, user_id }` を返す |
+
+- JWT は `worker/src/jwt.ts` に WebCrypto（`HMAC` / `SHA-256`）で書く。外部ライブラリは入れない。鍵は `JWT_SECRET` の 1 本だけで、鍵の取得や `kid` の解決は無い
+- 招待コードは全員で 1 つ。ユーザーの識別はメールアドレスで、メールの所有確認はしない（招待コードを渡した相手だけが使う前提。ハッカソン期間の割り切り）
+- 失効（ログアウト）は作らない。90 日で切れる。`JWT_SECRET` を変えると全員のトークンが無効になる（`wrangler secret put JWT_SECRET` で入れ直すだけ）
+- `login_attempts` は増え続けるが、1 分 10 回の上限があるので量は小さい。期間中は掃除しない
+
+### 3.2 Bearer の検証（worker/src/auth.ts `requireUser`）
+
+`/api/health` と `/api/auth/*` 以外の `/api/*` に掛ける。
+
+| 手順 | 内容 |
+|---|---|
+| 1 | `Authorization` ヘッダがあれば `Bearer <token>` の形を確認。形が違えば 401（`bad_authorization`） |
+| 2 | `JWT_SECRET` が無ければ 401（`not_configured`。ログに出る） |
+| 3 | `verifyJwt`: 3 分割、ヘッダの `alg === "HS256"`（`none` や RS256 は拒否）、`crypto.subtle.verify` で署名、`exp > now`、`sub` が `@` を含む文字列、`iat` が数値。どれかが落ちれば 401 |
+| 4 | `sub` を小文字化してメールの形を確認し、`user_id` にする |
+| 5 | `Authorization` が無く `ENVIRONMENT === "development"` のときだけ `X-Dev-User: <email>` を受け付ける（3.3）。それも無ければ 401（`no_credentials`） |
+| 6 | 401 の本文は常に `{"error":{"code":"unauthorized","message":"ログインが必要です"}}`。理由コードは本文に出さず `console.warn("auth rejected", { reason, path })` にだけ残す（`wrangler tail` で見る） |
 | 7 | `users` に upsert（初回は `created_at`、毎回 `last_seen_at`）。Hono の `c.set("user", …)` に載せる |
 
-- JWKS キャッシュ: モジュールスコープの変数に `{fetchedAt, keys}` を持ち、10 分間再利用する。`kid` が見つからなければ 1 回だけ再取得する（鍵ローテーション対策）。Cache API や KV は使わない（依存最小限、Worker の isolate が入れ替わっても再取得するだけ）
-- JWT の検証は外部ライブラリを入れず、`worker/src/access.ts` に WebCrypto で書く（`auth.ts` はそれを呼ぶ Hono ミドルウェア）（base64url デコード、ヘッダ/ペイロード/署名の分割、検証）。この純粋ロジックが 11 章の単体テスト対象になる
+### 3.3 ローカル代替: X-Dev-User
 
-### 3.2 ローカル代替: X-Dev-User
+- `ENVIRONMENT === "development"` のときだけ `X-Dev-User: <email>` を受け付け、JWT 検証を省略する。`Authorization` と両方あれば JWT を使う
+- `ENVIRONMENT` が development 以外なら、このヘッダは読まない（存在しても無視して 401）
+- ローカルでは `pnpm dev:worker` / `pnpm preview` が `wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret` で起動する（9.2）。開発専用の既定値なので、ローカルでも招待コード `dev` でログインの流れを試せる。`.dev.vars` があればそちらが優先。`wrangler.toml` の `[vars]` は `production` のままなので、デプロイ先で誤って有効になることはない
 
-- `ENVIRONMENT === "development"` のときだけ `X-Dev-User: <email>` を受け付け、JWT 検証を省略する
-- `ENVIRONMENT` が development 以外なら、このヘッダは読まない（存在しても無視して JWT 検証に進む）
-- ローカルでは `pnpm dev:worker` / `pnpm preview` が `wrangler dev --var ENVIRONMENT:development` で起動する（9.2）。`.dev.vars` に `ENVIRONMENT=development` を書いても同じ。`wrangler.toml` の `[vars]` は `production` のままなので、デプロイ先で誤って有効になることはない
+### 3.4 CORS（worker/src/cors.ts）
 
-### 3.3 Access を通らずに Worker へ到達できないことの担保
+| 項目 | 値 |
+|---|---|
+| 許可オリジン | `capacitor://localhost`（iOS）、`https://localhost`（Android）、`http://localhost:5173`（vite dev）、`http://localhost`。それ以外には `Access-Control-Allow-Origin` を返さない |
+| メソッド | GET / POST / PUT / PATCH / DELETE / OPTIONS |
+| 許可ヘッダ | `Authorization`、`Content-Type`、`X-Dev-User` |
+| credentials | false（Cookie は使わない） |
+| maxAge | 600 秒 |
+
+値はコードに固定し、環境変数にしない（Cloudflare 側の設定も不要）。`/api/*` 全体に `app.use("/api/*", apiCors())` で掛ける。
+
+### 3.5 トークンの保存（web/src/auth.ts）
+
+| 項目 | 内容 |
+|---|---|
+| 置き場所 | `@capacitor/preferences`。iOS は `UserDefaults`、Android は `SharedPreferences`、Web（開発プレビュー）は `localStorage`。キーは `souieba.token`（JWT）と `souieba.user`（メール） |
+| 読み込み | 起動時に `loadToken()` で 1 回読み、以後はメモリにキャッシュ（`getTokenSync()`）。`api.ts` は毎リクエストで `Authorization: Bearer` を付ける（`auth: false` の `health` / `login` を除く） |
+| 401 を受けたら | `clearToken()` して `window.dispatchEvent(new Event("souieba:unauthorized"))`。`App.vue` が受けて S0 に戻す（wireframes 0 節） |
+| ネットワーク断 | `ApiError(0, "network", "いま、うまくつながりません")`。トークンは消さない |
+| 本番の URL | `VITE_API_BASE`（ビルド時）。Web の開発では空で同一オリジンの `/api` |
+
+### 3.6 到達経路の担保
 
 | 対策 | 内容 |
 |---|---|
-| Access アプリの範囲 | Self-hosted アプリのドメインを公開ホスト（当面は `souieba.<account>.workers.dev`、カスタムドメイン後は `souieba.<domain>`）、パスは空（ホスト全体）にする。`/api/*` も静的ファイルも `/api/health` も Access 配下 |
-| 入口を 1 つにする | カスタムドメインが用意できるまでは `workers_dev = true` のまま `*.workers.dev` を Access で守る（tasks J-3、requirements S-10）。用意できたら `routes`（custom_domain）と `workers_dev = false` をセットで入れ、Access アプリのドメインを新ホストに付け替える。`workers_dev = false` だけ先に入れない（到達経路が無くなる） |
-| Worker 側の二重チェック | Access を信頼せず、`/api/*` は常に JWT を自前検証する。Access を剥がされた設定ミス（別ドメインのルート追加など）があっても API は 401 を返す |
-| `/api/health` | Access 配下に置く。Worker 側では JWT を検証しないが（仕様 8 章「/api/health を除く」はこの意味）、Access の前段を外さない。死活監視は Worker の外（Cloudflare のダッシュボード、`wrangler tail`）で行い、未認証の監視エージェントからの到達経路は作らない |
+| 認証なしで到達できる口 | `GET /api/health`（死活確認。秘密は返さない）と `POST /api/auth/login`（レート制限あり）だけ。それ以外の `/api/*` は常に Bearer を検証する |
+| Static Assets | 画面の静的ファイルは誰でも取得できるが、データは API 経由でしか出ないので問題ない。配布には使わない（開発プレビュー） |
+| 入口の URL | 当面は `souieba.<account>.workers.dev`。カスタムドメインに変えるときは `routes`（custom_domain）と `workers_dev = false` をセットで入れ、アプリの `VITE_API_BASE` を変えてビルドし直す |
+| 招待コードの総当たり | 12 文字以上のランダム文字列（setup-cloudflare.md）+ 1 分 10 回の制限。定数時間比較で長さや前方一致を漏らさない |
 
-`/api/health` を公開したい場合は Access の Bypass ポリシーをそのパスにだけ付けるが、ハッカソン期間中は不要なので行わない。
-
-したがって本番の受け入れ条件は「JWT なしの curl で `/api/memories` は Access のログインページ（302/401）、Access を迂回しても Worker が 401。`/api/health` は Access 経由（ブラウザ、または `cf-access-token` を付けた curl）なら 200」とする。requirements N-9、tasks T-1104-16、setup-cloudflare.md 7.1 の「JWT なしの curl で `/api/health` が 200」はこの形に読み替える（末尾の判断事項）。
+本番の受け入れ条件は「`Authorization` なしの curl で `/api/memories` が 401、`X-Dev-User` だけでも 401、`/api/health` は 200、`POST /api/auth/login` に正しいコードで 200 → その `token` で `/api/me` が 200」（requirements N-9 / S-10、setup-cloudflare.md 7 節）。
 
 ## 4. データモデル（仕様 7 章、0001_init.sql）
 
@@ -148,7 +191,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 
 | 列 | 意味 |
 |---|---|
-| id | メールアドレス（Access の `email`、小文字）。user_id として全テーブルから参照 |
+| id | メールアドレス（JWT の `sub`、小文字。ローカルでは `X-Dev-User`）。user_id として全テーブルから参照 |
 | display_name | 表示名。初期は NULL（画面はメールのローカル部を仮表示） |
 | created_at / last_seen_at | 初回 / 直近の API 呼び出し時刻 |
 
@@ -220,25 +263,50 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 4. CASCADE で `memory_facts`、`recalls`（memory_id 側も related_memory_id 側も）が消える。他の記憶に付いていた札も、この記憶を指すものは消える
 5. 進行中の `waitUntil` が後から結果を保存しようとした場合、`memories` が無いので INSERT が外部キーで失敗する。例外は握りつぶして `ai_runs.status = failed` にする
 
+### 4.7 login_attempts（0002_login_attempts.sql。認証のレート制限）
+
+| 列 | 意味 |
+|---|---|
+| id | UUID |
+| ip | 呼び出し元 IP（`cf-connecting-ip`）。取れなければ `unknown` |
+| ok | 1 = 招待コード一致、0 = 不一致 |
+| created_at | 試行時刻（ISO 8601） |
+
+`idx_login_attempts_ip_time (ip, created_at)` で直近 1 分の件数を数える（3.1）。ユーザーとは結び付けない（ログイン前なので `user_id` が無い）。
+
 ## 5. API 仕様（仕様 8 章）
 
 共通:
 
-- すべて `/api/*`、JSON（写真の PUT と GET を除く）。`/api/health` 以外は 3 章の認証が必要
+- すべて `/api/*`、JSON（写真の PUT と GET を除く）。`/api/health` と `POST /api/auth/login` 以外は 3 章の認証（`Authorization: Bearer`）が必要
 - 他ユーザーの資源は存在しないものとして扱い 404 を返す（403 で存在を漏らさない）
 - エラー形式: `{"error": {"code": "...", "message": "..."}}`。`message` は日本語で、画面にそのまま出せる短い文
 - requirements.md との読み替え（tasks J-7）: requirements の `{status: "pending"|"done", facts|recalls: [...]}` は本書の `{pending: boolean, items: [...]}` に、`PATCH /api/facts/:id` の本体は requirements と同じ `{status: "confirmed" | "rejected"}`（tasks J-7 (2)。保存する値と同じ語）。エラーコード名は requirements の短い形（`validation` / `too_large` / `unsupported_media`）に本書を揃えた
 
 | code | HTTP | 例 |
 |---|---|---|
-| `unauthorized` | 401 | JWT が無い / 無効 |
-| `validation` | 400 | 本文が空、精度の値が不正、日付の形式違い |
+| `unauthorized` | 401 | Bearer が無い / 無効 / 期限切れ。`POST /api/auth/login` では招待コードの不一致 |
+| `validation` | 400 | 本文が空、精度の値が不正、日付の形式違い。ログインではコードかメールが空、メールの形が違う |
 | `not_found` | 404 | 記憶・候補・札が無い、または他ユーザーのもの |
 | `too_large` | 413 | 写真が 10MB 超 |
 | `unsupported_media` | 415 | JPEG / PNG 以外 |
+| `too_many` | 429 | `POST /api/auth/login` が同一 IP から 1 分に 10 回を超えた |
 | `internal` | 500 | D1 / R2 の失敗。詳細は返さない（worker/src/index.ts の `onError` が使っている名前） |
+| `auth_unavailable` | 503 | `INVITE_CODE` / `JWT_SECRET` が未設定（ログインできない） |
 
-### 5.1 GET /api/health
+### 5.0 POST /api/auth/login（認証不要）
+
+```json
+→ {"invite_code": "<招待コード>", "email": "You@Example.com"}
+200 {"token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ5b3VAZXhhbXBsZS5jb20iLCJpYXQiOjE3NjIyMjQwMDAsImV4cCI6MTc3MDAwMDAwMH0.…",
+     "expires_at": "2027-02-02T01:23:45.000Z", "user_id": "you@example.com"}
+```
+
+- 検証と手順は 3.1。401 の本文は `{"error":{"code":"unauthorized","message":"招待コードかメールアドレスが違います"}}`、429 は `too_many`、400 は `validation`、503 は `auth_unavailable`
+- `token` は HS256 の JWT `{ sub, iat, exp }`。有効 90 日。アプリは `@capacitor/preferences` に保存し、以後 `Authorization: Bearer <token>` を付ける（3.5）
+- CORS のプリフライト（`OPTIONS`）は `apiCors()` が返す。許可オリジン以外からは `Access-Control-Allow-Origin` が付かない
+
+### 5.1 GET /api/health（認証不要）
 
 ```json
 200 {"ok": true, "service": "souieba", "version": "0.1.0", "time": "2026-11-04T01:23:45.000Z"}
@@ -311,13 +379,14 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 - 許可する MIME: `image/jpeg`、`image/png`。サイズ 10MB 以下。`Content-Length` と実体の両方で確認
 - キーは `photos/<user_id>/<memory_id>/<uuid>.<jpg|png>`。前の写真があれば R2 から削除してから差し替える
 - R2 `put` に `httpMetadata.contentType` を付ける
-- HEIC はブラウザ側で扱えないため受け付けない（iOS の `<input type="file" accept="image/jpeg,image/png">` は JPEG に変換して渡す）
+- HEIC は受け付けない。ネイティブでは `@capacitor/camera` が JPEG（品質 85、長辺 1600px）で返す。Web のフォールバック `<input type="file" accept="image/jpeg,image/png">` は iOS の Safari が JPEG に変換して渡す
 
 ### 5.8 GET /api/photos/*
 
 - `*` は 5.7 のキー全体。先頭が `photos/<自分の user_id>/` でなければ 404
 - `200` で R2 のボディを流す。`Content-Type` は保存したもの、`Cache-Control: private, max-age=3600`
-- `<img src="/api/photos/...">` で使う。Access の Cookie が同一オリジンで付くので追加の認証処理は不要
+- 認証は他の API と同じ Bearer（3.2）。画面は `photoUrl(key)` = `${VITE_API_BASE}/api/photos/<key>` を `<img src>` に入れている（Web の開発では Vite の proxy が `X-Dev-User` を付けるので表示できる）
+- **未解決（ADR-0007 の追従漏れ）**: `<img src>` は `Authorization` ヘッダを付けられないため、ネイティブアプリでは写真の GET が 401 になる。対処の候補は (a) 画面側で `fetch` + Bearer → `URL.createObjectURL` で描く（Worker の変更なし。`web/src/api.ts` に `fetchPhoto` を足し、`MemoryCard` / `MemoryDetailScreen` / `TodayScreen` の `<img>` を置き換える）、(b) 短命の署名付きクエリ（`?t=<JWT>`）を許す。(a) を既定とし、tasks.md の 11/7 に T-1107-00b として置く
 - 仕様 8 章の `/api/photos/:key` は Hono の `/api/photos/*` で受ける（キーに `/` と `@` を含むため）。画面は `photo_key` をそのまま `/api/photos/` に連結し、スラッシュをエンコードしない
 
 ### 5.9 GET /api/memories/:id/facts
@@ -501,16 +570,24 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 
 | 判断 | 理由 |
 |---|---|
-| vue-router を入れない | 画面は S0〜S3 の 4 つで、遷移は「きょう ⇄ これまで → 詳細」だけ。依存最小限の方針（仕様 12 章）。SPA のパスルーティングを持たないので Static Assets のフォールバックにも頼らない |
+| vue-router を入れない | 画面は S0〜S3 の 4 つで、遷移は「きょう ⇄ これまで → 詳細」だけ。依存最小限の方針（仕様 12 章）。SPA のパスルーティングを持たないので Static Assets のフォールバックにも頼らない。Capacitor の WebView でもハッシュ遷移はそのまま動く |
 | 代わりにハッシュ | `#today`（S1、既定）/ `#past`（S2）/ `#memory/<id>`（S3）。`composables/useScreen.ts` が `location.hash` を ref に写し、`hashchange` で戻るボタンに追従する。20 行程度 |
-| S0 | `GET /api/me` が 401 のときだけ表示。本番では Access が先にログインページを出すので、ほぼローカルでの未設定時用 |
+| S0 | ログイン画面（招待コードとメールアドレス、「はじめる」。wireframes 1 節）。起動時に `loadToken()` → `GET /api/me` を試し、トークンが無いか 401 なら S0。他のエラーでトークンがあれば「いま、うまくつながりません」+「もう一度」。ログイン成功で `saveToken` → S1 |
+| 401 | どの画面でも `api.ts` が 401 を受けたら `clearToken()` して `souieba:unauthorized` を dispatch。`App.vue` が `signed_out` に戻す |
+| ネイティブだけの処理 | `native.ts` の `setupNative()`（ステータスバーを明るい地に濃い文字、Android は背景 `#FAF5EC`）と `hideSplash()`（起動の判定が終わってから隠す）。`Capacitor.isNativePlatform()` が false なら何もしない |
+| 写真の取得 | `camera.ts` の `pickPhoto()`。ネイティブは `@capacitor/camera`（撮る / ライブラリから選ぶ を OS のシートで。文言「写真を添える」「撮る」「ライブラリから選ぶ」「やめる」）。Web は `<input type="file" accept="image/jpeg,image/png">`。どちらも `File` を返し、`photo.ts` で縮小してから PUT |
+| セーフエリア | `App.vue` の `.safe-area` が `env(safe-area-inset-*)` を padding にする。`index.html` は `viewport-fit=cover` |
 
 ```
 web/src/
-  main.ts            createApp(App).mount("#app")
-  App.vue            useScreen() で S0〜S3 を切り替える。下部に「きょう / これまで」の 2 タブ
-  style.css          Tailwind v4 と @theme（8 章）
-  api.ts             fetch ラッパと 5 章のレスポンス型。JSON、エラー形式の解釈。ローカルでの X-Dev-User は Vite の proxy が付けるため画面側では触らない
+  main.ts            setupNative() → createApp(App).mount("#app")
+  App.vue            起動の判定（loading / signed_out / ready / trouble）と useScreen() で S0〜S3 を切り替える。下部に「きょう / これまで」の 2 タブ
+  style.css          Tailwind v4 と @theme（8 章）、.safe-area
+  api.ts             fetch ラッパと 5 章のレスポンス型。VITE_API_BASE、Authorization: Bearer、401 で souieba:unauthorized。ローカルの X-Dev-User は Vite の proxy が付けるため画面側では触らない
+  auth.ts            loadToken / getTokenSync / saveToken / clearToken（@capacitor/preferences）
+  camera.ts          pickPhoto（@capacitor/camera、Web は input type=file）
+  native.ts          isNative / setupNative / hideSplash（status-bar、splash-screen）
+  photo.ts           shrinkPhoto（長辺 1600px、JPEG 0.85）
   date.ts            happened_on と精度の表示（「2024年6月」「いつだったか」）、ローカル日付の今日
   composables/useScreen.ts    ハッシュ ⇄ 画面
   composables/usePolling.ts   2 秒間隔・最大 30 秒（15 回）
@@ -624,48 +701,74 @@ export default defineConfig({
 | script | 内容 |
 |---|---|
 | `dev` | `vite`（5173。別ターミナルで `dev:worker`） |
-| `dev:worker` | `mkdir -p web/dist && wrangler dev --var ENVIRONMENT:development`（8787。`web/dist` が無いと wrangler が起動を拒否するため空でも作る。`.dev.vars` の `ANTHROPIC_API_KEY` も読む） |
-| `preview` | `pnpm build:web && wrangler dev --var ENVIRONMENT:development`（本番相当: 画面を Worker から配信、8787 一本） |
+| `dev:worker` | `mkdir -p web/dist && wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret`（8787。`web/dist` が無いと wrangler が起動を拒否するため空でも作る。`.dev.vars` の `ANTHROPIC_API_KEY` も読む。招待コードと署名鍵は開発専用の既定値） |
+| `preview` | `pnpm build:web && wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret`（本番相当: 画面を Worker から配信、8787 一本。ブラウザで S0 → 招待コード `dev` でログインの流れを試せる） |
 | `build:web` | `vue-tsc -p web/tsconfig.json --noEmit && vite build` |
 | `build` | `pnpm build:web && wrangler deploy --dry-run --outdir dist/worker` |
 | `deploy` | `pnpm build:web && wrangler deploy` |
+| `cap:sync` | `pnpm build:web && cap sync`（`web/dist` を `ios/` と `android/` にコピーし、プラグインを揃える。`VITE_API_BASE` はこのビルドで埋め込まれる） |
+| `cap:ios` / `cap:android` | `pnpm cap:sync && cap open ios` / `cap open android`（Xcode / Android Studio を開く。Mac で実行。9.4） |
 | `db:migrate:local` / `db:migrate:remote` | `wrangler d1 migrations apply souieba --local` / `--remote` |
 | `db:seed:local` / `db:seed:remote` | `wrangler d1 execute souieba --local --file demo/fixtures/seed.sql` / `--remote` |
 | `test` / `test:watch` | `vitest run` / `vitest` |
-| `typecheck` | `tsc -p worker/tsconfig.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit` |
+| `typecheck` | `tsc -p worker/tsconfig.json --noEmit && tsc -p worker/tsconfig.test.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit` |
 
 `ENVIRONMENT=development` は `--var` で渡す（`wrangler.toml` の `production` を上書き）。`.dev.vars` に書いても同じ結果になるのでどちらでも可。CLAUDE.md と README もこの形（画面 5173、Worker 8787）になっている。
 
-### 9.3 .dev.vars.example
+### 9.3 .dev.vars.example と web/.env.example
 
 ```
+# .dev.vars.example（Worker）
 ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-opus-5-5
 ENVIRONMENT=development
-ACCESS_TEAM_DOMAIN=
-ACCESS_AUD=
+INVITE_CODE=dev
+JWT_SECRET=dev-only-secret-change-me
 ```
 
-`ENVIRONMENT` は 9.2 の `--var` でも渡るので、ここに書かなくても動く（どちらでも可）。`ANTHROPIC_MODEL` を省けば `wrangler.toml` の `[vars]` が使われる。`.dev.vars` は gitignore 済みで、Claude Code は書き込まない。
+```
+# web/.env.example（画面。ネイティブのビルド時だけ使う）
+VITE_API_BASE=https://souieba.example.workers.dev
+```
+
+`ENVIRONMENT` / `INVITE_CODE` / `JWT_SECRET` は 9.2 の `--var` でも渡るので、`.dev.vars` に書かなくても動く（書けばそちらが優先）。`ANTHROPIC_MODEL` を省けば `wrangler.toml` の `[vars]` が使われる。`.dev.vars`、`web/.env.production`、`web/.env.local` は gitignore 済みで、Claude Code は `.dev.vars` に書き込まない。
+
+### 9.4 Capacitor（アプリとしての確認。docs/setup-capacitor.md）
+
+```
+ pnpm build:web ──▶ web/dist ──▶ pnpm exec cap sync ──▶ ios/App/public、android/app/src/main/assets/public
+                                                        │
+                                   pnpm exec cap open ios      → Xcode: シミュレータ / 実機で ▶
+                                   pnpm exec cap open android  → Android Studio: エミュレータ / 実機で ▶
+```
+
+| 項目 | 内容 |
+|---|---|
+| API の向き先 | `web/.env.local`（開発）/ `web/.env.production`（配布）に `VITE_API_BASE` を書いてから `build:web`。iOS シミュレータからローカルの Worker は `http://localhost:8787`、Android エミュレータは `http://10.0.2.2:8787`、実機は `http://<Mac の LAN IP>:8787`（`wrangler dev --ip 0.0.0.0`）。本番は `https://` |
+| この環境（Linux）でできること | `cap add ios` / `cap add android` と `cap sync` まで。iOS のビルドと Android SDK の導入は開発者の Mac で行う |
+| 更新の流れ | 画面を変えたら `pnpm cap:sync`（または `cap:ios` / `cap:android`）。ネイティブ側（`Info.plist`、`AndroidManifest.xml`、アイコン、スプラッシュ画像）は `ios/` `android/` を直接編集し、git にコミットする |
+| 署名 | `*.mobileprovision`、`*.p12`、`*.keystore`、`key.properties`、`google-services.json`、`GoogleService-Info.plist` などは gitignore とフック（ADR-0007 7）で保護。Claude Code は書き込まない |
+| 配布 | ハッカソン期間中は Xcode / Android Studio から直接インストール。App Store / Play への提出は対象外 |
 
 ## 10. 環境変数と secret
 
 | 名前 | 種別 | 置き場所 | 用途 |
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | secret | `wrangler secret put` / ローカルは `.dev.vars` | Anthropic API |
+| `INVITE_CODE` | secret | `wrangler secret put` / ローカルは `.dev.vars` または `dev:worker` の既定値 `dev` | 招待コード。開発者が決める 12 文字以上のランダム文字列。コードや文書に値を書かない |
+| `JWT_SECRET` | secret | `wrangler secret put` / ローカルは `.dev.vars` または `dev:worker` の既定値 `dev-only-secret` | JWT の HS256 署名鍵。32 文字以上（`openssl rand -base64 48` など）。変えると全員ログアウト |
 | `ANTHROPIC_MODEL` | var | `wrangler.toml [vars]` | 既定 `claude-opus-5-5`。コスト優先時 `claude-sonnet-5-5`（ADR-0003 / 0005） |
-| `ENVIRONMENT` | var | `wrangler.toml` は `production`、ローカルは `wrangler dev --var ENVIRONMENT:development`（または `.dev.vars`） | `X-Dev-User` の受理。`/api/health` の `environment` |
-| `ACCESS_TEAM_DOMAIN` | var | `wrangler.toml [vars]` | Team 名だけ（例 `example`）。`https://<team>.cloudflareaccess.com` を JWKS の URL と `iss` に組み立てる |
-| `ACCESS_AUD` | var | `wrangler.toml [vars]` | Access アプリの AUD タグ |
+| `ENVIRONMENT` | var | `wrangler.toml` は `production`、ローカルは `wrangler dev --var ENVIRONMENT:development`（または `.dev.vars`） | `X-Dev-User` の受理 |
 | `APP_VERSION` | var | `wrangler.toml [vars]` | `/api/health` の `version` |
+| `VITE_API_BASE` | 画面のビルド時変数 | `web/.env.production` / `web/.env.local`（git に入れない）。見本は `web/.env.example` | アプリが叩く API のベース URL。Web の開発では空（同一オリジン） |
 
-Hono の `Bindings` 型:
+Hono の `Bindings` 型（worker/src/env.ts）:
 
 ```ts
-type Bindings = {
+type Env = {
   DB: D1Database; PHOTOS: R2Bucket; ASSETS: Fetcher;
-  ANTHROPIC_API_KEY: string; ANTHROPIC_MODEL: string; ENVIRONMENT: string;
-  ACCESS_TEAM_DOMAIN: string; ACCESS_AUD: string; APP_VERSION: string;
+  ENVIRONMENT: "development" | "production" | string; ANTHROPIC_MODEL: string; APP_VERSION: string;
+  ANTHROPIC_API_KEY?: string; INVITE_CODE?: string; JWT_SECRET?: string;   // wrangler secret（未設定なら 503 / failed）
 };
 ```
 
@@ -676,7 +779,7 @@ type Bindings = {
 | 対象 | ファイル | 内容 |
 |---|---|---|
 | 引用検証 | `worker/test/evidence.test.ts` | 部分一致、空、全角半角や前後空白を同一視しない（正規化しない。X-7）、`reason` の長さ、`related_memory_id` の所有チェック、3 件制限、重複除去 |
-| JWT 検証 | `worker/test/access-jwt.test.ts` | `crypto.subtle.generateKey` で RSA 鍵を作り、テスト内で署名した JWT を検証。JWKS 取得は関数引数で差し替える。`aud` 不一致・`iss` 不一致・`exp` 切れ・署名改ざん・`alg: none` を拒否 |
+| JWT と招待コード | `worker/test/jwt.test.ts`、`worker/test/app.test.ts` | `signJwt` → `verifyJwt` の往復、`exp` 切れ・署名改ざん・別 secret・`alg: none`・3 分割でない文字列を拒否、`timingSafeEqual` の長さ違い。`POST /api/auth/login` の 200 / 400 / 401 / 429（`now` を差し替えて 1 分の窓を確認）/ 503、Bearer で `/api/me` が 200、`X-Dev-User` が production で無視される |
 | 日付精度 | `worker/test/date-precision.test.ts` | `day/month/year/unknown` と `happened_on` の正規化、C2 の `date` 値の形式検証、実在しない日付の拒否 |
 | 入力検証 | `worker/test/validate.test.ts` | 本文長、精度の値、写真 MIME とサイズ |
 | カーソル | `worker/test/cursor.test.ts` | エンコード/デコードの往復、壊れたカーソルの拒否 |
@@ -686,7 +789,7 @@ Node 20 以上では `globalThis.crypto` が WebCrypto なので、Worker と同
 ### 11.2 Worker 統合テスト: @cloudflare/vitest-pool-workers は入れない
 
 - 理由: 依存を増やさない方針。1 人 1 週間でセットアップ（vitest の二重設定、miniflare のバインディング定義）に時間を割くより、純粋ロジックのテストと手動スモークの方が割に合う
-- 代わりに `scripts/smoke.sh` を正とする（`pnpm dev:worker` を起動してから `bash scripts/smoke.sh`。health、認証なし 401、`X-Dev-User`、SPA の HTML を確認する）。記憶の API ができたら以下を同スクリプトに足す
+- 代わりに `scripts/smoke.sh` を正とする（`pnpm dev:worker` を起動してから `bash scripts/smoke.sh`。health、認証なし 401、`X-Dev-User`、`POST /api/auth/login` の 401 / 400 と開発用コード `dev` でのログイン → Bearer で `/api/me`、記憶の登録〜削除、写真、SPA の HTML を確認する。本番 URL には `EXPECT_PRODUCTION=1` を付ける）。記憶の API ができたら以下を同スクリプトに足す
 - 写真の PUT は手元の任意の JPEG を指定する（`demo/photos/` は開発者が置くため存在しないことがある）。`jq` が無ければ `grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4` で代用する
 
 ```sh
@@ -711,9 +814,10 @@ curl -s -H "$H" -X DELETE -o /dev/null -w '%{http_code}\n' localhost:8787/api/me
 
 | # | 内容 | 本書の立場 | 追従が必要な文書 |
 |---|---|---|---|
-| 1 | `/api/health` の受け入れ条件 | ホスト全体を Access 配下に置くため、JWT なしの curl は 302/401。Access 経由なら 200（3.3） | requirements N-9、tasks T-1104-16、setup-cloudflare.md 7.1 の表 |
+| 1 | `/api/health` の受け入れ条件 | 認証なしの curl で 200（3.6）。ADR-0007 で Cloudflare 側の前段認証が無くなり、v0.2 の読み替えは不要になった | 解消済み（requirements N-9、setup-cloudflare.md 7 節） |
 | 2 | ポーリング打ち切り | 30 秒（15 回）。requirements N-2、tasks T-1106-08 と同じ | wireframes.md 2.6（15 秒 → 30 秒） |
 | 3 | 既定モデル | `claude-opus-5-5`（ADR-0003 / 0005） | 解消済み（tasks J-5 も opus） |
 | 4 | API レスポンスの形とエラーコード名 | `{pending, items}`、`{status: confirmed|rejected}`（J-7 (2)）、`recalled_by`、`validation` / `too_large` / `unsupported_media` / `internal`（5 章） | requirements F3 / F4 / F5（tasks J-7 のとおり本書に寄せる） |
 | 5 | `ai_runs(kind='recall')` | 過去記憶 0 件なら行を作らない（6.2）。requirements N-5 と同じ | なし |
-| 6 | `ACCESS_TEAM_DOMAIN` の値 | Team 名だけ（worker/src/access.ts、setup-cloudflare.md と同じ） | なし |
+| 6 | 認証と配布（ADR-0007） | 招待コード + HS256 JWT、Capacitor。`ACCESS_*` は廃止し `INVITE_CODE` / `JWT_SECRET` に置き換えた（3 章、10 章） | requirements F1、wireframes S0、setup-cloudflare.md、tasks.md（追従済み） |
+| 7 | ネイティブでの写真表示 | `<img src>` では Bearer を付けられない（5.8）。画面側で `fetch` + Bearer → `createObjectURL` にするのを既定案とする | tasks.md T-1107-00b（開発者の確認が要る） |
