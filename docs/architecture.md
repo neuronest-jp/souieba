@@ -386,7 +386,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 - `*` は 5.7 のキー全体。先頭が `photos/<自分の user_id>/` でなければ 404
 - `200` で R2 のボディを流す。`Content-Type` は保存したもの、`Cache-Control: private, max-age=3600`
 - 認証は他の API と同じ Bearer（3.2）。画面は `photoUrl(key)` = `${VITE_API_BASE}/api/photos/<key>` を `<img src>` に入れている（Web の開発では Vite の proxy が `X-Dev-User` を付けるので表示できる）
-- **未解決（ADR-0007 の追従漏れ）**: `<img src>` は `Authorization` ヘッダを付けられないため、ネイティブアプリでは写真の GET が 401 になる。対処の候補は (a) 画面側で `fetch` + Bearer → `URL.createObjectURL` で描く（Worker の変更なし。`web/src/api.ts` に `fetchPhoto` を足し、`MemoryCard` / `MemoryDetailScreen` / `TodayScreen` の `<img>` を置き換える）、(b) 短命の署名付きクエリ（`?t=<JWT>`）を許す。(a) を既定とし、tasks.md の 11/7 に T-1107-00b として置く
+- **解消済み（web/src/components/PhotoImg.vue が Bearer 付きで取得して blob URL で表示する。T-1107-00b）（ADR-0007 の追従漏れ）**: `<img src>` は `Authorization` ヘッダを付けられないため、ネイティブアプリでは写真の GET が 401 になる。対処の候補は (a) 画面側で `fetch` + Bearer → `URL.createObjectURL` で描く（Worker の変更なし。`web/src/api.ts` に `fetchPhoto` を足し、`MemoryCard` / `MemoryDetailScreen` / `TodayScreen` の `<img>` を置き換える）、(b) 短命の署名付きクエリ（`?t=<JWT>`）を許す。(a) を既定とし、tasks.md の 11/7 に T-1107-00b として置く
 - 仕様 8 章の `/api/photos/:key` は Hono の `/api/photos/*` で受ける（キーに `/` と `@` を含むため）。画面は `photo_key` をそのまま `/api/photos/` に連結し、スラッシュをエンコードしない
 
 ### 5.9 GET /api/memories/:id/facts

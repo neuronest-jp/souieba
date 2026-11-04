@@ -298,7 +298,7 @@ pnpm preview            # 本番と同じ配信形（画面を Worker から配�
 | `401` / reason `bad_alg` / `malformed` | `Authorization` の値が JWT でない | `Bearer <token>` の形と、`token` が 3 分割であることを確認 |
 | `401` / reason `no_credentials` がアプリで出る | トークンが保存されていない、または `VITE_API_BASE` が違う Worker を指している | アプリでログインし直す。`web/.env.production` の URL を確認（第 8 節） |
 | アプリから API に届かない（ネットワークエラー、「いま、うまくつながりません」） | `VITE_API_BASE` の誤り、`http://` を本番で使っている（iOS が拒否）、CORS の不一致 | 第 8 節。本番は `https://`。CORS は Worker 側で固定なので、ブラウザのコンソールに CORS エラーが出るなら origin が `capacitor://localhost` / `https://localhost` 以外になっている（capacitor.config.ts の `server` を変えていないか） |
-| アプリ、`pnpm preview`、デプロイ先のプレビュー画面で `/api/photos/...` の画像だけ出ない（`pnpm dev` の 5173 では出る） | `<img src>` には Bearer を付けられず、Vite の proxy（`X-Dev-User`）が無い経路では 401 になる（architecture.md 5.8 の未解決） | tasks.md T-1107-00b |
+| アプリ、`pnpm preview`、デプロイ先のプレビュー画面で `/api/photos/...` の画像だけ出ない（`pnpm dev` の 5173 では出る） | `<img src>` には Bearer を付けられず、Vite の proxy（`X-Dev-User`）が無い経路では 401 になる（architecture.md 5.8 の解消済み（web/src/components/PhotoImg.vue が Bearer 付きで取得して blob URL で表示する。T-1107-00b）） | tasks.md T-1107-00b |
 | deploy 時 `database_id` の検証エラー / D1 にアクセスできない | `wrangler.toml` が仮の `00000000-...` のまま | 2.2 で置き換える |
 | `pnpm db:migrate:remote` が「database not found」 | `database_name` / `database_id` と作成したものが一致しない | `pnpm exec wrangler d1 list` で照合 |
 | `pnpm deploy` が `ERR_PNPM_CANNOT_DEPLOY` で止まる | pnpm の組み込みコマンドが呼ばれている | `pnpm run deploy` と打つ（5.1） |

@@ -21,8 +21,6 @@ export type Health = { ok: boolean; service: string; version: string; time: stri
 export type Me = { user_id: string; display_name: string | null; since: string };
 export type LoginResult = { token: string; expires_at: string; user_id: string };
 
-export const photoUrl = (key: string) => `${API_BASE}/api/photos/${key}`;
-
 const unauthorized = async () => {
   await clearToken();
   window.dispatchEvent(new Event("souieba:unauthorized"));

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // S3 記憶の詳細。本文、起きた日、確定済みの事実、「そういえば。」の枠、削除。
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { api, ApiError, photoUrl } from "../api";
+import { api, ApiError } from "../api";
+import PhotoImg from "../components/PhotoImg.vue";
 import type { MemoryDetail, RecalledBy } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
@@ -115,12 +116,7 @@ watch(() => props.id, load);
 
     <template v-else-if="detail">
       <h1 class="text-[22px]">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
-      <img
-        v-if="detail.memory.photo_key"
-        :src="photoUrl(detail.memory.photo_key)"
-        alt=""
-        class="max-h-[360px] w-full rounded-card object-cover"
-      />
+      <PhotoImg v-if="detail.memory.photo_key" :photo-key="detail.memory.photo_key" class="max-h-[360px] min-h-[120px] w-full rounded-card object-cover" />
       <p class="whitespace-pre-wrap leading-relaxed">
         <template v-for="(p, i) in bodyParts" :key="i">
           <mark v-if="p.hit" class="rounded bg-ember-soft text-ink">{{ p.text }}</mark>
