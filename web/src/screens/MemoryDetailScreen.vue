@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // S3 記憶の詳細。本文、起きた日、確定済みの事実、「そういえば。」の枠、削除。
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { api, ApiError } from "../api";
+import { api, ApiError, photoUrl } from "../api";
 import type { MemoryDetail } from "../api/types";
 import { formatHappenedOn } from "../date";
 import { back as goBack, go } from "../composables/useScreen";
@@ -78,7 +78,7 @@ watch(() => props.id, load);
       <h1 class="text-[22px]">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
       <img
         v-if="detail.memory.photo_key"
-        :src="`/api/photos/${detail.memory.photo_key}`"
+        :src="photoUrl(detail.memory.photo_key)"
         alt=""
         class="max-h-[360px] w-full rounded-card object-cover"
       />

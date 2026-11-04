@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // S2 の行。写真の枠 + 最初の一行 + 起きた日。行全体がタップ領域。
+import { photoUrl } from "../api";
 import type { Memory } from "../api/types";
 import { firstLine, formatHappenedOn } from "../date";
 import { hrefFor } from "../composables/useScreen";
@@ -12,7 +13,7 @@ defineProps<{ memory: Memory }>();
     <div class="h-14 w-14 shrink-0 overflow-hidden rounded-xl" :class="memory.photo_key ? 'bg-line/40' : ''">
       <img
         v-if="memory.photo_key"
-        :src="`/api/photos/${memory.photo_key}`"
+        :src="photoUrl(memory.photo_key)"
         alt=""
         class="h-full w-full object-cover"
         loading="lazy"

@@ -1,5 +1,9 @@
 // Worker の API を呼ぶ薄いクライアント。エラーは { error: { code, message } } の形で返ってくる。
+// ネイティブアプリでは VITE_API_BASE（https://<api-domain>）を叩き、Web の開発では同一オリジン（/api）。
+import { clearToken, getTokenSync } from "./auth";
 import type { Memory, MemoryDetail, MemoryList, NewMemory } from "./api/types";
+
+export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
 
 export type ApiErrorBody = { error: { code: string; message: string } };
 
@@ -15,13 +19,28 @@ export class ApiError extends Error {
 
 export type Health = { ok: boolean; service: string; version: string; time: string };
 export type Me = { user_id: string; display_name: string | null; since: string };
+export type LoginResult = { token: string; expires_at: string; user_id: string };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { accept: "application/json", ...(init.headers ?? {}) },
-    credentials: "same-origin",
-  });
+export const photoUrl = (key: string) => `${API_BASE}/api/photos/${key}`;
+
+const unauthorized = async () => {
+  await clearToken();
+  window.dispatchEvent(new Event("souieba:unauthorized"));
+};
+
+async function request<T>(path: string, init: RequestInit = {}, opts: { auth?: boolean } = {}): Promise<T> {
+  const headers = new Headers(init.headers ?? {});
+  headers.set("accept", "application/json");
+  if (opts.auth !== false) {
+    const token = getTokenSync();
+    if (token) headers.set("authorization", `Bearer ${token}`);
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch {
+    throw new ApiError(0, "network", "いま、うまくつながりません");
+  }
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
     try {
@@ -29,16 +48,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* 本文なし */
     }
-    if (res.status === 401) window.dispatchEvent(new Event("souieba:unauthorized"));
+    if (res.status === 401 && opts.auth !== false) await unauthorized();
     throw new ApiError(res.status, body?.error?.code ?? "http_error", body?.error?.message ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
-  // Access のセッション切れでログイン画面の HTML が返ることがある。JSON でなければログイン扱い。
   const ct = res.headers.get("content-type") ?? "";
-  if (!ct.includes("application/json")) {
-    window.dispatchEvent(new Event("souieba:unauthorized"));
-    throw new ApiError(401, "not_json", "ログインが必要です");
-  }
+  if (!ct.includes("application/json")) throw new ApiError(res.status, "not_json", "うまくいきませんでした");
   return (await res.json()) as T;
 }
 
@@ -49,7 +64,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const api = {
-  health: () => request<Health>("/api/health"),
+  health: () => request<Health>("/api/health", {}, { auth: false }),
+  login: (invite_code: string, email: string) => request<LoginResult>("/api/auth/login", json("POST", { invite_code, email }), { auth: false }),
   me: () => request<Me>("/api/me"),
   createMemory: (input: NewMemory) => request<Memory>("/api/memories", json("POST", input)),
   listMemories: (cursor?: string | null) =>

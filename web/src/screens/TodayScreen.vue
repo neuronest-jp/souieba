@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // S1 きょう。入力 → 保存 → 「残しました」。候補と札は 11/6 で足す。
 import { computed, nextTick, ref } from "vue";
-import { api } from "../api";
+import { api, photoUrl } from "../api";
 import type { Memory, Precision } from "../api/types";
 import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
@@ -118,7 +118,7 @@ const another = () => {
     <template v-else>
       <p class="text-sm text-ink-soft" role="status">残しました</p>
       <article class="card appear overflow-hidden">
-        <img v-if="saved.photo_key" :src="`/api/photos/${saved.photo_key}`" alt="" class="h-[200px] w-full object-cover" />
+        <img v-if="saved.photo_key" :src="photoUrl(saved.photo_key)" alt="" class="h-[200px] w-full object-cover" />
         <div class="p-4">
           <p class="text-sm text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
           <p class="mt-1 whitespace-pre-wrap leading-relaxed">{{ saved.body }}</p>

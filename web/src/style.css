@@ -72,6 +72,12 @@
 }
 
 @layer components {
+  /* ネイティブのセーフエリア（ノッチ、ホームバー）。下部ナビは自分で pb に env() を足している */
+  .safe-area {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+  }
   .card {
     background: var(--color-card);
     border: 1px solid var(--color-line);
