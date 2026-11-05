@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "dev:worker": "mkdir -p web/dist && wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret",
+    "dev:worker:lan": "mkdir -p web/dist && wrangler dev --ip 0.0.0.0 --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret",
     "build:web": "vue-tsc -p web/tsconfig.json --noEmit && vite build",
     "build": "pnpm build:web && wrangler deploy --dry-run --outdir dist/worker",
     "deploy": "pnpm build:web && wrangler deploy",
@@ -18,10 +19,11 @@
     "db:migrate:remote": "wrangler d1 migrations apply souieba --remote",
     "db:seed:local": "wrangler d1 execute souieba --local --file demo/fixtures/seed.sql",
     "db:seed:remote": "wrangler d1 execute souieba --remote --file demo/fixtures/seed.sql",
-    "typecheck": "tsc -p worker/tsconfig.json --noEmit && tsc -p worker/tsconfig.test.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit",
+    "typecheck": "tsc -p worker/tsconfig.json --noEmit && tsc -p worker/tsconfig.test.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit && vue-tsc -p web/tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:hook": "node scripts/check-hook.mjs",
+    "check:words": "node scripts/check-words.mjs",
     "cap:sync": "pnpm build:web && cap sync",
     "cap:ios": "pnpm cap:sync && cap open ios",
     "cap:android": "pnpm cap:sync && cap open android"

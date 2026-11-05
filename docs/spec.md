@@ -51,13 +51,13 @@
 | C3 | **写真からの気づき候補** | 写真を見て、写っている物事・季節・場所の種類の候補を出す。人物の同定・年齢・感情の断定はしない。候補は常に「〜でしょうか」の形 | 原則 1 |
 | C4 | **ふりかえり（P1）** | 人物や期間を軸に、記憶を時系列の短い語りにまとめる。各段落に引用元の記憶 ID と逐語引用を付け、本文にない出来事を足さない | 原則 3,4 |
 
-Claude の出力はすべて tool use による JSON Schema 強制出力で受け取り、Worker 側で「引用が原文に含まれるか」を検証してから保存・表示する。
+Claude の出力はすべて JSON Schema で形を強制した構造化出力（Structured Outputs、`output_config.format`。ADR-0005）で受け取り、Worker 側で「引用が原文に含まれるか」を検証してから保存・表示する。
 
 ## 3. ユーザー体験
 
 ### 3.1 主要な流れ
 
-1. メールアドレスでログイン（Cloudflare Access のメール OTP。パスワードなし）
+1. 初回だけ招待コードとメールアドレスでログイン（パスワードなし。以後は端末に保持したトークンで入る。第10節、ADR-0007）
 2. 「きょうのひとこと」を書く。写真を1枚添えてもよい。日付は既定で今日
 3. 保存すると、本文から人物・場所・日付の候補が静かに並ぶ。タップで「そう」「ちがう」
 4. 数秒後、関係のある昔の記憶があれば「そういえば。」の札が1〜3枚現れる。根拠の引用が添えてある
@@ -75,7 +75,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 
 ### P0（11/10 までに必ず動く）
 
-- F1 ログイン: Cloudflare Access（メール OTP）。Worker が JWT を検証し、メールを user_id にする
+- F1 ログイン: 招待コード + メールアドレス → Worker が HS256 の JWT（90 日）を発行し、以後 Bearer で検証してメールを user_id にする（第10節、ADR-0007）
 - F2 記憶の登録: 本文（必須、1〜2000 文字）、起きた日（既定: 今日。精度: 日/月/年/不明）、写真1枚（任意、JPEG/PNG/HEIC 変換済み、10MB 以下、R2 保存）
 - F3 記憶の一覧・詳細・削除: 時系列（起きた日の降順）。削除は即時、物理削除（写真も削除）
 - F4 候補抽出（C2）: 登録直後に人物・場所・日付・ものの候補を表示。確定/却下。確定した事実は検索と想起の入力になる
@@ -98,7 +98,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 - 画面: スマホ縦持ち優先、PC でも崩れない。文字サイズは本文 17px 以上
 - 可用性: 単一 Worker、D1 1 本、R2 1 バケット。バックアップはハッカソン期間中は不要
 - コスト: Claude 呼び出しは 1 記憶あたり C1 1回 + C2 1回（+C3 1回）に固定。過去記憶の送信は直近 200 件まで
-- セキュリティ: API キーは wrangler secret のみ。`.dev.vars` は gitignore。Access の JWT 検証なしに本番 API に到達できない
+- セキュリティ: API キー・`INVITE_CODE`・`JWT_SECRET` は wrangler secret のみ。`.dev.vars` は gitignore。Bearer の JWT 検証なしに本番 API（`/api/health` と `/api/auth/login` を除く）に到達できない
 
 ## 6. 画面一覧
 
@@ -188,7 +188,8 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 │   ├── architecture.md
 │   ├── wireframes.md
 │   ├── tasks.md
-│   ├── setup-cloudflare.md   # Access / D1 / R2 / secret の手順書
+│   ├── setup-cloudflare.md   # D1 / R2 / secret / deploy の手順書
+│   ├── setup-capacitor.md    # iOS / Android のビルドと実機の手順書
 │   └── decisions/            # ADR
 ├── demo/
 │   ├── fixtures/             # デモ4シナリオの JSON と seed SQL
@@ -223,7 +224,7 @@ Claude の出力はすべて tool use による JSON Schema 強制出力で受�
 | 日 | スコープ |
 |---|---|
 | 11/3 | 上記 1〜7 のドキュメント |
-| 11/4 | プロジェクト雛形、D1 マイグレーション適用、Vue + Tailwind + カラー/フォントのデザイン基盤、ヘルスチェック API、Access 認証の疎通、wrangler deploy までの動作確認 |
+| 11/4 | プロジェクト雛形、D1 マイグレーション適用、Vue + Tailwind + カラー/フォントのデザイン基盤、ヘルスチェック API、認証の疎通（v0.3 で Access から招待コード + JWT に変更）、wrangler deploy までの動作確認 |
 | 11/5 | 記憶登録（F2）、一覧・詳細・削除（F3）、写真の R2 保存 |
 | 11/6 | 候補抽出（F4, C2）と そういえば（F5, C1）、引用検証 |
 | 11/7 | 反応（F6）、デモ4シナリオの通し、写真候補（F7, P1） |

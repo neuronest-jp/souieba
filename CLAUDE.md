@@ -29,17 +29,20 @@ Anthropic API は `@anthropic-ai/sdk` を Worker から呼び、Structured Outpu
 pnpm install
 pnpm db:migrate:local   # D1（ローカル）
 pnpm dev:worker         # Worker（http://localhost:8787）。development として起動し X-Dev-User を受け付ける。招待コードは開発専用の dev
+pnpm dev:worker:lan     # 同じ Worker を LAN に公開（--ip 0.0.0.0）。実機から叩くとき（docs/setup-capacitor.md 1.1）
 pnpm dev                # 画面（http://localhost:5173）。/api を 8787 に中継し X-Dev-User を付ける
 pnpm preview            # 本番相当: 画面をビルドして Worker から配信（http://localhost:8787）。ログイン画面に dev とメールで入る
 pnpm test               # vitest
 pnpm typecheck
+pnpm check:words        # 画面の禁止語（AI / 生成 / 送信）と色リテラルの検査（CI でも実行）
 pnpm build              # 画面ビルド + wrangler deploy --dry-run
 pnpm cap:sync           # 画面ビルド + cap sync（ios/ android/ に web/dist を同期。VITE_API_BASE は web/.env.* で）
 pnpm cap:ios            # cap:sync + Xcode を開く（Mac）
 pnpm cap:android        # cap:sync + Android Studio を開く（Mac）
 ```
 
-この環境（Linux）では iOS / Android のビルドと実機確認はできない。手順は docs/setup-capacitor.md。
+クラウド（Linux）のセッションでは iOS / Android のビルドと実機確認はできない。開発者の Mac のセッションでは Xcode で実機まで通る（docs/handoff-2026-11-05.md 8 節）。手順は docs/setup-capacitor.md。
+Mac で旧構成の checkout の中に worktree を置いている間は、`pnpm install --ignore-workspace` で入れる（親の `pnpm-workspace.yaml` に吸われるため）。
 
 ## 報告の形
 

@@ -17,6 +17,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:hook
+      - run: pnpm check:words
       - run: pnpm typecheck
       - run: pnpm test
         env:

@@ -3,11 +3,19 @@ import { onMounted, onUnmounted, ref } from "vue";
 
 export type Screen = { name: "today" } | { name: "past" } | { name: "memory"; id: string; from: "today" | "past" };
 
-const parse = (hash: string): Screen => {
+export const parseHash = (hash: string): Screen => {
   const h = hash.replace(/^#/, "");
   if (h === "past") return { name: "past" };
   const m = /^memory\/([^/?]+)(?:\?from=(today|past))?$/.exec(h);
-  if (m && m[1]) return { name: "memory", id: decodeURIComponent(m[1]), from: m[2] === "today" ? "today" : "past" };
+  if (m && m[1]) {
+    let id: string;
+    try {
+      id = decodeURIComponent(m[1]);
+    } catch {
+      return { name: "today" }; // 壊れた %xx（手で打った URL など）で画面ごと落とさない
+    }
+    return { name: "memory", id, from: m[2] === "today" ? "today" : "past" };
+  }
   return { name: "today" };
 };
 
@@ -34,10 +42,10 @@ export const back = (fallback: Screen) => {
 };
 
 export function useScreen() {
-  const screen = ref<Screen>(parse(window.location.hash));
+  const screen = ref<Screen>(parseHash(window.location.hash));
   const onChange = () => {
     depth += 1;
-    screen.value = parse(window.location.hash);
+    screen.value = parseHash(window.location.hash);
     window.scrollTo({ top: 0 });
   };
   onMounted(() => window.addEventListener("hashchange", onChange));

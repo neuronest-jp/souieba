@@ -3,8 +3,8 @@
 対象: そういえば。（appId `jp.neuronest.souieba`、表示名「そういえば。」。ADR-0007）
 前提: 画面は `web/`（Vite）で作り、`web/dist` を Capacitor が各プラットフォームにコピーする。API は Cloudflare Workers。
 
-Claude Code の環境は Linux のため、`cap add` と `cap sync` までは済ませてある。iOS のビルド・シミュレータ・実機、Android のビルドは開発者の Mac で行う
-（この環境は `dl.google.com` に出られず Android SDK を入れられない）。
+クラウド（Linux）の Claude Code のセッションでは `cap add` と `cap sync` までしかできない（`dl.google.com` に出られず Android SDK も入らない）。
+iOS のビルド・シミュレータ・実機、Android のビルドは開発者の Mac で行う。Mac の Claude Code のセッションなら、2.1 節のコマンドで実機へのインストールまで通る（2026-11-05 に iPhone 16 Pro で確認）。
 
 ## 0. 必要なもの（Mac）
 
@@ -37,6 +37,23 @@ API のベース URL は Vite の環境変数 `VITE_API_BASE` で決める（`we
 `http://` で API を叩くのは開発だけ。iOS は `NSAppTransportSecurity` の例外が無いと `http://localhost` 以外を拒否する。本番は必ず `https://`。
 
 ローカルの Worker は `pnpm dev:worker` で起動する（開発専用の招待コード `dev`、`JWT_SECRET` も開発用の既定値。`.dev.vars` があればそちらが優先）。
+`pnpm dev:worker` は Mac の中（`localhost`）からしか届かない。実機から叩くときは 1.1 節。
+
+### 1.1 実機からローカルの Worker を叩く（開発だけ）
+
+1. Mac の LAN IP を調べる: `ipconfig getifaddr en0`（Wi-Fi。iPhone と同じネットワークにいること）
+2. `web/.env.local` に `VITE_API_BASE=http://<LAN IP>:8787` を書く（git には入れない）
+3. Worker を LAN に公開して起動する: `pnpm dev:worker:lan`（`pnpm dev:worker` に `--ip 0.0.0.0` を足したもの）。
+   別の端末から `curl http://<LAN IP>:8787/api/health` が 200 になることを確かめる
+4. iOS の ATS に、ローカルネットワークだけの例外を足す（`NSAllowsArbitraryLoads` にはしない）:
+   ```sh
+   /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict"      -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" ios/App/App/Info.plist
+   ```
+   PlistBuddy は Info.plist の空白も書き直すので、diff が大きく見える（中身の変更はこのキーだけ）
+5. `pnpm cap:sync` → 2.1 節で実機に入れる。ログインは招待コード `dev` と任意のメール
+
+2026-11-05 にこの手順で iPhone 16 Pro から ログイン → 保存 → 一覧 → 詳細 まで通ることを Worker のログで確認した（アプリの WebView からの CORS preflight `OPTIONS` が付いている）。
+このキーを外した状態で LAN の IP が弾かれるかは試していない。本番（`https://`）だけでビルドするときは、この例外は要らないので戻してよい（コミットするかは docs/handoff-2026-11-05.md 7 節の判断事項）。
 
 ## 2. iOS
 
@@ -61,6 +78,26 @@ xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
 ```
 
 Capacitor 8 は Package.swift で依存を解決する。初回は Xcode がパッケージを取りに行くので少し待つ。
+
+### 2.1 実機（コマンドライン）
+
+Xcode を開かずに入れるなら（端末は USB か同じ Wi-Fi でペアリング済み、ロックを解除しておく）:
+
+```sh
+xcrun devicectl list devices                       # 実機の UDID（Identifier）を調べる
+cd ios/App
+xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+  -destination 'id=<UDID>' -derivedDataPath build \
+  DEVELOPMENT_TEAM=<チーム ID> -allowProvisioningUpdates build
+cd ../..
+xcrun devicectl device install app --device <UDID> ios/App/build/Build/Products/Debug-iphoneos/App.app
+xcrun devicectl device process launch --device <UDID> jp.neuronest.souieba
+```
+
+- チーム ID は `project.pbxproj` に書かず、引数で渡す。証明書名の括弧の中（`Apple Development: 名前 (XXXXXXXXXX)`）は個人の ID で、チーム ID ではない。
+  チーム ID は Xcode の Signing で選んだチーム、またはプロファイルの `TeamIdentifier`
+- 初回の起動で「信頼されていないデベロッパ」と出たら、端末の 設定 → 一般 → VPN とデバイス管理 で信頼する
+- 初回ビルドで `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` ができる（コミットするかは判断待ち）
 
 ## 3. Android
 
