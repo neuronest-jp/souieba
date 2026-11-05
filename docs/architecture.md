@@ -702,6 +702,7 @@ export default defineConfig({
 |---|---|
 | `dev` | `vite`（5173。別ターミナルで `dev:worker`） |
 | `dev:worker` | `mkdir -p web/dist && wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret`（8787。`web/dist` が無いと wrangler が起動を拒否するため空でも作る。`.dev.vars` の `ANTHROPIC_API_KEY` も読む。招待コードと署名鍵は開発専用の既定値） |
+| `dev:worker:lan` | `bash scripts/dev-worker-lan.sh`（実機から叩くための起動。`ENVIRONMENT=lan` で `X-Dev-User` を無効にし、招待コードと署名鍵は乱数で `.wrangler/lan-dev.secrets` に保存、待ち受けは Mac の LAN の IP だけ。docs/setup-capacitor.md 1.1） |
 | `preview` | `pnpm build:web && wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret`（本番相当: 画面を Worker から配信、8787 一本。ブラウザで S0 → 招待コード `dev` でログインの流れを試せる） |
 | `build:web` | `vue-tsc -p web/tsconfig.json --noEmit && vite build` |
 | `build` | `pnpm build:web && wrangler deploy --dry-run --outdir dist/worker` |
@@ -744,7 +745,7 @@ VITE_API_BASE=https://souieba.example.workers.dev
 
 | 項目 | 内容 |
 |---|---|
-| API の向き先 | `web/.env.local`（開発）/ `web/.env.production`（配布）に `VITE_API_BASE` を書いてから `build:web`。iOS シミュレータからローカルの Worker は `http://localhost:8787`、Android エミュレータは `http://10.0.2.2:8787`、実機は `http://<Mac の LAN IP>:8787`（`wrangler dev --ip 0.0.0.0`）。本番は `https://` |
+| API の向き先 | `web/.env.local`（開発）/ `web/.env.production`（配布）に `VITE_API_BASE` を書いてから `build:web`。iOS シミュレータからローカルの Worker は `http://localhost:8787`、Android エミュレータは `http://10.0.2.2:8787`、実機は `http://<Mac の LAN IP>:8787`（`pnpm dev:worker:lan`。development ではなく本番と同じ認証で LAN に出す。docs/setup-capacitor.md 1.1）。本番は `https://` |
 | この環境（Linux）でできること | `cap add ios` / `cap add android` と `cap sync` まで。iOS のビルドと Android SDK の導入は開発者の Mac で行う |
 | 更新の流れ | 画面を変えたら `pnpm cap:sync`（または `cap:ios` / `cap:android`）。ネイティブ側（`Info.plist`、`AndroidManifest.xml`、アイコン、スプラッシュ画像）は `ios/` `android/` を直接編集し、git にコミットする |
 | 署名 | `*.mobileprovision`、`*.p12`、`*.keystore`、`key.properties`、`google-services.json`、`GoogleService-Info.plist` などは gitignore とフック（ADR-0007 7）で保護。Claude Code は書き込まない |

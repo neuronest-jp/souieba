@@ -29,7 +29,7 @@ Anthropic API は `@anthropic-ai/sdk` を Worker から呼び、Structured Outpu
 pnpm install
 pnpm db:migrate:local   # D1（ローカル）
 pnpm dev:worker         # Worker（http://localhost:8787）。development として起動し X-Dev-User を受け付ける。招待コードは開発専用の dev
-pnpm dev:worker:lan     # 同じ Worker を LAN に公開（--ip 0.0.0.0）。実機から叩くとき（docs/setup-capacitor.md 1.1）
+pnpm dev:worker:lan     # 実機から叩くとき。LAN の IP だけで待ち受け、本番と同じ認証（X-Dev-User 無効）、招待コードは乱数（docs/setup-capacitor.md 1.1）。dev:worker を LAN に出さない
 pnpm dev                # 画面（http://localhost:5173）。/api を 8787 に中継し X-Dev-User を付ける
 pnpm preview            # 本番相当: 画面をビルドして Worker から配信（http://localhost:8787）。ログイン画面に dev とメールで入る
 pnpm test               # vitest

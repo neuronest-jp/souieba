@@ -32,7 +32,7 @@ API のベース URL は Vite の環境変数 `VITE_API_BASE` で決める（`we
 | 本番（配布用） | `https://<api-domain>`（Workers のカスタムドメインか `https://souieba.<account>.workers.dev`） | `web/.env.production`（git には入れない） |
 | iOS シミュレータからローカルの Worker | `http://localhost:8787` | `web/.env.local` |
 | Android エミュレータからローカルの Worker | `http://10.0.2.2:8787` | `web/.env.local` |
-| 実機からローカルの Worker | `http://<Mac の LAN IP>:8787`（`wrangler dev --ip 0.0.0.0`） | `web/.env.local` |
+| 実機からローカルの Worker | `http://<Mac の LAN IP>:8787`（`pnpm dev:worker:lan`。1.1 節） | `web/.env.local` |
 
 `http://` で API を叩くのは開発だけ。iOS は `NSAppTransportSecurity` の例外が無いと `http://localhost` 以外を拒否する。本番は必ず `https://`。
 
@@ -43,14 +43,19 @@ API のベース URL は Vite の環境変数 `VITE_API_BASE` で決める（`we
 
 1. Mac の LAN IP を調べる: `ipconfig getifaddr en0`（Wi-Fi。iPhone と同じネットワークにいること）
 2. `web/.env.local` に `VITE_API_BASE=http://<LAN IP>:8787` を書く（git には入れない）
-3. Worker を LAN に公開して起動する: `pnpm dev:worker:lan`（`pnpm dev:worker` に `--ip 0.0.0.0` を足したもの）。
-   別の端末から `curl http://<LAN IP>:8787/api/health` が 200 になることを確かめる
+3. Worker を LAN に公開して起動する: `pnpm dev:worker:lan`（scripts/dev-worker-lan.sh）。起動時に URL と招待コードを表示する。
+   別の端末から `curl http://<LAN IP>:8787/api/health` が 200 になることを確かめる。
+   **`pnpm dev:worker` に `--ip 0.0.0.0` を足して LAN に出さない。** development は `X-Dev-User` ヘッダだけで誰にでもなれ、招待コード `dev` と署名鍵 `dev-only-secret` も公開済みなので、
+   同じ Wi-Fi（会場など）の誰でも他人の記憶を読み書きでき、トークンも偽造できる。`dev:worker:lan` は次のようにしてある:
+   - `ENVIRONMENT=lan`（development ではない）→ `X-Dev-User` は無視、署名鍵は 32 文字以上が必須（本番と同じ認証）
+   - 招待コードと署名鍵は乱数で作り `.wrangler/lan-dev.secrets`（gitignore 済み、権限 600）に保存して次回も使う。作り直すならファイルを消す（端末はログイン画面に戻る）
+   - 待ち受けは Mac の LAN の IP（`ipconfig getifaddr en0`、`LAN_IP=` で上書き可）だけ。`127.0.0.1` や VPN のインターフェースには出さない
 4. iOS の ATS に、ローカルネットワークだけの例外を足す（`NSAllowsArbitraryLoads` にはしない）:
    ```sh
    /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict"      -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" ios/App/App/Info.plist
    ```
    PlistBuddy は Info.plist の空白も書き直すので、diff が大きく見える（中身の変更はこのキーだけ）
-5. `pnpm cap:sync` → 2.1 節で実機に入れる。ログインは招待コード `dev` と任意のメール
+5. `pnpm cap:sync` → 2.1 節で実機に入れる。ログインは 3 で表示された招待コード（`cat .wrangler/lan-dev.secrets` でも見られる）と任意のメール
 
 2026-11-05 にこの手順で iPhone 16 Pro から ログイン → 保存 → 一覧 → 詳細 まで通ることを Worker のログで確認した（アプリの WebView からの CORS preflight `OPTIONS` が付いている）。
 このキーを外した状態で LAN の IP が弾かれるかは試していない。本番（`https://`）だけでビルドするときは、この例外は要らないので戻してよい（コミットするかは docs/handoff-2026-11-05.md 7 節の判断事項）。

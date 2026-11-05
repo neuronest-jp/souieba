@@ -37,6 +37,7 @@ Cloudflare Access の Cookie もログインリダイレクトも成立しない
   (a) 招待コードを 1 人 1 つにして code → email の対応表で固定する、(b) メールに 6 桁コードを送る OTP に戻す、のどちらかにする
 - レート制限は IP 単位（1 分 10 回）で、コード全体の上限は無い。`login_attempts` は 1 時間で掃除する
 - JWT の失効はログアウト以外に無い。`JWT_SECRET` のローテーションで全員ログアウトになる
+- ローカルの development（`X-Dev-User`、既定値 `dev` / `dev-only-secret`）は `localhost` 専用。実機のために LAN に出すときは `pnpm dev:worker:lan`（`ENVIRONMENT=lan` で本番と同じ認証、乱数の招待コードと署名鍵、LAN の IP だけで待ち受け。2026-11-05 追記、docs/setup-capacitor.md 1.1）
 
 ## 影響
 
