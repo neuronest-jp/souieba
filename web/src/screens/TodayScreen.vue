@@ -108,7 +108,7 @@ const save = async () => {
       const r = await api.putPhoto(memory.id, blob);
       memory = { ...memory, photo_key: r.photo_key, photo_content_type: r.photo_content_type };
     } catch {
-      photoNote.value = "写真だけ残せませんでした。「ひらく」から添え直せます";
+      photoNote.value = "写真だけ、あとでもう一度";
     }
   }
   saved.value = memory;
@@ -215,11 +215,17 @@ useMemoryDeleted((id) => {
           <FactChips v-if="facts.length > 0" class="mt-4" :facts="facts" />
         </div>
       </article>
-      <p v-if="photoNote" class="text-sm text-ink-soft" role="alert">{{ photoNote }}</p>
+      <!-- 写真だけ失敗したとき: 案内のすぐ下に、いま書いた記憶の S3（「写真を添える」がある）へのリンクを置く。
+           札の「ひらく ›」（昔の記憶へ）と取り違えないよう、行き先を文言で言う。読み上げが文だけで済むよう alert の外に置く -->
+      <div v-if="photoNote" class="flex flex-col items-start">
+        <p class="text-sm text-ink-soft" role="alert">{{ photoNote }}</p>
+        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">写真を添え直す ›</a>
+      </div>
       <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" :animate="!shownIds.has(r.id)" />
       <div class="flex items-baseline gap-6">
         <button type="button" class="min-h-11 border-b border-ember text-ink" @click="another">もうひとつ書く</button>
-        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="min-h-11 text-ink-soft">ひらく ›</a>
+        <!-- いま書いた記憶へ。札の「ひらく ›」は昔の記憶へ行くので、同じ文言にしない -->
+        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">このひとことをひらく ›</a>
       </div>
     </template>
   </main>
