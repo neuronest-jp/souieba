@@ -52,15 +52,11 @@ API のベース URL は Vite の環境変数 `VITE_API_BASE` で決める（`we
    - 招待コードは `LAN_EMAIL`（必須）に結びつく（`INVITE_CODE=<乱数>=<LAN_EMAIL>`。本番と同じ 1 人 1 つの形）。保存済みのファイルが古い形式（コードだけ）か別のメール用なら、起動せずに作り直しを案内する
    - ポートは既定の 8787。使用中なら `LAN_PORT=8797` のように変える
    - 待ち受けは Mac の LAN の IP（`ipconfig getifaddr en0`、`LAN_IP=` で上書き可）だけ。`127.0.0.1` や VPN のインターフェースには出さない
-4. iOS の ATS に、ローカルネットワークだけの例外を足す（`NSAllowsArbitraryLoads` にはしない）:
-   ```sh
-   /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict"      -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" ios/App/App/Info.plist
-   ```
-   PlistBuddy は Info.plist の空白も書き直すので、diff が大きく見える（中身の変更はこのキーだけ）
+4. iOS の ATS は、ローカルネットワークだけの例外（`NSAppTransportSecurity` → `NSAllowsLocalNetworking`）を ios/App/App/Info.plist にコミット済み（11/6。`NSAllowsArbitraryLoads` にはしない）。LAN の `http://` に追加の作業なしでつながる。本番の `https://` には影響しない
 5. `pnpm cap:sync` → 2.1 節で実機に入れる。ログインは 3 で表示された招待コード（`cat .wrangler/lan-dev.secrets` の `INVITE_CODE=` の次から 2 つ目の `=` の前まで）と `LAN_EMAIL` のメール
 
 2026-11-05 にこの手順で iPhone 16 Pro から ログイン → 保存 → 一覧 → 詳細 まで通ることを Worker のログで確認した（アプリの WebView からの CORS preflight `OPTIONS` が付いている）。
-このキーを外した状態で LAN の IP が弾かれるかは試していない。本番（`https://`）だけでビルドするときは、この例外は要らないので戻してよい（コミットするかは docs/handoff-2026-11-05.md 7 節の判断事項）。
+このキーを外した状態で LAN の IP が弾かれるかは試していない。許可はローカルネットワークだけなので、本番（`https://`）のビルドに残しても影響しない。
 
 ## 2. iOS
 
@@ -104,7 +100,7 @@ xcrun devicectl device process launch --device <UDID> jp.neuronest.souieba
 - チーム ID は `project.pbxproj` に書かず、引数で渡す。証明書名の括弧の中（`Apple Development: 名前 (XXXXXXXXXX)`）は個人の ID で、チーム ID ではない。
   チーム ID は Xcode の Signing で選んだチーム、またはプロファイルの `TeamIdentifier`
 - 初回の起動で「信頼されていないデベロッパ」と出たら、端末の 設定 → 一般 → VPN とデバイス管理 で信頼する
-- 初回ビルドで `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` ができる（コミットするかは判断待ち）
+- 初回ビルドで `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` ができる。SPM の版を固定するためにコミットしている（11/6。capacitor-swift-pm 8.6.0、ion-ios-camera 2.0.0）。プラグインを足したり版を上げたら、更新された Package.resolved もコミットする
 
 ## 3. Android
 
