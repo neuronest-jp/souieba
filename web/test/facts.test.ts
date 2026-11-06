@@ -22,6 +22,16 @@ describe("keepDecided", () => {
     expect(keepDecided([fact("f1", "rejected")], [fact("f1", "candidate")])[0]!.status).toBe("rejected");
   });
 
+  it("S1 のポーリング: 押した直後に取り直しが重なり、記録に失敗して印を戻すと、画面の行が候補に戻る", () => {
+    const shown = [fact("f1", "candidate"), fact("f2", "candidate")];
+    const row = shown[0]!;
+    row.status = "confirmed"; // 「そう」を押した（楽観更新）。記録の返事はまだ
+    const polled = keepDecided(shown, [fact("f1", "candidate"), fact("f2", "candidate")]); // 先に取り直しが届く
+    row.status = "candidate"; // 記録に失敗し、FactChips が押した行の印を戻す
+    expect(polled[0]).toBe(row);
+    expect(polled[0]!.status).toBe("candidate"); // 「✓ そう」のまま残らない
+  });
+
   it("画面がまだ候補なら、取り直した側（ほかの画面で決めた分）を使う", () => {
     expect(keepDecided([fact("f1", "candidate")], [fact("f1", "confirmed")])[0]!.status).toBe("confirmed");
     expect(keepDecided([fact("f1", "candidate")], [fact("f1", "rejected")])[0]!.status).toBe("rejected");

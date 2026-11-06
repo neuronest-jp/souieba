@@ -52,9 +52,10 @@ const polling = usePolling(
 );
 const applyPolled = (v: { f: { items: Fact[] }; r: { items: Recall[] } } | null) => {
   if (!v) return;
-  // 画面で確定・却下した状態を上書きしないよう、既存の status を優先する
-  const prev = new Map(facts.value.map((x) => [x.id, x.status]));
-  facts.value = v.f.items.map((x) => ({ ...x, status: prev.get(x.id) ?? x.status }));
+  // 画面で確定・却下した行は同じオブジェクトのまま残す（keepDecided）。行ごと新しいオブジェクトに替えると、
+  // 記録に失敗したとき FactChips が戻す印が画面の行に届かず、「✓ そう」のまま「記録できませんでした」が並ぶ。
+  // facts が先に揃い recall を待つ間（最長 30 秒）も 2 秒ごとに取り直すので、押した直後に取り直しが重なりうる
+  facts.value = keepDecided(facts.value, v.f.items);
   recalls.value = v.r.items;
 };
 watch(() => polling.value.value, (v) => applyPolled(v));
