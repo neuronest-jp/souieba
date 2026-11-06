@@ -17,6 +17,26 @@ export const toIsoDate = (d: Date): string => {
   return `${y}-${m}-${day}`;
 };
 
+// その月の日数（m は 1〜12）。Date を使わず計算するので、時差にも 0〜99 年の読み替えにも左右されない。
+const daysInMonth = (y: number, m: number): number => {
+  if (m === 2) return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28;
+  return m === 4 || m === 6 || m === 9 || m === 11 ? 30 : 31;
+};
+
+// 年月日を 'YYYY-MM-DD' にする。日はその月の末日に丸める（10/31 のまま 11 月にすると 11/30、2024/2/29 のまま 2025 年にすると 2/28）。
+// 「いつ？」で月や年だけ変えたとき、存在しない日付（2026-11-31 など）を作らないために使う。日が取れない（NaN・0）ときは 1 日
+export const clampDay = (y: number, m: number, d: number): string => {
+  const mo = Math.min(Math.max(Math.trunc(m) || 1, 1), 12);
+  const day = Math.min(Math.max(Math.trunc(d) || 1, 1), daysInMonth(y, mo));
+  return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+// 'YYYY-MM-DD' の形で、しかも実在する日付か（Worker の「存在しない日付です」と同じ判定）
+export const isRealYmd = (s: string): boolean => {
+  const p = parseYmd(s);
+  return p !== null && p.m >= 1 && p.m <= 12 && p.d >= 1 && p.d <= daysInMonth(p.y, p.m);
+};
+
 export const formatDateJa = (d: Date, opts: { withYear?: boolean } = {}): string => {
   const now = new Date();
   const withYear = opts.withYear ?? d.getFullYear() !== now.getFullYear();

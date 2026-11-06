@@ -11,7 +11,7 @@ import { usePolling } from "../composables/usePolling";
 import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
 import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
-import { formatHappenedOn, toIsoDate } from "../date";
+import { formatHappenedOn, isRealYmd, toIsoDate } from "../date";
 import { focusHeading, hrefFor } from "../composables/useScreen";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
 import { keepDecided } from "../facts";
@@ -65,7 +65,8 @@ watch(() => polling.value.value, (v) => applyPolled(v));
 
 const MAX = 2000;
 const remaining = computed(() => MAX - Array.from(body.value).length);
-const hasDate = computed(() => precision.value === "unknown" || /^\d{4}-\d{2}-\d{2}$/.test(date.value));
+// 形だけでなく実在する日付か（2026-11-31 のまま送ると Worker が 400 を返し、汎用の文言しか出ないので直せない）
+const hasDate = computed(() => precision.value === "unknown" || isRealYmd(date.value));
 const canSave = computed(() => body.value.trim().length > 0 && remaining.value >= 0 && hasDate.value && !saving.value);
 
 // POST に入れる happened_on（day: YYYY-MM-DD / month: YYYY-MM / year: YYYY）

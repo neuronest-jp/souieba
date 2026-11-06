@@ -4,7 +4,7 @@
 // 精度を 日 → 年 → 日 と戻しても、選んだ月日は失われない。
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import type { Precision } from "../api/types";
-import { toIsoDate } from "../date";
+import { clampDay, isRealYmd, toIsoDate } from "../date";
 
 const precision = defineModel<Precision>("precision", { required: true });
 const date = defineModel<string>("date", { required: true }); // 常に YYYY-MM-DD
@@ -21,25 +21,27 @@ const thisYear = new Date().getFullYear();
 const years = Array.from({ length: 101 }, (_, i) => thisYear - i);
 const firstButton = ref<HTMLButtonElement | null>(null);
 
-const isFullDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
-
 // 入力が空（クリア）になったら直前の値を保つ。有効な値だけ内部の日付に書き戻す。
 const dayModel = computed({
   get: () => date.value,
   set: (v: string) => {
-    if (isFullDate(v)) date.value = v;
+    if (isRealYmd(v)) date.value = v;
   },
 });
+// 月や年だけ変えるときは、日をその月の末日に丸める（clampDay）。10/31 のまま 11 月にすると 2026-11-31 になり、
+// 「日」に戻すと日付欄は空に見え、保存は Worker の「存在しない日付です」で通らなくなる。
+// 丸めた日は月を戻しても元に戻らない（10/31 → 11 月 → 10 月で 10/30）
 const monthModel = computed({
   get: () => date.value.slice(0, 7),
   set: (v: string) => {
-    if (/^\d{4}-\d{2}$/.test(v)) date.value = `${v}-${date.value.slice(8, 10) || "01"}`;
+    const m = /^(\d{4})-(\d{2})$/.exec(v);
+    if (m) date.value = clampDay(Number(m[1]), Number(m[2]), Number(date.value.slice(8, 10)));
   },
 });
 const yearModel = computed({
   get: () => Number(date.value.slice(0, 4)) || thisYear,
   set: (y: number) => {
-    date.value = `${String(y).padStart(4, "0")}${date.value.slice(4)}`;
+    date.value = clampDay(y, Number(date.value.slice(5, 7)), Number(date.value.slice(8, 10)));
   },
 });
 
@@ -47,7 +49,7 @@ const onKey = (e: KeyboardEvent) => {
   if (e.key === "Escape") emit("close");
 };
 onMounted(() => {
-  if (!isFullDate(date.value)) date.value = toIsoDate(new Date());
+  if (!isRealYmd(date.value)) date.value = toIsoDate(new Date());
   window.addEventListener("keydown", onKey);
   void nextTick(() => firstButton.value?.focus());
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstLine, formatDateJa, formatFactDate, formatHappenedOn, toIsoDate } from "../src/date";
+import { clampDay, firstLine, formatDateJa, formatFactDate, formatHappenedOn, isRealYmd, toIsoDate } from "../src/date";
 
 // 端末ローカルの日付として扱う（new Date(y, m, d)）。TZ に依らない
 const NOW = new Date(2026, 10, 5, 12, 0, 0); // 2026-11-05（木）
@@ -8,6 +8,48 @@ describe("toIsoDate", () => {
   it("端末ローカルの年月日を YYYY-MM-DD にゼロ埋めで", () => {
     expect(toIsoDate(new Date(2026, 0, 3))).toBe("2026-01-03");
     expect(toIsoDate(new Date(2026, 10, 5, 23, 59))).toBe("2026-11-05");
+  });
+});
+
+describe("clampDay（「いつ？」で月や年だけ変えたとき）", () => {
+  it("日をその月の末日に丸める", () => {
+    expect(clampDay(2026, 11, 31)).toBe("2026-11-30");
+    expect(clampDay(2025, 2, 29)).toBe("2025-02-28");
+    expect(clampDay(2026, 4, 31)).toBe("2026-04-30");
+  });
+
+  it("実在する日はそのまま（閏年の 2/29、12/31）", () => {
+    expect(clampDay(2024, 2, 29)).toBe("2024-02-29");
+    expect(clampDay(2000, 2, 29)).toBe("2000-02-29");
+    expect(clampDay(2026, 12, 31)).toBe("2026-12-31");
+    expect(clampDay(2026, 1, 3)).toBe("2026-01-03");
+  });
+
+  it("100 で割れて 400 で割れない年は閏年にしない", () => {
+    expect(clampDay(1900, 2, 29)).toBe("1900-02-28");
+  });
+
+  it("日が取れない（Number(\"\") の 0、NaN）ときは 1 日", () => {
+    expect(clampDay(2026, 11, Number(""))).toBe("2026-11-01");
+    expect(clampDay(2026, 11, Number.NaN)).toBe("2026-11-01");
+  });
+});
+
+describe("isRealYmd", () => {
+  it("形が YYYY-MM-DD で、しかも実在する日付だけ true", () => {
+    expect(isRealYmd("2026-11-30")).toBe(true);
+    expect(isRealYmd("2024-02-29")).toBe(true);
+    expect(isRealYmd("2026-11-31")).toBe(false);
+    expect(isRealYmd("2025-02-29")).toBe(false);
+    expect(isRealYmd("2026-13-01")).toBe(false);
+    expect(isRealYmd("2026-00-10")).toBe(false);
+    expect(isRealYmd("2026-11-00")).toBe(false);
+  });
+
+  it("形が違えば false", () => {
+    expect(isRealYmd("2026-11")).toBe(false);
+    expect(isRealYmd("")).toBe(false);
+    expect(isRealYmd("2026/11/30")).toBe(false);
   });
 });
 
