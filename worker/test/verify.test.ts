@@ -157,6 +157,17 @@ describe("verifyFacts", () => {
     // 省略時は不明として扱う
     expect(verifyFacts(date("2026-11-06", "きのう"), "きのう公園で花を見た").items).toEqual([]);
   });
+  it("起きた日が不明なら、長い数字（金額・番号）の一部に年と同じ並びがあっても年とは見なさない", () => {
+    const date = (value: string, evidence: string) => ({ items: [{ kind: "date", value, evidence, date_precision: "day" }] });
+    const dropped = (value: string, body: string) => verifyFacts(date(value, "きのう"), body, null).stats.dropped.map((d) => d.reason);
+    // 「12000円」の中の 2000、「20260円」の中の 2026 は年ではない。前後に数字が続く並びは数えない（半角も全角も）
+    expect(dropped("2000-01-05", "きのう12000円のケーキを買った")).toEqual(["date_no_year"]);
+    expect(dropped("2026-11-05", "きのう20260円の靴を買った")).toEqual(["date_no_year"]);
+    expect(dropped("2026-11-05", "きのう２０２６０円の靴を買った")).toEqual(["date_no_year"]);
+    // 前後が数字でなければ、区切りの記号が付いていても年として残す
+    expect(verifyFacts(date("2026-06-15", "2026/6/15"), "2026/6/15に公園で花を見た", null).items).toHaveLength(1);
+    expect(verifyFacts(date("2019-06-15", "２０１９/6/15"), "２０１９/6/15に公園で花を見た", null).items).toHaveLength(1);
+  });
   it("起きた日があれば、相対表現を解いた date は残す（D4: 今日 → 2026-11-07）", () => {
     const d4 = "はると、今日補助輪なしで乗れた";
     const r = verifyFacts({ items: [{ kind: "date", value: "2026-11-07", evidence: "今日", date_precision: "day" }] }, d4, "2026-11-07");

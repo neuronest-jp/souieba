@@ -105,9 +105,13 @@ export const isValidDateValue = (v: string): boolean => {
 };
 
 // 年（4 桁）が本文に書かれているか。半角と全角の数字を見る（漢数字や和暦は見ない）。
+// 前後に数字が続く並びは数えない。「12000円」の 2000、「20260円」の 2026 は年ではない。
+// 「2000円」のような 4 桁だけの数字は年と見分けられないので、残る（requirements F4-10）
 const yearInBody = (year: string, body: string): boolean => {
   const wide = year.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0));
-  return body.includes(year) || body.includes(wide);
+  // year は isValidDateValue を通った 4 桁の数字なので、そのまま正規表現に入れてよい
+  const standsAlone = (y: string) => new RegExp(`(?<![0-9０-９])${y}(?![0-9０-９])`).test(body);
+  return standsAlone(year) || standsAlone(wide);
 };
 
 // C2 候補抽出。body: 新しい記憶の本文。happenedOn: その記憶の起きた日（「いつだったか」なら null）。
