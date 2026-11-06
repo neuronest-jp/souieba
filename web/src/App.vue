@@ -52,6 +52,11 @@ onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthori
 </script>
 
 <template>
+  <!-- ステータスバーの下の地。一覧をスクロールしても時計に本文が重ならないようにする（ブラウザでは env() が 0 で高さ 0） -->
+  <div
+    class="pointer-events-none fixed inset-x-0 top-0 z-10 h-[env(safe-area-inset-top)] bg-paper/90 backdrop-blur-md"
+    aria-hidden="true"
+  ></div>
   <div class="safe-area mx-auto flex min-h-dvh w-full max-w-[560px] flex-col">
     <!-- 読み込み中は何も主張しない -->
     <main v-if="state.kind === 'loading'" class="flex flex-1 items-center justify-center" aria-busy="true">

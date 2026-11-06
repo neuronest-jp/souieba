@@ -7,7 +7,10 @@ const config: CapacitorConfig = {
   webDir: "web/dist",
   backgroundColor: "#FAF5EC",
   ios: {
-    contentInset: "automatic",
+    // セーフエリアは CSS の env(safe-area-inset-*) だけで取る（.safe-area、下部ナビ、シート）。
+    // "automatic" だと WKWebView がページがスクロールできるときだけ上下をずらし、そのあいだ env() が 0 になるため、
+    // 短い S1 と長い S2 で下部ナビの高さが変わっていた（wireframes 第8節 #23）
+    contentInset: "never",
   },
   android: {
     allowMixedContent: false,

@@ -123,7 +123,7 @@ cd android && ./gradlew assembleDebug
 - ステータスバー: `web/src/native.ts` が文字色を `Style.Light`（明るい地に濃い文字）にする。Android 16（API 36）以降ではステータスバーは常に画面に重なり、背景色の指定は効かない。上の余白は `web/src/style.css` の `.safe-area` が `env(safe-area-inset-top)` で取る
 - スプラッシュ: `capacitor.config.ts` の `SplashScreen.backgroundColor` が `#FAF5EC`。画像（ロゴ）は未作成。作るなら `@capacitor/assets` で生成する（依存を増やすので提出直前に判断）
 - アイコン: Capacitor の既定のまま。`ios/App/App/Assets.xcassets/AppIcon.appiconset` と `android/app/src/main/res/mipmap-*` を差し替える。素材は開発者が権利を持つものだけ
-- セーフエリア: `web/src/style.css` の `.safe-area` と下部ナビの `env(safe-area-inset-bottom)`
+- セーフエリア: `web/src/style.css` の `.safe-area` と下部ナビの `env(safe-area-inset-bottom)`。iOS は `capacitor.config.ts` の `ios.contentInset` を `"never"`（Capacitor の既定）にして、セーフエリアを CSS の `env()` だけで取る。`"automatic"` にすると、ページがスクロールできるときだけ WKWebView がずらして `env()` が 0 になり、画面ごとに下部ナビの高さが変わる（wireframes 第8節 #23）。ステータスバーの下の地は `App.vue` の固定の `div`
 
 ## 5. 更新の流れ
 
