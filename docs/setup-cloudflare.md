@@ -239,7 +239,10 @@ curl -s -H "Authorization: Bearer $TOKEN" "$URL/api/me"
 | 429 `too_many` | 同じ IP から 1 分に 10 回を超えた。1 分待つ |
 | 500 | `login_attempts` テーブルが無い（2.3 の 0002 を適用していない） |
 
-- まとめて流すなら `EXPECT_PRODUCTION=1 bash scripts/smoke.sh "$URL"`（health、`X-Dev-User` が通らないこと、ログインの 401 / 400、SPA の HTML）。本物の招待コードでのログインは上の curl で行う（スクリプトには書かない）
+- まとめて流すなら `EXPECT_PRODUCTION=1 bash scripts/smoke.sh "$URL"`（health、`X-Dev-User` が通らないこと、ログインの 401 / 400、SPA の HTML）。
+  対応表の 1 行を環境変数 `SMOKE_INVITE_CODE` / `SMOKE_EMAIL` で渡すと、ログイン → 他人のメールで 401 → 記憶の登録 → 詳細 → 写真の PUT / GET → 削除 → 404 まで通す（1 件登録して最後に消す）。
+  2 人目（`SMOKE_OTHER_INVITE_CODE` / `SMOKE_OTHER_EMAIL`）も渡すと「別のユーザーで 404」も確かめる。値はスクリプトにもログにも出ない（curl へは標準入力で渡す）。
+  fish なら `read -s -x SMOKE_INVITE_CODE` で読み込み、`set -x SMOKE_EMAIL you@example.com` のあとに `env EXPECT_PRODUCTION=1 bash scripts/smoke.sh $URL`
 - 招待コードを端末の履歴に残したくなければ、`read -s CODE` で読み込んでから `-d "{\"invite_code\":\"$CODE\",...}"` にする
 
 ### 7.3 画面（開発用プレビュー、任意）
