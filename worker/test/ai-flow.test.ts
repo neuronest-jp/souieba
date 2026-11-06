@@ -28,8 +28,8 @@ const fakeCall = (impl: (req: AiRequest) => unknown | Promise<unknown>, gate?: P
 
 const appWith = (call: AiCaller) => createApp({ memories: { afterSave: aiAfterSave({ facts: { call }, recall: { call } }) } });
 
-const post = async (app: ReturnType<typeof createApp>, body: string, ctx = fakeExecutionCtx()) => {
-  const res = await app.request("/api/memories", { method: "POST", headers: H, body: JSON.stringify({ body }) }, env, ctx);
+const post = async (app: ReturnType<typeof createApp>, body: string, ctx = fakeExecutionCtx(), headers: Record<string, string> = H) => {
+  const res = await app.request("/api/memories", { method: "POST", headers, body: JSON.stringify({ body }) }, env, ctx);
   expect(res.status).toBe(201);
   return { memory: (await res.json()) as { id: string }, ctx };
 };
@@ -65,7 +65,7 @@ describe("最初の記憶（過去 0 件）", () => {
 });
 
 describe("D1 祖母の梅干し", () => {
-  it("過去記憶があると recall も走り、引用付きの札が保存される。feedback は入力に含めない", async () => {
+  it("過去記憶があると recall も走り、引用付きの札が保存される。確定していない事実と札への反応は入力に含めない", async () => {
     const OLD = "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた";
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => (release = r));
@@ -78,11 +78,18 @@ describe("D1 祖母の梅干し", () => {
     }, gate);
     const app = appWith(call);
     const firstApp = appWith(fakeCall(() => ({ items: [] })));
+    const photos = await post(firstApp, "古い写真を整理した");
+    await photos.ctx.settle();
     const first = await post(firstApp, OLD);
     await first.ctx.settle();
-    // 確定済み事実を 1 つ付けておく（プロンプトの facts 属性に乗る）
+    // 確定済み事実を 1 つ付けておく（プロンプトの facts 属性に乗る）。候補のまま・却下の事実は乗らない（X-2、F4-4）
     db.raw.prepare("INSERT INTO memory_facts (id, memory_id, kind, value, status, source, created_at) VALUES ('f1', ?, 'person', 'おばあちゃん', 'confirmed', 'user', 'now')").run(first.memory.id);
-    // 札への反応が入力に混ざらないことを確かめるため、過去側に feedback 付きの札を置く
+    db.raw.prepare("INSERT INTO memory_facts (id, memory_id, kind, value, status, source, evidence, created_at) VALUES ('f2', ?, 'person', '母', 'candidate', 'ai', 'おばあちゃん', 'now')").run(first.memory.id);
+    db.raw.prepare("INSERT INTO memory_facts (id, memory_id, kind, value, status, source, evidence, created_at) VALUES ('f3', ?, 'place', '公園', 'rejected', 'ai', '縁側', 'now')").run(first.memory.id);
+    // 札への反応が入力に混ざらないことを確かめるため、過去の記憶どうしに feedback 付きの札を置く（F6-4）
+    db.raw
+      .prepare("INSERT INTO recalls (id, memory_id, related_memory_id, reason, evidence, feedback, created_at) VALUES ('r0', ?, ?, '目印の理由文', '古い写真', 'not_related', 'now')")
+      .run(first.memory.id, photos.memory.id);
     const { memory, ctx } = await post(app, "スーパーで青梅を見かけた");
     expect(runs(memory.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:running", "recall:running"]);
     release();
@@ -93,8 +100,15 @@ describe("D1 祖母の梅干し", () => {
     expect(rc.items).toHaveLength(1);
     expect(rc.items[0]).toMatchObject({ reason: "青梅と梅干し", evidence: "梅干しを漬けていた", feedback: "none", related_memory: { id: first.memory.id, body: OLD } });
     const recallReq = call.requests.find((r) => r.system.includes("過去の記憶"))!;
-    expect(recallReq.user).toContain('facts="人物: おばあちゃん"');
+    // 閉じの " まで含めて一致させる（確定の 1 件だけが facts に乗っている）
+    const oldLine = recallReq.user.split("\n").find((l) => l.includes(`id="${first.memory.id}"`))!;
+    expect(oldLine).toContain('facts="人物: おばあちゃん"');
+    expect(recallReq.user).not.toContain("母");
+    expect(recallReq.user).not.toContain("公園");
     expect(recallReq.user).not.toContain("feedback");
+    expect(recallReq.user).not.toContain("not_related");
+    expect(recallReq.user).not.toContain("目印の理由文");
+    expect(recallReq.system).not.toContain("feedback");
     expect(recallReq.effort).toBe("medium");
     // 思い出された側から見ると recalled_by
     const old = (await (await app.request(`/api/memories/${first.memory.id}`, { headers: H }, env)).json()) as { recalled_by: { items: Array<{ memory: { id: string } }> } };
@@ -139,6 +153,106 @@ describe("相手の記憶が途中で消えたとき", () => {
     expect(runs(memory.id).find((r) => r.kind === "recall")!.status).toBe("succeeded");
     const rows = db.raw.prepare("SELECT related_memory_id FROM recalls WHERE memory_id = ?").all(memory.id) as Array<{ related_memory_id: string }>;
     expect(rows.map((r) => r.related_memory_id)).toEqual([b.memory.id]);
+  });
+});
+
+describe("想起の入力の範囲", () => {
+  it("X-11: 他のユーザーの記憶は入力に入らず、Claude がその id を返しても札にならない", async () => {
+    const H_OTHER = { ...H, [DEV_USER_HEADER]: "other@example.com" };
+    const quiet = appWith(fakeCall(() => ({ items: [] })));
+    const theirs = await post(quiet, "梅干しを漬けた", fakeExecutionCtx(), H_OTHER);
+    await theirs.ctx.settle();
+    const mine = await post(quiet, "電気代を払った");
+    await mine.ctx.settle();
+    // 他人の記憶は ME の「過去の記憶」に数えない（ME の 1 件目なので recall は作られない）
+    expect(runs(mine.memory.id).map((r) => r.kind)).toEqual(["facts"]);
+
+    const call = fakeCall((req) =>
+      req.system.includes("過去の記憶")
+        ? { items: [{ related_memory_id: theirs.memory.id, reason: "梅", evidence: "梅干しを漬けた" }] }
+        : { items: [] },
+    );
+    const { memory, ctx } = await post(appWith(call), "スーパーで青梅を見かけた");
+    await ctx.settle();
+    const recallReq = call.requests.find((r) => r.system.includes("過去の記憶"))!;
+    expect(recallReq.user).toContain(mine.memory.id);
+    expect(recallReq.user).not.toContain(theirs.memory.id);
+    expect(recallReq.user).not.toContain("梅干しを漬けた");
+    expect(runs(memory.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:empty", "recall:empty"]);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM recalls").get()).toEqual({ n: 0 });
+  });
+
+  it("F5-5 / N-6: 過去の記憶が 250 件あっても、送るのは created_at の新しい順に 200 件ちょうど", async () => {
+    await createApp().request("/api/me", { headers: { [DEV_USER_HEADER]: ME } }, env); // users の行（FK）
+    const ins = db.raw.prepare(
+      "INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, created_at, updated_at) VALUES (?, ?, ?, NULL, 'unknown', ?, ?)",
+    );
+    for (let i = 0; i < 250; i++) {
+      // created_at を 1 分ずつ増やす（同じ値だと ORDER BY の順が定まらない）
+      const c = new Date(Date.UTC(2025, 0, 1) + i * 60_000).toISOString();
+      ins.run(`past-${String(i).padStart(3, "0")}`, ME, `記憶 ${i}`, c, c);
+    }
+    const call = fakeCall(() => ({ items: [] }));
+    const { memory, ctx } = await post(appWith(call), "スーパーで青梅を見かけた");
+    await ctx.settle();
+    const recallReq = call.requests.find((r) => r.system.includes("過去の記憶"))!;
+    const ids = [...recallReq.user.matchAll(/<memory id="([^"]+)"/g)].map((m) => m[1]);
+    // 新しい 200 件（past-249 → past-050）。古い 50 件と新しい記憶自身は入らない
+    expect(ids).toEqual(Array.from({ length: 200 }, (_, k) => `past-${String(249 - k).padStart(3, "0")}`));
+    expect(recallReq.user).not.toContain(`id="${memory.id}"`);
+    expect(runs(memory.id).find((r) => r.kind === "recall")!.input_tokens).toBe(10);
+  });
+});
+
+describe("C1（想起）と C2（候補）は独立", () => {
+  it("想起だけが失敗しても、候補は保存される", async () => {
+    const quiet = appWith(fakeCall(() => ({ items: [] })));
+    const past = await post(quiet, "おばあちゃんは梅干しを漬けていた");
+    await past.ctx.settle();
+    const call = fakeCall((req) =>
+      req.system.includes("過去の記憶") ? new Error("overloaded") : { items: [{ kind: "thing", value: "青梅", evidence: "青梅", date_precision: "unknown" }] },
+    );
+    const { memory, ctx } = await post(appWith(call), "スーパーで青梅を見かけた");
+    await ctx.settle();
+    expect(runs(memory.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:succeeded", "recall:failed"]);
+    expect(db.raw.prepare("SELECT value, status FROM memory_facts WHERE memory_id = ?").all(memory.id)).toEqual([{ value: "青梅", status: "candidate" }]);
+  });
+
+  it("候補だけが失敗しても、札は保存される", async () => {
+    const quiet = appWith(fakeCall(() => ({ items: [] })));
+    const past = await post(quiet, "おばあちゃんは梅干しを漬けていた");
+    await past.ctx.settle();
+    const call = fakeCall((req) =>
+      req.system.includes("過去の記憶") ? { items: [{ related_memory_id: past.memory.id, reason: "梅", evidence: "梅干し" }] } : new Error("overloaded"),
+    );
+    const { memory, ctx } = await post(appWith(call), "スーパーで青梅を見かけた");
+    await ctx.settle();
+    expect(runs(memory.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:failed", "recall:succeeded"]);
+    expect(db.raw.prepare("SELECT related_memory_id FROM recalls WHERE memory_id = ?").all(memory.id)).toEqual([{ related_memory_id: past.memory.id }]);
+  });
+
+  it("想起の準備（過去の記憶の読み出し）で例外が出ても、201 で候補は保存される", async () => {
+    const quiet = appWith(fakeCall(() => ({ items: [] })));
+    const past = await post(quiet, "おばあちゃんは梅干しを漬けていた");
+    await past.ctx.settle();
+    // listPastMemories の SELECT だけを失敗させる
+    const prepare = db.prepare.bind(db);
+    env = {
+      ...env,
+      DB: {
+        ...db,
+        prepare: (sql: string) => {
+          if (sql.includes("AND id != ?2")) throw new Error("D1 down");
+          return prepare(sql);
+        },
+      } as unknown as D1Database,
+    };
+    const call = fakeCall(() => ({ items: [{ kind: "thing", value: "青梅", evidence: "青梅", date_precision: "unknown" }] }));
+    const { memory, ctx } = await post(appWith(call), "スーパーで青梅を見かけた");
+    await ctx.settle();
+    expect(runs(memory.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:succeeded"]);
+    expect(call.requests.some((r) => r.system.includes("過去の記憶"))).toBe(false);
+    expect(db.raw.prepare("SELECT value FROM memory_facts WHERE memory_id = ?").all(memory.id)).toEqual([{ value: "青梅" }]);
   });
 });
 
