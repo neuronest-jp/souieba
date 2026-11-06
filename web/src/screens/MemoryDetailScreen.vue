@@ -171,7 +171,7 @@ watch(() => props.id, load);
   <main class="flex flex-1 flex-col gap-4 py-4">
     <button type="button" class="self-start min-h-11 text-ink-soft" @click="back">‹ {{ from === "today" ? "きょう" : "これまで" }}</button>
 
-    <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-faint" role="status">よみこみ中</p>
+    <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
     <p v-else-if="state === 'missing'" class="py-16 text-center text-ink-soft">この記憶は見つかりませんでした</p>
     <section v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-16">
       <p class="text-ink-soft">読み込めませんでした</p>

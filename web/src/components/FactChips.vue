@@ -82,7 +82,7 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
              値の列を狭めて単語の途中で割らず、ボタンを次の段の右端に回す（wireframes 2.3）。
              値だけを折り返しの単位にすると、長い根拠のとき種別だけが 1 段目に取り残される -->
         <span class="flex flex-auto items-center gap-x-3">
-          <span class="w-8 shrink-0 text-sm text-ink-faint">{{ KIND_LABEL[f.kind] }}</span>
+          <span class="w-8 shrink-0 text-sm text-ink-soft">{{ KIND_LABEL[f.kind] }}</span>
           <span class="flex-1 text-ink">
             <template v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date'">「{{ display(f) }}」</template>
             <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない -->

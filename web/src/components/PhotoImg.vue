@@ -30,5 +30,5 @@ onUnmounted(() => {
 <template>
   <img v-if="src" :src="src" :alt="alt ?? ''" v-bind="$attrs" />
   <div v-else-if="!failed" class="bg-line/40" v-bind="$attrs" aria-hidden="true"></div>
-  <div v-else class="flex items-center justify-center bg-line/40 text-sm text-ink-faint" v-bind="$attrs">写真を読めませんでした</div>
+  <div v-else class="flex items-center justify-center bg-line/40 text-sm text-ink-soft" v-bind="$attrs">写真を読めませんでした</div>
 </template>

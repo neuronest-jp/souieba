@@ -88,7 +88,7 @@ useMemoryDeleted((id) => {
       <h1 class="text-[22px]">これまで</h1>
     </header>
 
-    <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-faint" role="status">よみこみ中</p>
+    <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
 
     <section v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-16 text-center">
       <p class="text-ink-soft">読み込めませんでした</p>
