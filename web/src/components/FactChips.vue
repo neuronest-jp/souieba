@@ -7,7 +7,8 @@ import { useNotice } from "../composables/useNotice";
 import type { Fact } from "../api/types";
 import { formatFactDate } from "../date";
 
-const props = defineProps<{ facts: Fact[]; title?: string }>();
+// fallback: 行も見出しも無くなったときのフォーカスの置き先（S3 で最後の候補を却下したときの、起きた日の h1）
+const props = defineProps<{ facts: Fact[]; title?: string; fallback?: HTMLElement | null }>();
 const emit = defineEmits<{ decided: [fact: Fact] }>();
 
 const KIND_LABEL = { person: "人", place: "場所", date: "日", thing: "もの" } as const;
@@ -19,7 +20,8 @@ const showEvidence = (f: Fact) => f.evidence && f.evidence !== f.value && !f.evi
 
 const root = ref<HTMLElement | null>(null);
 const heading = ref<HTMLElement | null>(null);
-// 選んだ結果の読み上げ（記録できたとき）。行ではなく section に常に置く（S3 の却下では行ごと消えるため）
+// 選んだ結果の読み上げ（記録できたとき）。行ではなく section に常に置く（S3 の却下では行ごと消え、
+// 最後の候補なら見出しも消えるため。section は facts が 0 件になっても外さない）
 const announce = ref("");
 
 // 行と見出しは、ここでフォーカスを置くあいだだけ tabindex="-1" にする。最初から付けておくと、
@@ -31,14 +33,15 @@ const placeFocus = (el: HTMLElement) => {
 };
 
 // 押した「そう」「ちがう」は消えるので、フォーカスを行に置き直す（wireframes 6 節）。S3 で却下した行は消えるので、
-// 同じ位置の行 → ひとつ前の行 → 見出しの順に探す。フォーカスが落ちたか、前にここで置いたままのときだけ動かし、
-// 利用者がほかへ移したフォーカスは奪わない。置いた先を返す
+// 同じ位置の行 → ひとつ前の行 → 見出し → （見出しごと消えたら）fallback の順に探す。フォーカスが落ちたか、
+// 前にここで置いたままのときだけ動かし、利用者がほかへ移したフォーカスは奪わない。置いた先を返す
 const refocus = async (id: string, index: number, placed: Element | null = null) => {
   await nextTick();
   const active = document.activeElement;
   if (active && active !== document.body && active !== placed) return null;
   const rows = Array.from(root.value?.querySelectorAll<HTMLElement>("li[data-fact-id]") ?? []);
-  const target = rows.find((el) => el.dataset.factId === id) ?? rows[index] ?? rows[index - 1] ?? heading.value;
+  const target =
+    rows.find((el) => el.dataset.factId === id) ?? rows[index] ?? rows[index - 1] ?? heading.value ?? props.fallback ?? null;
   if (target) placeFocus(target);
   return target ?? null;
 };
@@ -70,38 +73,42 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
 </script>
 
 <template>
-  <section v-if="facts.length > 0" ref="root">
-    <h2 ref="heading" class="text-sm text-ink-soft">{{ title ?? "ひとことに出てきたもの" }}</h2>
-    <ul class="mt-2 flex flex-col">
-      <li
-        v-for="f in facts"
-        :key="f.id"
-        :data-fact-id="f.id"
-        class="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line py-2 last:border-b-0"
-      >
-        <!-- 種別と値はひとまとまりで行を折り返す単位にする。値と根拠が入りきらない幅（375px の S1 など）では、
-             値の列を狭めて単語の途中で割らず、ボタンを次の段の右端に回す（wireframes 2.3）。
-             値だけを折り返しの単位にすると、長い根拠のとき種別だけが 1 段目に取り残される -->
-        <span class="flex flex-auto items-center gap-x-3">
-          <span class="w-8 shrink-0 text-sm text-ink-soft">{{ KIND_LABEL[f.kind] }}</span>
-          <span class="flex-1 text-ink">
-            <template v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date'">「{{ display(f) }}」</template>
-            <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない。
-                 打ち消し線は読み上げでは伝わらないので、確定の「✓ そう」と同じく行を読めば分かるよう、見えない「、ちがう」を添える -->
-            <span v-else-if="f.status === 'rejected'"><span class="text-ink-soft line-through">{{ display(f) }}</span><span class="sr-only">、ちがう</span></span>
-            <template v-else>{{ display(f) }}</template>
-            <span v-if="showEvidence(f)" class="block text-sm text-ink-soft">「{{ f.evidence }}」</span>
+  <!-- 0 件になっても section は外さない（S3 で最後の候補を却下したとき、読み上げと、記録に失敗して戻した行の知らせを
+       同じ部品に残すため）。見出しと一覧は 0 件なら出さず（wireframes 4.1）、section は sr-only にして余白も残さない -->
+  <section ref="root" :class="{ 'sr-only': facts.length === 0 }">
+    <template v-if="facts.length > 0">
+      <h2 ref="heading" class="text-sm text-ink-soft">{{ title ?? "ひとことに出てきたもの" }}</h2>
+      <ul class="mt-2 flex flex-col">
+        <li
+          v-for="f in facts"
+          :key="f.id"
+          :data-fact-id="f.id"
+          class="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line py-2 last:border-b-0"
+        >
+          <!-- 種別と値はひとまとまりで行を折り返す単位にする。値と根拠が入りきらない幅（375px の S1 など）では、
+               値の列を狭めて単語の途中で割らず、ボタンを次の段の右端に回す（wireframes 2.3）。
+               値だけを折り返しの単位にすると、長い根拠のとき種別だけが 1 段目に取り残される -->
+          <span class="flex flex-auto items-center gap-x-3">
+            <span class="w-8 shrink-0 text-sm text-ink-soft">{{ KIND_LABEL[f.kind] }}</span>
+            <span class="flex-1 text-ink">
+              <template v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date'">「{{ display(f) }}」</template>
+              <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない。
+                   打ち消し線は読み上げでは伝わらないので、確定の「✓ そう」と同じく行を読めば分かるよう、見えない「、ちがう」を添える -->
+              <span v-else-if="f.status === 'rejected'"><span class="text-ink-soft line-through">{{ display(f) }}</span><span class="sr-only">、ちがう</span></span>
+              <template v-else>{{ display(f) }}</template>
+              <span v-if="showEvidence(f)" class="block text-sm text-ink-soft">「{{ f.evidence }}」</span>
+            </span>
           </span>
-        </span>
-        <!-- 確定の印もボタンと同じ右端に置く（押した瞬間に左へ跳ねない） -->
-        <span v-if="f.status === 'candidate'" class="ml-auto flex gap-2">
-          <button type="button" class="min-h-11 rounded-full border border-line bg-card px-3.5 text-base text-ink" :disabled="busy.has(f.id)" @click="decide(f, 'confirmed', $event)">そう</button>
-          <button type="button" class="min-h-11 rounded-full border border-line bg-card px-3.5 text-base text-ink-soft" :disabled="busy.has(f.id)" @click="decide(f, 'rejected', $event)">ちがう</button>
-        </span>
-        <span v-else-if="f.status === 'confirmed'" class="ml-auto rounded-full border border-moss bg-moss-soft px-3.5 py-1 text-sm text-ink">✓ そう</span>
-        <p v-if="notice.key.value === f.id" class="w-full text-sm text-ink-soft" role="status" aria-live="polite">{{ notice.message.value }}</p>
-      </li>
-    </ul>
+          <!-- 確定の印もボタンと同じ右端に置く（押した瞬間に左へ跳ねない） -->
+          <span v-if="f.status === 'candidate'" class="ml-auto flex gap-2">
+            <button type="button" class="min-h-11 rounded-full border border-line bg-card px-3.5 text-base text-ink" :disabled="busy.has(f.id)" @click="decide(f, 'confirmed', $event)">そう</button>
+            <button type="button" class="min-h-11 rounded-full border border-line bg-card px-3.5 text-base text-ink-soft" :disabled="busy.has(f.id)" @click="decide(f, 'rejected', $event)">ちがう</button>
+          </span>
+          <span v-else-if="f.status === 'confirmed'" class="ml-auto rounded-full border border-moss bg-moss-soft px-3.5 py-1 text-sm text-ink">✓ そう</span>
+          <p v-if="notice.key.value === f.id" class="w-full text-sm text-ink-soft" role="status" aria-live="polite">{{ notice.message.value }}</p>
+        </li>
+      </ul>
+    </template>
     <p class="sr-only" role="status" aria-live="polite">{{ announce }}</p>
   </section>
 </template>

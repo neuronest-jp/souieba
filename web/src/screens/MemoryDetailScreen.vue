@@ -213,7 +213,9 @@ watch(() => props.id, load);
         <p v-if="photoError" class="text-sm text-ink-soft" role="alert">{{ photoError }}</p>
       </div>
 
-      <FactChips v-if="visibleFacts.length > 0" class="mt-6" :facts="visibleFacts" title="おぼえていること" />
+      <!-- 却下は描かない（visibleFacts）が、部品は事実が 1 件でもあれば外さない。見えている最後の候補を「ちがう」にしても、
+           読み上げと失敗の知らせを同じ部品に残し、行も見出しも消えたらフォーカスを起きた日の h1 へ置く（wireframes 6 節） -->
+      <FactChips v-if="detail.facts.items.length > 0" class="mt-6" :facts="visibleFacts" :fallback="heading" title="おぼえていること" />
 
       <section v-if="restRecalledBy.length > 0 || detail.recalls.items.length > 0" class="mt-6 flex flex-col gap-3">
         <h2 class="font-display text-[22px] font-bold text-ember">そういえば。</h2>
