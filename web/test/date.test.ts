@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampDay, firstLine, formatDateJa, formatFactDate, formatHappenedOn, isRealYmd, toIsoDate } from "../src/date";
+import { clampDay, firstLine, formatDateJa, formatFactDate, formatHappenedOn, isRealYmd, toIsoDate, todayInTokyo } from "../src/date";
 
 // 端末ローカルの日付として扱う（new Date(y, m, d)）。TZ に依らない
 const NOW = new Date(2026, 10, 5, 12, 0, 0); // 2026-11-05（木）
@@ -8,6 +8,24 @@ describe("toIsoDate", () => {
   it("端末ローカルの年月日を YYYY-MM-DD にゼロ埋めで", () => {
     expect(toIsoDate(new Date(2026, 0, 3))).toBe("2026-01-03");
     expect(toIsoDate(new Date(2026, 10, 5, 23, 59))).toBe("2026-11-05");
+  });
+});
+
+describe("todayInTokyo（requirements 第8節 #14）", () => {
+  // UTC の時刻で渡すので、テストを動かす端末の TZ に依らない
+  it("UTC で前日の夜でも、JST で日付が変わっていれば翌日", () => {
+    expect(todayInTokyo(new Date("2026-11-05T23:30:00Z"))).toBe("2026-11-06");
+    expect(todayInTokyo(new Date("2026-11-05T15:00:00Z"))).toBe("2026-11-06");
+  });
+
+  it("JST 23:59 まではその日、0:00 で翌日", () => {
+    expect(todayInTokyo(new Date("2026-11-06T14:59:00Z"))).toBe("2026-11-06");
+    expect(todayInTokyo(new Date("2026-11-06T15:00:00Z"))).toBe("2026-11-07");
+  });
+
+  it("年をまたぐときも YYYY-MM-DD にゼロ埋めで", () => {
+    expect(todayInTokyo(new Date("2026-12-31T15:00:00Z"))).toBe("2027-01-01");
+    expect(todayInTokyo(new Date("2027-01-01T00:00:00Z"))).toBe("2027-01-01");
   });
 });
 

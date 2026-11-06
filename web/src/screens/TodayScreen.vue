@@ -11,7 +11,7 @@ import { usePolling } from "../composables/usePolling";
 import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
 import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
-import { formatHappenedOn, isRealYmd, toIsoDate } from "../date";
+import { formatHappenedOn, isRealYmd, todayInTokyo } from "../date";
 import { focusHeading, hrefFor } from "../composables/useScreen";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
 import { keepDecided } from "../facts";
@@ -20,8 +20,8 @@ defineOptions({ name: "TodayScreen" }); // KeepAlive の include で使う
 
 const body = ref("");
 const precision = ref<Precision>("day");
-const date = ref(toIsoDate(new Date())); // 常に YYYY-MM-DD。精度に応じて POST 時に切り詰める
-// 「いつ？」で日付か精度を変えたら立てる。立っていなければ、戻ってきたときに既定の日付（今日）を取り直す
+const date = ref(todayInTokyo()); // 常に YYYY-MM-DD（既定は Asia/Tokyo の今日）。精度に応じて POST 時に切り詰める
+// 「いつ？」で日付か精度を変えたら立てる。立っていなければ、戻ってきたとき・アプリが表に戻ったとき・保存するときに既定の日付（今日）を取り直す
 const dateTouched = ref(false);
 const sheetOpen = ref(false);
 const whenButton = ref<HTMLButtonElement | null>(null);
@@ -38,6 +38,7 @@ const shownIds = ref(new Set<string>());
 let alive = true;
 onUnmounted(() => {
   alive = false;
+  document.removeEventListener("visibilitychange", onVisible);
 });
 const photo = ref<File | null>(null);
 const photoNote = ref("");
@@ -79,7 +80,7 @@ const happenedOnForPost = computed(() => {
 // 見出しは選んだ精度で丸めた起きた日
 const headingDate = computed(() => {
   if (precision.value === "unknown") return formatHappenedOn(null, "unknown");
-  if (!hasDate.value) return formatHappenedOn(toIsoDate(new Date()), precision.value);
+  if (!hasDate.value) return formatHappenedOn(todayInTokyo(), precision.value);
   return formatHappenedOn(date.value, precision.value);
 });
 
@@ -90,6 +91,8 @@ const closeSheet = () => {
 
 const save = async () => {
   if (!canSave.value) return;
+  // 夜に開いたまま裏に回し、翌朝そのまま書いたときに前日で残さない（visibilitychange が届かない WebView もある）
+  refreshDefaultDate();
   saving.value = true;
   error.value = "";
   photoNote.value = "";
@@ -133,7 +136,7 @@ const another = () => {
   facts.value = [];
   recalls.value = [];
   precision.value = "day";
-  date.value = toIsoDate(new Date());
+  date.value = todayInTokyo();
   dateTouched.value = false;
   shownIds.value = new Set();
 };
@@ -145,9 +148,13 @@ const writeAnother = () => {
   void nextTick(() => focusHeading(dateHeading.value));
 };
 
-// 残しておいた S1 に戻ってきたとき。日をまたいで残っていても、触っていない既定の日付は今日にする
+// 残しておいた S1 に戻ってきたとき・アプリが表に戻ったとき・保存するとき。日をまたいで残っていても、触っていない既定の日付は今日にする
 const refreshDefaultDate = () => {
-  if (!saved.value && !dateTouched.value) date.value = toIsoDate(new Date());
+  if (!saved.value && !dateTouched.value) date.value = todayInTokyo();
+};
+// S1 を開いたままアプリを裏に回し、翌朝戻ったとき（画面は切り替わらないので onActivated は呼ばれない）。見出しも今日にする
+const onVisible = () => {
+  if (document.visibilityState === "visible") refreshDefaultDate();
 };
 
 // 保存した記憶を S3 で開いて戻ってきたとき、S3 で決めた候補・添え直した写真・届いた札を映す。
@@ -166,11 +173,13 @@ const recheckSaved = async (id: string) => {
 };
 
 onActivated(() => {
+  document.addEventListener("visibilitychange", onVisible);
   refreshDefaultDate();
   if (saved.value) void recheckSaved(saved.value.id);
 });
 // 離れるとき: シートを閉じ（選んだ値はそのまま残る）、いま見えているカードと札を「見せた」に数える
 onDeactivated(() => {
+  document.removeEventListener("visibilitychange", onVisible);
   sheetOpen.value = false;
   shownIds.value = new Set([...(saved.value ? [saved.value.id] : []), ...recalls.value.map((r) => r.id)]);
 });

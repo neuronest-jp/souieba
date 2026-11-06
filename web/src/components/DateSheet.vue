@@ -4,7 +4,7 @@
 // 精度を 日 → 年 → 日 と戻しても、選んだ月日は失われない。
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import type { Precision } from "../api/types";
-import { clampDay, isRealYmd, toIsoDate } from "../date";
+import { clampDay, isRealYmd, todayInTokyo } from "../date";
 
 const precision = defineModel<Precision>("precision", { required: true });
 const date = defineModel<string>("date", { required: true }); // 常に YYYY-MM-DD
@@ -17,7 +17,8 @@ const options: { id: Precision; label: string }[] = [
   { id: "unknown", label: "いつだったか" },
 ];
 
-const thisYear = new Date().getFullYear();
+// 年の選択肢は Asia/Tokyo の今年から（既定の日付と同じ基準。年明けの数時間に今年が選べなくならない）
+const thisYear = Number(todayInTokyo().slice(0, 4));
 const years = Array.from({ length: 101 }, (_, i) => thisYear - i);
 const firstButton = ref<HTMLButtonElement | null>(null);
 
@@ -49,7 +50,7 @@ const onKey = (e: KeyboardEvent) => {
   if (e.key === "Escape") emit("close");
 };
 onMounted(() => {
-  if (!isRealYmd(date.value)) date.value = toIsoDate(new Date());
+  if (!isRealYmd(date.value)) date.value = todayInTokyo();
   window.addEventListener("keydown", onKey);
   void nextTick(() => firstButton.value?.focus());
 });

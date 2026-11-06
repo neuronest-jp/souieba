@@ -9,12 +9,22 @@ const parseYmd = (s: string): { y: number; m: number; d: number } | null => {
   return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
 };
 
-// 今日の日付（端末のローカル）を 'YYYY-MM-DD' で。
+// 今日の日付（端末のローカル）を 'YYYY-MM-DD' で。画面の「今日」には使わない（下の todayInTokyo を使う）。
 export const toIsoDate = (d: Date): string => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+};
+
+// Asia/Tokyo の今日を 'YYYY-MM-DD' で（requirements 第8節 #14「Worker・画面とも Asia/Tokyo」）。
+// worker/src/validate.ts の todayInTokyo と同じ値を返す。端末の時刻設定が UTC などでも、JST 0〜9 時に前日にならない。
+// 画面は端末ごとに ICU の版が違い、ロケールの書式（en-CA の YYYY-MM-DD）が変わりうるので、format ではなく formatToParts で組み立てる
+const TOKYO_YMD = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" });
+export const todayInTokyo = (now: Date = new Date()): string => {
+  const parts = TOKYO_YMD.formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 };
 
 // その月の日数（m は 1〜12）。Date を使わず計算するので、時差にも 0〜99 年の読み替えにも左右されない。
