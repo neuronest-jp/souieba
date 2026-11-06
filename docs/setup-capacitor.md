@@ -142,6 +142,6 @@ Worker の変更は `pnpm run deploy`（docs/setup-cloudflare.md）。
 |---|---|---|
 | `web/.env.production` の `VITE_API_BASE` | | |
 | Xcode でシミュレータ起動 → ログイン → S1 | | |
-| Android `assembleDebug` が通る | | |
+| Android `assembleDebug` が通る | JDK 21 で通る（11/6。app-debug.apk 7.9MB。JDK 25 では Gradle 8.14.3 が動かない） | 済 |
 | 実機で写真の撮影とライブラリ選択 | | |
 | アイコン / スプラッシュ画像 | | |
