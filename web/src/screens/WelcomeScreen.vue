@@ -34,7 +34,7 @@ const start = async () => {
 <template>
   <main class="flex flex-1 flex-col justify-center gap-8 py-16">
     <div class="space-y-3 text-center">
-      <h1 class="text-3xl tracking-tight">そういえば。</h1>
+      <h1 class="text-4xl">そういえば。</h1>
       <p class="text-ink-soft">
         きょうのひとことを残しておくと、<br />
         いつか、ふと思い出すきっかけになります。
@@ -43,13 +43,13 @@ const start = async () => {
     <form class="card flex flex-col gap-4 p-5" @submit.prevent="start">
       <label class="flex flex-col gap-1">
         <span class="text-sm text-ink-soft">招待コード</span>
-        <input v-model="code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" class="h-12 rounded-xl bg-fill px-4 outline-none focus:ring-2 focus:ring-ember" />
+        <input v-model="code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" class="h-12 rounded-xl border border-line bg-paper px-3" />
       </label>
       <label class="flex flex-col gap-1">
         <span class="text-sm text-ink-soft">メールアドレス</span>
-        <input v-model="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" class="h-12 rounded-xl bg-fill px-4 outline-none focus:ring-2 focus:ring-ember" />
+        <input v-model="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" class="h-12 rounded-xl border border-line bg-paper px-3" />
       </label>
-      <button class="btn btn-primary mt-2 w-full" type="submit" :disabled="!canStart">はじめる</button>
+      <button class="btn btn-primary mt-2 self-center px-10" type="submit" :disabled="!canStart">はじめる</button>
       <p v-if="error" class="text-center text-sm text-ink-soft" role="alert">{{ error }}</p>
     </form>
     <p class="text-center text-sm text-ink-soft">招待コードは、お渡ししたものを入れてください</p>

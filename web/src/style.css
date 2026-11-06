@@ -1,48 +1,36 @@
 @import "tailwindcss";
 
-/* デザイン基盤（docs/decisions/0004-design-foundation.md、0008-ios-standard-look.md）。コンポーネントは色を直書きしない。
-   11/7 から iOS 26 / 27 の標準の見た目に寄せた（ADR-0008）。トークンの名前は変えず、値を iOS のシステムの色に置き換えている:
-   paper = systemGroupedBackground、card = secondarySystemGroupedBackground、ink = label、
-   ink-soft = secondaryLabel（「コントラストを上げる」のときの濃さ。白で 5.2:1）、ink-faint = tertiaryLabel（プレースホルダだけ）、
-   line = opaqueSeparator、fill = tertiarySystemFill、ember = アプリのアクセント色（tint。白で 5.4:1）、danger = systemRed（濃い側） */
+/* デザイン基盤（docs/decisions/0004-design-foundation.md）。コンポーネントは色を直書きしない。 */
 @theme {
-  --color-paper: #f2f2f7;
-  --color-card: #ffffff;
-  --color-ink: #000000;
-  --color-ink-soft: #6c6c70;
-  --color-ink-faint: #c4c4c7;
-  --color-line: #c6c6c8;
-  --color-fill: #e3e3e8;
-  --color-ember: #a9502f;
-  --color-ember-soft: #f4e8e3;
-  --color-moss: #248a3d;
-  --color-moss-soft: #e2f1e6;
-  --color-danger: #d70015;
+  --color-paper: #faf5ec;
+  --color-card: #fffdf8;
+  --color-ink: #3a3230;
+  --color-ink-soft: #6f655d;
+  --color-ink-faint: #a69c92;
+  --color-line: #e6dccd;
+  --color-ember: #c9684a;
+  --color-ember-soft: #f3ded3;
+  --color-moss: #7e9478;
+  --color-moss-soft: #e3eadf;
 
-  /* iOS の標準の字体（日本語はヒラギノ角ゴ、英数字は SF）。Android ではその端末の標準の字体になる */
-  --font-display: -apple-system, BlinkMacSystemFont, "Hiragino Sans", system-ui, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, "Hiragino Sans", system-ui, sans-serif;
+  --font-display: "Zen Maru Gothic", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Noto Sans JP", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
 
-  /* 余白・文字サイズは rem ではなく px で決める（html の 17px に引きずられない。wireframes 0 節）。
-     大きさは iOS の Dynamic Type の既定（Large）に合わせる: 本文 17、補足 15、注 13、見出し 22、大見出し 34 */
+  /* 余白・文字サイズは rem ではなく px で決める（html の 17px に引きずられない。wireframes 0 節） */
   --spacing: 4px;
-  --text-xs: 13px;
-  --text-sm: 15px;
+  --text-sm: 14px;
   --text-base: 17px;
-  --text-lg: 20px;
+  --text-lg: 19px;
   --text-xl: 22px;
-  --text-2xl: 28px;
-  --text-3xl: 34px;
+  --text-2xl: 26px;
 
-  /* 本文の行間。日本語の長い本文は iOS の既定（約 1.3）より広く取る */
-  --leading-relaxed: 1.7;
+  /* 本文の行間は 1.8（ADR-0004、N-3）。入力欄・本文・札の引用の leading-relaxed を Tailwind の既定 1.625 にしない */
+  --leading-relaxed: 1.8;
 
-  --radius-card: 26px;
+  --radius-card: 20px;
   --radius-pill: 999px;
 
-  /* iOS のグループ表示は影を付けない。浮かぶもの（タブバー、シート）だけに影を付ける */
-  --shadow-card: none;
-  --shadow-float: 0 8px 32px rgb(0 0 0 / 0.12), 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-card: 0 1px 2px rgb(58 50 48 / 0.04), 0 8px 24px rgb(58 50 48 / 0.06);
 
   --ease-gentle: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
@@ -53,8 +41,7 @@
     color: var(--color-ink);
     font-family: var(--font-body);
     font-size: 17px;
-    line-height: 1.5;
-    color-scheme: light;
+    line-height: 1.8;
     /* URL のような空白の無い長い英数字も枠の中で折り返す（N-3 の横スクロールを出さない）。
        anywhere は min-content まで縮め、flex の行（候補の行やボタン）の折り返し方を変えるので break-word にする */
     overflow-wrap: break-word;
@@ -70,7 +57,8 @@
   h3 {
     font-family: var(--font-display);
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
   }
   button,
   input,
@@ -98,37 +86,32 @@
   }
   .card {
     background: var(--color-card);
+    border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
   }
   .card:focus-within {
-    box-shadow: 0 0 0 2px var(--color-ember);
-  }
-  /* 浮かぶ面（タブバー、シート）。iOS 26 / 27 の Liquid Glass に寄せた半透明 + ぼかし + 細い縁 */
-  .glass {
-    background: color-mix(in srgb, var(--color-card) 72%, transparent);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    backdrop-filter: blur(24px) saturate(180%);
-    border: 0.5px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
-    box-shadow: var(--shadow-float);
+    border-color: var(--color-ember);
+    box-shadow: var(--shadow-card), 0 0 0 3px var(--color-ember-soft);
   }
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    min-height: 50px;
+    min-height: 48px;
     padding: 0 24px;
     border-radius: var(--radius-pill);
-    font-family: var(--font-body);
-    font-weight: 600;
-    font-size: 17px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 19px; /* 19px 以上の太字は WCAG の大きい文字（3:1）に入る */
     transition:
       background-color 200ms var(--ease-gentle),
       transform 200ms var(--ease-gentle),
       opacity 200ms var(--ease-gentle);
   }
   .btn:active {
-    transform: scale(0.98);
+    transform: translateY(1px);
   }
   .btn:disabled {
     cursor: default;
@@ -138,23 +121,24 @@
     color: var(--color-card);
   }
   .btn-primary:disabled {
-    background: var(--color-fill);
-    color: var(--color-ink-soft);
+    background: var(--color-ember-soft);
+    color: var(--color-ink-faint);
   }
-  .btn-primary:not(:disabled):active {
-    background: color-mix(in oklab, var(--color-ember) 85%, black);
+  .btn-primary:not(:disabled):hover {
+    background: color-mix(in oklab, var(--color-ember) 88%, black);
   }
   .btn-quiet {
     min-height: 44px;
-    background: var(--color-fill);
-    color: var(--color-ember);
+    background: var(--color-card);
+    color: var(--color-ink);
+    border: 1px solid var(--color-line);
     font-size: 17px;
   }
   .btn-quiet:disabled {
     color: var(--color-ink-faint);
   }
-  .btn-quiet:not(:disabled):active {
-    background: color-mix(in oklab, var(--color-fill) 85%, black);
+  .btn-quiet:not(:disabled):hover {
+    background: var(--color-paper);
   }
   /* 「そういえば。」の札が現れる動き */
   .appear {

@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appId: "jp.neuronest.souieba",
   appName: "そういえば。",
   webDir: "web/dist",
-  backgroundColor: "#F2F2F7",
+  backgroundColor: "#FAF5EC",
   ios: {
     // セーフエリアは CSS の env(safe-area-inset-*) だけで取る（.safe-area、下部ナビ、シート）。
     // "automatic" だと WKWebView がページがスクロールできるときだけ上下をずらし、そのあいだ env() が 0 になるため、
@@ -19,7 +19,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 800,
       launchAutoHide: true,
-      backgroundColor: "#F2F2F7",
+      backgroundColor: "#FAF5EC",
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true,

@@ -16,9 +16,9 @@
     </style>
 
 
-    <!-- 起動画面は地の色（#F2F2F7、ADR-0008 の paper）一色。Android 12 以降のシステムの起動画面も同じ色にする -->
+    <!-- 起動画面は地の色（#FAF5EC、ADR-0004 の paper）一色。Android 12 以降のシステムの起動画面も同じ色にする -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
-        <item name="windowSplashScreenBackground">#F2F2F7</item>
+        <item name="windowSplashScreenBackground">#FAF5EC</item>
     </style>
 </resources>

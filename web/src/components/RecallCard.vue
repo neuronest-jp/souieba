@@ -14,13 +14,13 @@ withDefaults(defineProps<{ recall: Recall; from: "today" | "past"; heading?: boo
 </script>
 
 <template>
-  <article class="card relative p-4" :class="animate ? 'appear' : ''">
-    <h2 v-if="heading" class="text-xl text-ember">そういえば。</h2>
+  <article class="card relative border-l-[3px] border-l-ember p-4" :class="animate ? 'appear' : ''">
+    <h2 v-if="heading" class="font-display text-[22px] font-bold text-ember">そういえば。</h2>
     <p class="mt-1 text-sm text-ink-soft">
       {{ formatHappenedOn(recall.related_memory.happened_on, recall.related_memory.happened_on_precision) }}のひとこと
     </p>
     <p class="mt-2 line-clamp-3 leading-relaxed text-ink">「{{ recall.evidence }}」</p>
     <p class="mt-1 text-sm text-ink-soft">{{ recall.reason }}</p>
-    <a :href="hrefFor({ name: 'memory', id: recall.related_memory.id, from, recall: recall.id })" class="mt-2 flex min-h-11 items-center justify-end text-ember after:absolute after:inset-0 after:rounded-card active:after:bg-ink/[0.04]">ひらく ›</a>
+    <a :href="hrefFor({ name: 'memory', id: recall.related_memory.id, from, recall: recall.id })" class="mt-3 flex min-h-11 items-center justify-end text-sm text-ink-soft after:absolute after:inset-0">ひらく ›</a>
   </article>
 </template>

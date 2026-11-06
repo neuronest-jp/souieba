@@ -58,24 +58,17 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
-  <!-- iOS 26 / 27 のシート: 画面の端から少し浮いた大きな角丸、上に掴み手。選択肢は iOS のセグメント -->
-  <div class="fixed inset-0 z-20 flex items-end justify-center bg-ink/25" @click.self="emit('close')">
-    <div
-      class="m-2 w-full max-w-[560px] rounded-[34px] bg-card px-5 pt-2 pb-[max(20px,calc(env(safe-area-inset-bottom)-4px))] shadow-[var(--shadow-float)]"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="date-sheet-title"
-    >
-      <div class="mx-auto mb-3 h-[5px] w-9 rounded-full bg-ink-faint" aria-hidden="true"></div>
-      <h2 id="date-sheet-title" class="text-center text-base font-semibold">いつのこと</h2>
-      <div class="mt-4 flex gap-0.5 rounded-[10px] bg-fill p-0.5">
+  <div class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="emit('close')">
+    <div class="w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
+      <h2 id="date-sheet-title" class="text-xl">いつのこと</h2>
+      <div class="mt-4 flex flex-wrap gap-2">
         <button
           v-for="(o, i) in options"
           :key="o.id"
           :ref="(el) => { if (i === 0) firstButton = el as HTMLButtonElement; }"
           type="button"
-          class="min-h-11 flex-1 rounded-[8px] px-1 text-xs whitespace-nowrap transition-colors"
-          :class="precision === o.id ? 'bg-card font-semibold text-ink shadow-[var(--shadow-float)]' : 'font-medium text-ink'"
+          class="min-h-11 rounded-full border px-3.5 text-base transition-colors"
+          :class="precision === o.id ? 'border-ember bg-ember-soft text-ink' : 'border-line bg-card text-ink-soft'"
           :aria-pressed="precision === o.id"
           @click="precision = o.id"
         >
@@ -83,15 +76,15 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         </button>
       </div>
       <div class="mt-4 min-h-11">
-        <input v-if="precision === 'day'" v-model="dayModel" type="date" class="h-11 w-full rounded-xl bg-fill px-3" aria-label="日付" />
-        <input v-else-if="precision === 'month'" v-model="monthModel" type="month" class="h-11 w-full rounded-xl bg-fill px-3" aria-label="年月" />
-        <select v-else-if="precision === 'year'" v-model="yearModel" class="h-11 w-full rounded-xl bg-fill px-3" aria-label="年">
+        <input v-if="precision === 'day'" v-model="dayModel" type="date" class="h-11 w-full rounded-xl border border-line bg-card px-3" aria-label="日付" />
+        <input v-else-if="precision === 'month'" v-model="monthModel" type="month" class="h-11 w-full rounded-xl border border-line bg-card px-3" aria-label="年月" />
+        <select v-else-if="precision === 'year'" v-model="yearModel" class="h-11 w-full rounded-xl border border-line bg-card px-3" aria-label="年">
           <option v-for="y in years" :key="y" :value="y">{{ y }}年</option>
         </select>
         <p v-else class="text-sm text-ink-soft">日付は入れずに残します。</p>
       </div>
       <div class="mt-4 flex justify-center">
-        <button type="button" class="btn btn-quiet w-full" @click="emit('close')">とじる</button>
+        <button type="button" class="min-h-11 px-6 text-ink-soft" @click="emit('close')">とじる</button>
       </div>
     </div>
   </div>
