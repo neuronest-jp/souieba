@@ -1,7 +1,7 @@
 // S1 / S2 は KeepAlive で残すので、離れたときの位置を覚えて戻ったときに戻す。S3 は毎回いちばん上。
 // DOM は使わず window（location / scrollY / scrollTo / history / hashchange）を差し替える。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { nextTick, watch } from "vue";
 
 vi.mock("vue", async (orig) => ({
   ...(await orig<typeof import("vue")>()),
@@ -64,6 +64,29 @@ describe("useScreen の位置", () => {
     await goTo("#past", 120);
     expect(screen.value).toEqual({ name: "past" });
     expect(lastTop()).toBe(500);
+  });
+
+  it("位置を戻すのは、残した S2 が描き直されたあと（hashchange の時点ではまだ S3 が出ていて、すぐ戻すと S3 の高さで頭打ちになる）", async () => {
+    // App.vue の描き直しの代わり。screen を変えると予約され、次の flush で「出ている画面」が変わる。
+    // ここで確かめられるのは「同期で戻さない」「flush の後で戻す」まで。KeepAlive で S2 の DOM が実際に
+    // 戻った後かどうかはブラウザで目視する（requirements 第2節「検証方法」の「画面」。S2 を下まで送る → S3 → 戻る）
+    const { screen } = useScreen();
+    let shown = screen.value.name;
+    watch(screen, (s) => {
+      shown = s.name;
+    });
+    const shownAtScroll: string[] = [];
+    win.scrollTo.mockImplementation(() => void shownAtScroll.push(shown));
+    await goTo("#memory/mem_1", 500);
+    win.scrollY = 120;
+    win.location.hash = "#past";
+    win.scrollTo.mockClear();
+    shownAtScroll.length = 0;
+    onHashChange();
+    expect(win.scrollTo.mock.calls).toEqual([[{ top: 0 }]]); // この時点ではいちばん上へ送るだけ
+    await nextTick();
+    expect(lastTop()).toBe(500);
+    expect(shownAtScroll.at(-1)).toBe("past");
   });
 
   it("初めて開く画面と、S3 から別の S3 へ移ったときはいちばん上", async () => {

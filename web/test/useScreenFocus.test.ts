@@ -1,7 +1,7 @@
 // 画面が変わったら新しい画面の h1 にフォーカスを置く（押したリンクごと前の画面が消え、読み上げで何も読まれないため。wireframes 6 節）。
 // DOM は使わず window と document を最小のスタブで差し替える（useScreenScroll.test.ts と同じ書き方）。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { nextTick, watch } from "vue";
 
 vi.mock("vue", async (orig) => ({
   ...(await orig<typeof import("vue")>()),
@@ -80,6 +80,27 @@ describe("画面が変わったときのフォーカス", () => {
     expect(doc.querySelector).toHaveBeenCalledWith("main h1");
     expect(h1.focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(doc.activeElement).toBe(h1);
+  });
+
+  it("フォーカスを置くのは新しい画面が描かれたあと。hashchange の時点でまだ出ている前の画面の h1 には置かない", async () => {
+    // App.vue の描き直しの代わり。screen を変えると予約され、次の flush で main の h1 が新しい画面のものに替わる。
+    // ここで確かめられるのは「同期で置かない」「flush の後で置く」まで。実際の画面で新しい h1 が読まれるかは
+    // ブラウザ（VoiceOver）で目視する（requirements 第2節「検証方法」の「画面」）
+    const todayH1 = fakeEl(); // 離れる S1 の見出し（hashchange の時点ではまだ繋がっている）
+    const pastH1 = fakeEl();
+    const { screen } = useScreen();
+    let shown = screen.value.name;
+    watch(screen, (s) => {
+      shown = s.name;
+    });
+    doc.querySelector.mockImplementation(() => (shown === "past" ? pastH1 : todayH1));
+    (window as unknown as { location: { hash: string } }).location.hash = "#past";
+    onHashChange();
+    expect(pastH1.focus).not.toHaveBeenCalled(); // この時点ではまだ置かない
+    await nextTick();
+    expect(todayH1.focus).not.toHaveBeenCalled();
+    expect(pastH1.focus).toHaveBeenCalledTimes(1);
+    expect(pastH1.focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 
   it("下部ナビのリンクにフォーカスが残っていても、新しい画面の h1 へ移す", async () => {
