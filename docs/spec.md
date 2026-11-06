@@ -145,10 +145,10 @@ Claude の出力はすべて JSON Schema で形を強制した構造化出力（
 ## 10. 認証
 
 - 方式: 招待コード + メールアドレス → HS256 の JWT（有効 90 日）。Cloudflare Access は使わない
-- `POST /api/auth/login` に `{ invite_code, email }` を送る。Worker は `INVITE_CODE`（wrangler secret）と定数時間で比較し、一致すれば `JWT_SECRET`（wrangler secret）で署名した JWT `{ sub: <email 小文字>, iat, exp }` を返す。不一致は 401（コードとメールのどちらが違うかは言わない）
+- `POST /api/auth/login` に `{ invite_code, email }` を送る。`INVITE_CODE`（wrangler secret）は `コード=メール[,コード=メール…]` の対応表で、招待コードは 1 人 1 つ。Worker はすべての行と定数時間で比較し、コードとメール（小文字化）の組が一致したときだけ `JWT_SECRET`（wrangler secret）で署名した JWT `{ sub: <対応表のメール>, iat, exp }` を返す。不一致は 401（コードとメールのどちらが違うかは言わない）
 - アプリは JWT を `@capacitor/preferences` に保存し、全 API に `Authorization: Bearer <jwt>` を付ける。期限切れや 401 を受けたら保存を消して S0 に戻る
 - Worker は Bearer を検証（署名、`exp`、`sub` がメール形式）し、`sub` を `user_id` にする。ローカル開発では `ENVIRONMENT=development` のときだけ `X-Dev-User` も受け付ける（本番では無視）
-- 制約: メールの所有確認はしない（招待コードを渡した相手だけが使う前提。ADR-0007 の「既知の制約」）
+- 制約: メールの所有確認（OTP）はしない。代わりにコードをメールに結びつけ、他人のメールでは入れないようにする（ADR-0007 の 2026-11-06 追記）
 - レート制限: `/api/auth/login` は同一 IP から 1 分に 10 回まで（D1 の `login_attempts` で数える。超えたら 429）
 - CORS: `capacitor://localhost`、`https://localhost`、`http://localhost:5173` のみ `Access-Control-Allow-Origin` に返す。`Authorization` ヘッダを許可。Cookie は使わない
 

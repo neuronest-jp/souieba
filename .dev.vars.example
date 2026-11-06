@@ -3,5 +3,6 @@ ANTHROPIC_API_KEY=sk-ant-...
 ANTHROPIC_MODEL=claude-opus-5-5
 ENVIRONMENT=development
 # 招待コードと JWT の署名鍵（本番は wrangler secret put）。pnpm dev:worker は未設定でも開発用の既定値（dev / dev-only-secret）を使う
+# development では = の無い値（dev）はどのメールでも入れる。本番と同じ 1 人 1 つの形を試すなら コード=メール[,コード=メール…]
 INVITE_CODE=dev
 JWT_SECRET=dev-only-secret-change-me

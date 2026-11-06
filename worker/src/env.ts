@@ -6,7 +6,7 @@ export type Env = {
   ENVIRONMENT: "development" | "production" | string;
   ANTHROPIC_MODEL: string;
   ANTHROPIC_API_KEY?: string; // wrangler secret
-  INVITE_CODE?: string; // wrangler secret
+  INVITE_CODE?: string; // wrangler secret。`コード=メール[,コード=メール…]`（worker/src/invite.ts）
   JWT_SECRET?: string; // wrangler secret
   APP_VERSION: string;
 };

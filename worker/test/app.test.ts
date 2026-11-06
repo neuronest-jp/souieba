@@ -16,7 +16,7 @@ const baseEnv = (over: Partial<Env> = {}): Env =>
     ASSETS: {} as Fetcher,
     ENVIRONMENT: "production",
     ANTHROPIC_MODEL: "claude-opus-5-5",
-    INVITE_CODE: "secret-code",
+    INVITE_CODE: "secret-code=a@example.com, hana-code=Hana@Example.com",
     JWT_SECRET: SECRET,
     APP_VERSION: "test",
     ...over,
@@ -46,7 +46,7 @@ describe("POST /api/auth/login", () => {
     );
 
   it("招待コードとメールが合えば 90 日の JWT を返し、メールは小文字にする", async () => {
-    const res = await login({ invite_code: "secret-code", email: " Hana@Example.com " });
+    const res = await login({ invite_code: "hana-code", email: " Hana@Example.com " });
     expect(res.status).toBe(200);
     const j = (await res.json()) as { token: string; expires_at: string; user_id: string };
     expect(j.user_id).toBe("hana@example.com");
@@ -62,6 +62,47 @@ describe("POST /api/auth/login", () => {
     expect(res.status).toBe(401);
     const j = (await res.json()) as { error: { message: string } };
     expect(j.error.message).toBe("招待コードかメールアドレスが違います");
+  });
+
+  it("招待コードは 1 人 1 つ: 正しいコードでも他人のメールなら 401、他人のコードで自分のメールも 401（同じ文言）", async () => {
+    const other = await login({ invite_code: "secret-code", email: "hana@example.com" });
+    expect(other.status).toBe(401);
+    const swapped = await login({ invite_code: "hana-code", email: "a@example.com" });
+    expect(swapped.status).toBe(401);
+    for (const r of [other, swapped]) expect(((await r.json()) as { error: { message: string } }).error.message).toBe("招待コードかメールアドレスが違います");
+    // 失敗も ok=0 で記録される（レート制限の数え方は今までどおり）
+    expect(db.raw.prepare("SELECT count(*) AS n FROM login_attempts WHERE ok = 0").get()).toEqual({ n: 2 });
+  });
+
+  it("メールの大文字小文字と前後の空白は正規化して対応表と比べ、sub は対応表のメール", async () => {
+    const res = await login({ invite_code: " secret-code ", email: "  A@EXAMPLE.COM  " });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { user_id: string }).user_id).toBe("a@example.com");
+  });
+
+  it("production で = の無い招待コード（旧形式）は 503", async () => {
+    const res = await login({ invite_code: "dev", email: "a@example.com" }, baseEnv({ INVITE_CODE: "dev" }));
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("auth_unavailable");
+    // LAN の起動（ENVIRONMENT=lan）も development ではないので同じ
+    expect((await login({ invite_code: "dev", email: "a@example.com" }, baseEnv({ INVITE_CODE: "dev", ENVIRONMENT: "lan" }))).status).toBe(503);
+  });
+
+  it("対応表の形が壊れていれば 503（空のコード、メールの形、同じコードが 2 回、= の無い行、空の行）", async () => {
+    for (const bad of ["=a@example.com", "c1=not-an-email", "c1=a@example.com,c1=b@example.com", "c1=a@example.com,dev", "c1=a@example.com,", "c1="]) {
+      const res = await login({ invite_code: "c1", email: "a@example.com" }, baseEnv({ INVITE_CODE: bad }));
+      expect(res.status, bad).toBe(503);
+    }
+  });
+
+  it("development の dev（= の無い値）は従来どおりどのメールでも入れる", async () => {
+    const env = baseEnv({ INVITE_CODE: "dev", ENVIRONMENT: "development" });
+    for (const email of ["a@example.com", "someone@example.com"]) {
+      const res = await login({ invite_code: "dev", email }, env);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { user_id: string }).user_id).toBe(email);
+    }
+    expect((await login({ invite_code: "wrong", email: "a@example.com" }, env)).status).toBe(401);
   });
 
   it("入力不足やメール形式違いは 400", async () => {

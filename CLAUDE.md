@@ -10,7 +10,7 @@ Built with Claude: Japan 2026 ハッカソン向けの個人開発。提出 2026
 ## スタック（変更不可）
 
 API は Cloudflare Workers + Hono + D1 + R2。アプリは Capacitor（iOS / Android）の WebView で Vue 3 + Vite + TypeScript + Tailwind を動かす（appId `jp.neuronest.souieba`、webDir `web/dist`、`ios/` と `android/` はコミット）。Workers Static Assets の配信は開発用プレビューだけ（ADR-0007）。
-認証は招待コード + メールアドレス → HS256 JWT（有効 90 日）。`POST /api/auth/login` が `INVITE_CODE`（wrangler secret）と定数時間比較し、`JWT_SECRET`（wrangler secret）で署名。アプリは `@capacitor/preferences` に保持して `Authorization: Bearer` で送り、401 で消してログイン画面へ。ローカルは `ENVIRONMENT=development` のときだけ `X-Dev-User` も可。CORS は worker/src/cors.ts に固定。
+認証は招待コード + メールアドレス → HS256 JWT（有効 90 日）。`POST /api/auth/login` が `INVITE_CODE`（wrangler secret。`コード=メール[,…]` の対応表で 1 人 1 つ。`=` の無い `dev` は development だけ全メール可）の全行と定数時間比較し、`JWT_SECRET`（wrangler secret）で署名。アプリは `@capacitor/preferences` に保持して `Authorization: Bearer` で送り、401 で消してログイン画面へ。ローカルは `ENVIRONMENT=development` のときだけ `X-Dev-User` も可。CORS は worker/src/cors.ts に固定。
 Anthropic API は `@anthropic-ai/sdk` を Worker から呼び、Structured Outputs（`output_config.format`）で JSON Schema を強制（ADR-0005。現行モデルは `tool_choice` 強制を拒否する）。モデル名は `ANTHROPIC_MODEL`（既定 `claude-opus-5-5`）。
 
 ## 守ること
@@ -29,7 +29,7 @@ Anthropic API は `@anthropic-ai/sdk` を Worker から呼び、Structured Outpu
 pnpm install
 pnpm db:migrate:local   # D1（ローカル）
 pnpm dev:worker         # Worker（http://localhost:8787）。development として起動し X-Dev-User を受け付ける。招待コードは開発専用の dev
-pnpm dev:worker:lan     # 実機から叩くとき。LAN の IP だけで待ち受け、本番と同じ認証（X-Dev-User 無効）、招待コードは乱数（docs/setup-capacitor.md 1.1）。dev:worker を LAN に出さない
+pnpm dev:worker:lan     # 実機から叩くとき。LAN の IP だけで待ち受け、本番と同じ認証（X-Dev-User 無効）、招待コードは乱数で `LAN_EMAIL` に結びつく（docs/setup-capacitor.md 1.1）。dev:worker を LAN に出さない
 pnpm dev                # 画面（http://localhost:5173）。/api を 8787 に中継し X-Dev-User を付ける
 pnpm preview            # 本番相当: 画面をビルドして Worker から配信（http://localhost:8787）。ログイン画面に dev とメールで入る
 pnpm test               # vitest

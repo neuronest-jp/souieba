@@ -53,12 +53,12 @@ S0 ようこそ はログイン画面そのもの。保存したトークンが�
 
 | ID | Given | When | Then | 検証 |
 |---|---|---|---|---|
-| F1-1 | `INVITE_CODE` と `JWT_SECRET` が設定済み | `POST /api/auth/login { invite_code: <正しいコード>, email: "A@Example.com" }` | 200。`token` は 3 分割の JWT で、ヘッダ `alg = "HS256"`、ペイロード `sub = "a@example.com"`、`exp - iat = 7776000`（90 日）。`user_id = "a@example.com"`、`expires_at` は `exp` と同じ時刻 | 単体 |
+| F1-1 | `INVITE_CODE`（`<コード>=a@example.com` を含む対応表）と `JWT_SECRET` が設定済み | `POST /api/auth/login { invite_code: <a@example.com のコード>, email: " A@Example.com " }` | 200。`token` は 3 分割の JWT で、ヘッダ `alg = "HS256"`、ペイロード `sub = "a@example.com"`、`exp - iat = 7776000`（90 日）。`user_id = "a@example.com"`、`expires_at` は `exp` と同じ時刻 | 単体 |
 | F1-2 | 同上 | F1-1 の `token` を `Authorization: Bearer` に付けて `GET /api/me` | 200、`user_id = "a@example.com"`。`users` に `id = "a@example.com"` の行があり、2 回目で `last_seen_at` が更新される | 単体 |
-| F1-3 | 同上 | `invite_code` が違う（1 文字違い、長さ違いを含む） | 401 `unauthorized`、`message = "招待コードかメールアドレスが違います"`。`login_attempts` に `ok = 0` の行が 1 行増える。トークンは返さない | 単体 |
+| F1-3 | 同上 | `invite_code` が違う（1 文字違い、長さ違いを含む）。または正しいコードに対応表と別のメールを入れる、他人のコードに自分のメールを入れる | 401 `unauthorized`、`message = "招待コードかメールアドレスが違います"`。`login_attempts` に `ok = 0` の行が 1 行増える。トークンは返さない | 単体 |
 | F1-4 | 同上 | `invite_code` または `email` が空、本文が JSON でない、`email` が `a@b.c` の形でない、または 255 文字以上 | 400 `validation`。`login_attempts` には書かない | 単体 |
 | F1-5 | 同一 IP（`cf-connecting-ip`）から直近 1 分に 10 回の試行がある | 11 回目の `POST /api/auth/login`（コードが正しくても） | 429 `too_many`。トークンは返さない。1 分後の試行は再び受け付ける | 単体（`now` を差し替える） |
-| F1-6 | `INVITE_CODE` または `JWT_SECRET` が未設定 | `POST /api/auth/login` | 503 `auth_unavailable`。401 と区別する。画面は「いま、うまくつながりません」 | 単体 |
+| F1-6 | `INVITE_CODE` または `JWT_SECRET` が未設定。または `INVITE_CODE` が対応表の形でない（production で `=` の無い値、空のコード、メールの形違い、同じコードが 2 回） | `POST /api/auth/login` | 503 `auth_unavailable`。401 と区別する。理由はログにだけ出す。画面は「いま、うまくつながりません」 | 単体 |
 | F1-7 | `exp` が過去の JWT、署名が別の secret の JWT、`alg` が `none` / `RS256` の JWT、3 分割でない文字列 | `GET /api/memories` | いずれも 401 `unauthorized`。本文に理由は出さず、`console.warn("auth rejected", { reason, path })` にだけ残す | 単体 |
 | F1-8 | 本番（`ENVIRONMENT` が `development` 以外） | `X-Dev-User: a@example.com` だけで `GET /api/me` | 401。ヘッダは無視される | 単体、通し |
 | F1-9 | `pnpm dev:worker`（`ENVIRONMENT=development`） | `X-Dev-User: you@example.com` で `GET /api/me` | 200、`user_id = "you@example.com"`。`Authorization` と `X-Dev-User` の両方があれば JWT を使う | API |

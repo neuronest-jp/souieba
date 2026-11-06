@@ -118,12 +118,12 @@ APP_VERSION = "0.1.0"
 
 | 手順 | 内容 |
 |---|---|
-| 1 | `INVITE_CODE` と `JWT_SECRET`（wrangler secret）が無ければ 503 `auth_unavailable`「いま、ログインの準備ができていません」。`console.error` に残す |
+| 1 | `INVITE_CODE` と `JWT_SECRET`（wrangler secret）が無い、または `INVITE_CODE` が対応表 `コード=メール[,コード=メール…]` の形でなければ 503 `auth_unavailable`「いま、ログインの準備ができていません」。理由（`not_a_table`、`entry_2_bad_email` など。値は含めない）を `console.error` に残す。`=` の無い値（`dev`）は `ENVIRONMENT=development` のときだけ「どのメールでも可」として受け付ける（worker/src/invite.ts） |
 | 2 | 本文 JSON `{ invite_code, email }` を読む。JSON でない、どちらかが空、`email` が `^[^\s@]+@[^\s@]+\.[^\s@]+$` に合わない、または 255 文字以上なら 400 `validation`。`email` は trim して小文字化 |
 | 3 | レート制限: 呼び出し元 IP（`cf-connecting-ip`、無ければ `getConnInfo`、取れなければ `"unknown"`）で `login_attempts` を数え、直近 60 秒に 10 件以上なら 429 `too_many`「少し待ってから、もう一度お試しください」。この時点では行を増やさない |
-| 4 | `invite_code` と `INVITE_CODE` を定数時間比較（`timingSafeEqual`。長さ違いも同じ時間）。結果を `login_attempts (id, ip, ok, created_at)` に 1 行 INSERT |
-| 5 | 不一致なら 401 `unauthorized`「招待コードかメールアドレスが違います」。コードとメールのどちらが違うかは言わない |
-| 6 | 一致なら `{ sub: email, iat: now, exp: now + 90 日 }` を `JWT_SECRET` で HS256 署名し、200 `{ token, expires_at, user_id }` を返す |
+| 4 | 対応表のすべての行と、`invite_code` とコード、正規化した `email` とメールをそれぞれ定数時間比較（`timingSafeEqual`。一致しても途中で抜けない）。両方が同じ行で一致したときだけ通す。結果を `login_attempts (id, ip, ok, created_at)` に 1 行 INSERT |
+| 5 | 不一致（コード違い、そのコードと別のメール）なら 401 `unauthorized`「招待コードかメールアドレスが違います」。コードとメールのどちらが違うかは言わない |
+| 6 | 一致なら `{ sub: <対応表のメール>, iat: now, exp: now + 90 日 }` を `JWT_SECRET` で HS256 署名し、200 `{ token, expires_at, user_id }` を返す |
 
 - JWT は `worker/src/jwt.ts` に WebCrypto（`HMAC` / `SHA-256`）で書く。外部ライブラリは入れない。鍵は `JWT_SECRET` の 1 本だけで、鍵の取得や `kid` の解決は無い
 - 招待コードは全員で 1 つ。ユーザーの識別はメールアドレスで、メールの所有確認はしない（招待コードを渡した相手だけが使う前提。ハッカソン期間の割り切り）

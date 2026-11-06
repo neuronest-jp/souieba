@@ -16,7 +16,7 @@ Cloudflare Access の Cookie もログインリダイレクトも成立しない
    `webDir` は `web/dist`。`ios/` と `android/` は git にコミットする（`Pods/`、`build/`、署名ファイルは除く）。
    Workers の Static Assets 配信は開発用プレビューとしてだけ残す
 2. **認証**: 招待コード + メールアドレス → HS256 の JWT（有効 90 日）
-   - `POST /api/auth/login { invite_code, email }`。Worker は `INVITE_CODE` と定数時間比較し、`JWT_SECRET` で署名した `{ sub, iat, exp }` を返す
+   - `POST /api/auth/login { invite_code, email }`。Worker は `INVITE_CODE`（2026-11-06 から `コード=メール` の対応表。既知の制約を参照）と定数時間比較し、`JWT_SECRET` で署名した `{ sub, iat, exp }` を返す
    - アプリは `@capacitor/preferences` に保存し、`Authorization: Bearer` で送る。401 を受けたら消して S0 へ
    - Worker の Bearer 検証ミドルウェアが Access 検証（`worker/src/access.ts`）を置き換える。Access 前提のコードとテストは削除する
    - ローカルの `X-Dev-User`（`ENVIRONMENT=development` のみ）は残す
@@ -31,13 +31,16 @@ Cloudflare Access の Cookie もログインリダイレクトも成立しない
 
 ## 既知の制約（脅威）
 
-- **メールの所有確認をしない。** 招待コードが一致すれば、入力したメールアドレスをそのまま `sub`（user_id）にする。
-  つまり招待コードを共有された人は、他の利用者のメールを入れるだけでその人の記憶と写真を読み書きできる。
-  ハッカソン期間中は「招待コードを渡した相手だけが使う」前提の割り切りとし、提出後に続けるなら
-  (a) 招待コードを 1 人 1 つにして code → email の対応表で固定する、(b) メールに 6 桁コードを送る OTP に戻す、のどちらかにする
+- ~~**メールの所有確認をしない。** 招待コードが一致すれば、入力したメールアドレスをそのまま `sub`（user_id）にする。
+  つまり招待コードを共有された人は、他の利用者のメールを入れるだけでその人の記憶と写真を読み書きできる。~~
+  **2026-11-06 解消（開発者の判断で (a) を採用）。** 招待コードを 1 人 1 つにし、`INVITE_CODE` の値を `コード=メール[,コード=メール…]` の対応表にした
+  （secret の名前は変えない）。ログインはすべての行と定数時間で比べ（一致しても途中で抜けない）、コードと正規化したメールの組が一致したときだけ
+  対応表のメールを `sub` にする。どちらが違っても同じ 401 と文言。`=` の無い値は `ENVIRONMENT=development` のときだけ「どのメールでも可」、
+  それ以外の環境と、対応表の形が壊れているとき（空のコード、メールの形違い、同じコードが 2 回）は 503 `auth_unavailable`（理由はログだけ）。
+  実装は worker/src/invite.ts。残る制約: メールの所有確認（OTP）はしないので、コードとメールの組が漏れればその人になれる。コードはその人だけに渡す
 - レート制限は IP 単位（1 分 10 回）で、コード全体の上限は無い。`login_attempts` は 1 時間で掃除する
 - JWT の失効はログアウト以外に無い。`JWT_SECRET` のローテーションで全員ログアウトになる
-- ローカルの development（`X-Dev-User`、既定値 `dev` / `dev-only-secret`）は `localhost` 専用。実機のために LAN に出すときは `pnpm dev:worker:lan`（`ENVIRONMENT=lan` で本番と同じ認証、乱数の招待コードと署名鍵、LAN の IP だけで待ち受け。2026-11-05 追記、docs/setup-capacitor.md 1.1）
+- ローカルの development（`X-Dev-User`、既定値 `dev` / `dev-only-secret`）は `localhost` 専用。実機のために LAN に出すときは `LAN_EMAIL=<メール> pnpm dev:worker:lan`（`ENVIRONMENT=lan` で本番と同じ認証、`LAN_EMAIL` に結びついた乱数の招待コードと署名鍵、LAN の IP だけで待ち受け。2026-11-05 追記、11-06 更新、docs/setup-capacitor.md 1.1）
 
 ## 影響
 

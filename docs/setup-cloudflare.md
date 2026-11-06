@@ -113,7 +113,7 @@ pnpm exec wrangler r2 bucket list      # souieba-photos が出る
 | 名前 | 内容 | 決め方 |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Anthropic API のキー | Anthropic Console で発行 |
-| `INVITE_CODE` | 招待コード。アプリのログイン画面で入力する。全員で 1 つ | 開発者が決める 12 文字以上のランダム文字列。推測されやすい語（アプリ名、日付）を避ける。例の作り方: `openssl rand -base64 12`（16 文字前後になる。`+` `/` `=` が入るので、入力しやすさを優先するなら `openssl rand -hex 8` の 16 文字でもよい） |
+| `INVITE_CODE` | 招待コードとメールの対応表。**1 人 1 つのコード**で、そのコードは対応するメールでしか入れない（ADR-0007 2026-11-06 追記） | `コード=メール` を使う人ごとに 1 つ書き、`,` でつなぐ（形は下）。コードは 12 文字以上のランダム文字列で、`=` と `,` を含めない。`openssl rand -hex 8`（16 文字）で作る。推測されやすい語（アプリ名、日付）を避ける |
 | `JWT_SECRET` | JWT（HS256）の署名鍵 | 32 文字以上。`openssl rand -base64 48` の出力をそのまま貼る。人が入力するものではないので長くてよい |
 
 ```sh
@@ -123,11 +123,20 @@ pnpm exec wrangler secret put JWT_SECRET
 # それぞれ値の入力を求められる。貼り付けて Enter（画面に表示されない）
 ```
 
+`INVITE_CODE` に貼る値の形（下はダミー。本物の値はここにもチャットにも書かない）:
+
+```text
+0123456789abcdef=you@example.com,fedcba9876543210=family@example.com
+```
+
+- 1 行（改行なし）。人を足すときは `,コード=メール` を後ろに足して `wrangler secret put INVITE_CODE` を入れ直す（全体の置き換えになる）
+- メールは大文字小文字と前後の空白を無視して比べる。同じコードを 2 回書く、コードが空、メールの形が違う、`=` の無い値（旧形式）のどれかがあると、ログインは全員 503 `auth_unavailable` になる（理由は `wrangler tail` のログにだけ出る）
+
 - Worker がまだ無い状態で実行すると、wrangler が「Worker を作るか」と聞くことがある（要確認）。迷うなら第 5 節の最初の deploy の後に実行する
 - 確認: `pnpm exec wrangler secret list` に 3 つが出る（値は出ない）
-- `INVITE_CODE` と `JWT_SECRET` が無いと `POST /api/auth/login` は 503 `auth_unavailable` を返し、アプリは「いま、うまくつながりません」になる（requirements F1-6）
-- `JWT_SECRET` を変えると、発行済みのトークンがすべて無効になり、全員がログイン画面に戻る（意図したログアウト手段としても使える）。`INVITE_CODE` を変えても発行済みのトークンは有効のまま
-- 招待コードは、アプリを渡す相手に口頭やメッセージで直接伝える。リポジトリや README には書かない
+- `INVITE_CODE` と `JWT_SECRET` が無い（または `INVITE_CODE` の形が壊れている）と `POST /api/auth/login` は 503 `auth_unavailable` を返し、アプリは「いま、うまくつながりません」になる（requirements F1-6）
+- `JWT_SECRET` を変えると、発行済みのトークンがすべて無効になり、全員がログイン画面に戻る（意図したログアウト手段としても使える）。`INVITE_CODE` を変えても発行済みのトークンは有効のまま（特定の人だけ締め出す手段は無い）
+- 招待コードは、その人のぶんだけを本人に口頭やメッセージで直接伝える。リポジトリや README には書かない
 
 ### 4.2 vars（秘密でない設定）
 
@@ -215,7 +224,7 @@ curl -si -H 'content-type: application/json' \
 # → 401 {"error":{"code":"unauthorized","message":"招待コードかメールアドレスが違います"}}
 
 TOKEN=$(curl -s -H 'content-type: application/json' \
-  -d '{"invite_code":"<4.1 で入れた INVITE_CODE>","email":"you@example.com"}' "$URL/api/auth/login" \
+  -d '{"invite_code":"<4.1 の対応表で you@example.com に割り当てたコード>","email":"you@example.com"}' "$URL/api/auth/login" \
   | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 echo "$TOKEN" | cut -c1-20      # eyJhbGciOiJIUzI1NiIs… と出れば発行できている
 
@@ -225,7 +234,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$URL/api/me"
 
 | 症状 | 原因 |
 |---|---|
-| 503 `auth_unavailable` | `INVITE_CODE` か `JWT_SECRET` が secret に無い（4.1） |
+| 503 `auth_unavailable` | `INVITE_CODE` か `JWT_SECRET` が secret に無い、`INVITE_CODE` が対応表の形でない（4.1） |
 | 400 `validation` | 本文の JSON が壊れている、`email` の形が違う |
 | 429 `too_many` | 同じ IP から 1 分に 10 回を超えた。1 分待つ |
 | 500 | `login_attempts` テーブルが無い（2.3 の 0002 を適用していない） |
@@ -267,7 +276,7 @@ cp .dev.vars.example .dev.vars
 | `ANTHROPIC_API_KEY` | 本物のキー |
 | `ANTHROPIC_MODEL` | `claude-opus-5-5`（本番と同じ） |
 | `ENVIRONMENT` | `development`。これにより Worker が `X-Dev-User: <メール>` を受け付ける（spec 第 10 節） |
-| `INVITE_CODE` | ローカル用の招待コード。`dev` のままでよい（本番のコードを書かない） |
+| `INVITE_CODE` | ローカル用の招待コード。`dev` のままでよい（development だけ、`=` の無い値はどのメールでも入れる。本番のコードを書かない） |
 | `JWT_SECRET` | ローカル用の署名鍵。`dev-only-secret-change-me` のままでよい |
 
 ```sh
@@ -280,7 +289,7 @@ pnpm preview            # 本番と同じ配信形（画面を Worker から配�
 
 - `.dev.vars` は `.gitignore` 済み。`git status` に出ないことを確認する（N-8）
 - `pnpm dev:worker` と `pnpm preview` は `--var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret` を渡すので、`.dev.vars` に無くても development で動く。`.dev.vars` に書いた値はそちらが優先される（要確認: wrangler の版によって `--var` と `.dev.vars` の優先順位が異なることがある。`pnpm dev:worker` の起動ログの `Using vars defined in .dev.vars` を見る）
-- 本番相当の認証確認（`X-Dev-User` が無視される）: `.dev.vars` は編集せず、`pnpm build:web && pnpm exec wrangler dev --var ENVIRONMENT:production --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret` で起動する。`/api/me` は `X-Dev-User` を付けても 401、`POST /api/auth/login` に `dev` でログインすれば Bearer で 200 になる（S-8、S-10）。`EXPECT_PRODUCTION=1 bash scripts/smoke.sh` で一括確認できる
+- 本番相当の認証確認（`X-Dev-User` が無視される）: `.dev.vars` は編集せず、`pnpm build:web && pnpm exec wrangler dev --var ENVIRONMENT:production --var INVITE_CODE:dev=you@example.com --var JWT_SECRET:dev-only-secret-0123456789abcdef0123` で起動する（production では対応表の形と 32 文字以上の署名鍵が要る）。`/api/me` は `X-Dev-User` を付けても 401、`POST /api/auth/login` に `dev` と `you@example.com` でログインすれば Bearer で 200、他のメールなら 401 になる（S-8、S-10）。`EXPECT_PRODUCTION=1 bash scripts/smoke.sh` で一括確認できる
 
 ## 10. よくある失敗と対処
 
@@ -288,8 +297,8 @@ pnpm preview            # 本番と同じ配信形（画面を Worker から配�
 
 | 症状 / 理由コード | 原因 | 対処 |
 |---|---|---|
-| `POST /api/auth/login` が 503 `auth_unavailable` | `INVITE_CODE` か `JWT_SECRET` が secret に無い | 4.1 の `wrangler secret put` → `wrangler secret list` で確認 |
-| `POST /api/auth/login` が 401 | 招待コードが違う（前後の空白、大文字小文字、全角） | 4.1 で入れた値と照合。入れ直すなら `wrangler secret put INVITE_CODE`（発行済みトークンは有効のまま） |
+| `POST /api/auth/login` が 503 `auth_unavailable` | `INVITE_CODE` か `JWT_SECRET` が secret に無い、`INVITE_CODE` が対応表の形でない | 4.1 の `wrangler secret put` → `wrangler secret list` で確認。形の誤りは `wrangler tail` の `invite` の理由（`entry_2_bad_email` など。値は出ない） |
+| `POST /api/auth/login` が 401 | 招待コードが違う（大文字小文字、全角）か、そのコードに割り当てたのと別のメールを入れた | 4.1 で入れた対応表と照合。入れ直すなら `wrangler secret put INVITE_CODE`（発行済みトークンは有効のまま） |
 | `POST /api/auth/login` が 429 `too_many` | 同一 IP から 1 分 10 回を超えた（デモの練習で連打したときなど） | 1 分待つ。回数の上限は worker/src/routes/auth.ts の `LOGIN_LIMIT_PER_MINUTE` |
 | `POST /api/auth/login` が 500 | `login_attempts` が無い | 2.3 で 0002 を適用 |
 | `401` / reason `not_configured` | Bearer は来ているのに `JWT_SECRET` が無い | 4.1 |
@@ -338,7 +347,7 @@ pnpm preview            # 本番と同じ配信形（画面を Worker から配�
 | # | 内容 | 既定 |
 |---|---|---|
 | 1 | ドメインを A（workers.dev）と B（独自ドメイン）のどちらにするか。切り替えるとアプリのビルドが要る | A から始め、提出前に B にするなら 11/8 までに |
-| 2 | 招待コードを誰に渡すか（審査員や家族に触ってもらうか）。全員で 1 つのコードなので、渡した相手は同じコードでログインできる | 開発者と、デモに協力してもらう人だけ |
+| 2 | 招待コードを誰に渡すか（審査員や家族に触ってもらうか）。1 人 1 つのコードで、そのコードは対応表のメールでしか入れない。渡す人ごとに対応表へ 1 つ足す | 開発者と、デモに協力してもらう人だけ |
 | 3 | `JWT_SECRET` のローテーション（全員ログアウト）を提出前に行うか | 行わない（発行済みトークンは 90 日有効） |
 | 4 | `ANTHROPIC_MODEL` を Opus のままにするか Sonnet にするか（コスト） | `claude-opus-5-5`（ADR-0003 / 0005） |
 | 5 | ネイティブでの写真表示（architecture.md 5.8 の `<img>` と Bearer の問題）をどの方式で直すか | 画面側で `fetch` + Bearer → `createObjectURL`（tasks.md T-1107-00b） |
