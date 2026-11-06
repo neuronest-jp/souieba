@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 候補の行（wireframes 2.3）。種別 + 値 + 根拠、「そう」「ちがう」。確定は moss、却下は値に打ち消し線を引いて残す。
+// 候補の行（wireframes 2.3）。種別 + 値 + 根拠、「そう」「ちがう」。確定は moss と「✓ そう」、却下は値に打ち消し線を引き、
+// 読み上げ用の「ちがう」を添えて残す。
 import { nextTick, ref } from "vue";
 import { api } from "../api";
 import { useNotice } from "../composables/useNotice";
@@ -85,8 +86,9 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
           <span class="w-8 shrink-0 text-sm text-ink-soft">{{ KIND_LABEL[f.kind] }}</span>
           <span class="flex-1 text-ink">
             <template v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date'">「{{ display(f) }}」</template>
-            <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない -->
-            <span v-else-if="f.status === 'rejected'" class="text-ink-soft line-through">{{ display(f) }}</span>
+            <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない。
+                 打ち消し線は読み上げでは伝わらないので、確定の「✓ そう」と同じく行を読めば分かるよう、見えない「、ちがう」を添える -->
+            <span v-else-if="f.status === 'rejected'"><span class="text-ink-soft line-through">{{ display(f) }}</span><span class="sr-only">、ちがう</span></span>
             <template v-else>{{ display(f) }}</template>
             <span v-if="showEvidence(f)" class="block text-sm text-ink-soft">「{{ f.evidence }}」</span>
           </span>
