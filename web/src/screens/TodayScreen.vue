@@ -219,11 +219,14 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-6 py-6">
+  <main class="flex flex-1 flex-col gap-5 pt-3 pb-6">
     <template v-if="!saved">
-      <header class="flex items-baseline justify-between">
-        <h1 ref="dateHeading" class="text-[22px] focus:outline-none">{{ headingDate }}</h1>
-        <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
+      <header class="flex items-center justify-between gap-3">
+        <h1 ref="dateHeading" class="text-3xl tracking-tight focus:outline-none">{{ headingDate }}</h1>
+        <!-- iOS のツールバーの小さなカプセル。見た目は 36px、押せる所は 44px -->
+        <button ref="whenButton" type="button" class="group -mr-1 flex min-h-11 shrink-0 items-center px-1" @click="sheetOpen = true">
+          <span class="flex h-9 items-center rounded-full bg-fill px-4 text-sm font-semibold text-ember group-active:bg-line">いつ？</span>
+        </button>
       </header>
 
       <section class="card p-4">
@@ -241,7 +244,7 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
       <PhotoPicker v-model="photo" />
 
       <div class="flex flex-col items-center gap-3">
-        <button class="btn btn-primary px-10" type="button" :disabled="!canSave" @click="save">保存する</button>
+        <button class="btn btn-primary w-full" type="button" :disabled="!canSave" @click="save">保存する</button>
         <p v-if="error" class="text-sm text-ink-soft" role="alert">{{ error }}</p>
       </div>
 
@@ -271,13 +274,13 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
            札の「ひらく ›」（昔の記憶へ）と取り違えないよう、行き先を文言で言う。読み上げが文だけで済むよう alert の外に置く -->
       <div v-if="photoNote" class="flex flex-col items-start">
         <p class="text-sm text-ink-soft" role="alert">{{ photoNote }}</p>
-        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">写真を添え直す ›</a>
+        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-ember">写真を添え直す ›</a>
       </div>
       <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" :animate="!shownIds.has(r.id)" />
-      <div class="flex items-baseline gap-6">
-        <button type="button" class="min-h-11 border-b border-ember text-ink" @click="writeAnother">もうひとつ書く</button>
+      <div class="flex items-center justify-between gap-6">
+        <button type="button" class="min-h-11 font-semibold text-ember" @click="writeAnother">もうひとつ書く</button>
         <!-- いま書いた記憶へ。札の「ひらく ›」は昔の記憶へ行くので、同じ文言にしない -->
-        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">このひとことをひらく ›</a>
+        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-ember">このひとことをひらく ›</a>
       </div>
     </template>
   </main>

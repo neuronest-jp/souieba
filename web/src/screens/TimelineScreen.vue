@@ -89,9 +89,9 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-6 py-6">
+  <main class="flex flex-1 flex-col gap-5 pt-3 pb-6">
     <header>
-      <h1 class="text-[22px] focus:outline-none">これまで</h1>
+      <h1 class="text-3xl tracking-tight focus:outline-none">これまで</h1>
     </header>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
@@ -103,12 +103,12 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 
     <section v-else-if="items.length === 0" class="flex flex-1 flex-col items-center justify-center gap-1 py-16 text-center text-ink-soft">
       <p>まだ何もありません。</p>
-      <a href="#today" class="min-h-11 border-b border-ember text-ink">きょうのひとことから</a>
+      <a href="#today" class="inline-flex min-h-11 items-center text-ember">きょうのひとことから</a>
     </section>
 
     <template v-else>
-      <ul class="-mt-3">
-        <li v-for="m in items" :key="m.id">
+      <ul class="card overflow-hidden">
+        <li v-for="m in items" :key="m.id" class="group">
           <MemoryCard :memory="m" />
         </li>
       </ul>
