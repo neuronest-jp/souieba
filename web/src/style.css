@@ -39,6 +39,9 @@
     font-family: var(--font-body);
     font-size: 17px;
     line-height: 1.8;
+    /* URL のような空白の無い長い英数字も枠の中で折り返す（N-3 の横スクロールを出さない）。
+       anywhere は min-content まで縮め、flex の行（候補の行やボタン）の折り返し方を変えるので break-word にする */
+    overflow-wrap: break-word;
     -webkit-font-smoothing: antialiased;
     text-size-adjust: 100%;
   }
