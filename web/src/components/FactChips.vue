@@ -87,10 +87,13 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
         >
           <!-- 種別と値はひとまとまりで行を折り返す単位にする。値と根拠が入りきらない幅（375px の S1 など）では、
                値の列を狭めて単語の途中で割らず、ボタンを次の段の右端に回す（wireframes 2.3）。
-               値だけを折り返しの単位にすると、長い根拠のとき種別だけが 1 段目に取り残される -->
-          <span class="flex flex-auto items-center gap-x-3">
+               値だけを折り返しの単位にすると、長い根拠のとき種別だけが 1 段目に取り残される。
+               まとまりと値の列の両方に min-w-0 を付ける。flex の子は既定の min-width: auto のままだと、html の
+               overflow-wrap: break-word の折り返し位置が min-content に数えられず、URL のような空白の無い長い英数字の幅より
+               細くならない（375px で横にはみ出す）。日本語や短い語の行は、付ける前と同じ位置で折り返す -->
+          <span class="flex min-w-0 flex-auto items-center gap-x-3">
             <span class="w-8 shrink-0 text-sm text-ink-soft">{{ KIND_LABEL[f.kind] }}</span>
-            <span class="flex-1 text-ink">
+            <span class="min-w-0 flex-1 text-ink">
               <template v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date'">「{{ display(f) }}」</template>
               <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない。
                    打ち消し線は読み上げでは伝わらないので、確定の「✓ そう」と同じく行を読めば分かるよう、見えない「、ちがう」を添える -->

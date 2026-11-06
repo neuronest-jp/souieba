@@ -71,3 +71,35 @@ describe("却下した行の読み上げ", () => {
     expect(row(container, "f2").textContent).not.toContain("ちがう");
   });
 });
+
+// fakeDom には配置の計算が無いので、ここでは行の作りだけを固定する。375px で横にはみ出さないことはブラウザで測った
+describe("空白の無い長い英数字（URL など）", () => {
+  const LONG = "https://tabelog.com/tokyo/A1301/A130101/13000000/dtlrvwlst/B123456789/";
+  // 種別と値のまとまり（flex-auto）と、値と根拠の列（flex-1）。どちらも flex の子で、既定の min-width: auto のままだと
+  // overflow-wrap: break-word の折り返し位置が min-content に数えられず、URL の幅より細くならない
+  const columns = (li: FakeElement) => {
+    const group = li.children[0]!;
+    return { group, value: group.children[1]! };
+  };
+
+  it("根拠に長い URL があっても、種別と値のまとまりと値の列の両方が枠の幅まで縮む（min-w-0）", async () => {
+    const f = { ...fact("f1", "公園", "candidate"), evidence: `${LONG} の公園で` };
+    const { container, errors } = mount(FactChips, { facts: [f] });
+    await nextTick();
+    const { group, value } = columns(row(container, "f1"));
+    expect(value.textContent).toContain(LONG);
+    // a1c0bd2 の折り返し方（まとまりを行の折り返しの単位にし、ボタンを次の段の右端に回す）はそのまま
+    expect(group.hasClass("flex-auto") && group.hasClass("min-w-0")).toBe(true);
+    expect(value.hasClass("flex-1") && value.hasClass("min-w-0")).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
+  it("根拠を出さず値を「」で囲むときも、長い値は同じ列に入る", async () => {
+    const f = { ...fact("f1", LONG, "candidate"), evidence: LONG };
+    const { container } = mount(FactChips, { facts: [f] });
+    await nextTick();
+    const { group, value } = columns(row(container, "f1"));
+    expect(value.textContent).toBe(`「${LONG}」`);
+    expect(group.hasClass("min-w-0") && value.hasClass("min-w-0")).toBe(true);
+  });
+});
