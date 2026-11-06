@@ -10,6 +10,7 @@ import type { MemoryDetail, RecalledBy } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
 import { formatHappenedOn } from "../date";
+import { useNotice } from "../composables/useNotice";
 import { back as goBack, go } from "../composables/useScreen";
 
 const props = defineProps<{ id: string; from: "today" | "past" }>();
@@ -72,6 +73,7 @@ const bodyParts = computed(() => {
 });
 
 const feedbackBusy = ref<Set<string>>(new Set());
+const feedbackNotice = useNotice();
 const react = async (r: RecalledBy, feedback: "helpful" | "not_related") => {
   if (feedbackBusy.value.has(r.id)) return;
   feedbackBusy.value.add(r.id);
@@ -80,7 +82,8 @@ const react = async (r: RecalledBy, feedback: "helpful" | "not_related") => {
   try {
     await api.recallFeedback(r.id, r.feedback);
   } catch {
-    r.feedback = prev;
+    r.feedback = prev; // 印を戻し、その札の下にそっと知らせる（F6 エラー時）
+    feedbackNotice.show("記録できませんでした", r.id);
   } finally {
     feedbackBusy.value.delete(r.id);
   }
@@ -137,7 +140,7 @@ watch(() => props.id, load);
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-faint" role="status">よみこみ中</p>
     <p v-else-if="state === 'missing'" class="py-16 text-center text-ink-soft">この記憶は見つかりませんでした</p>
     <section v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-16">
-      <p class="text-ink-soft">この記憶は見つかりませんでした</p>
+      <p class="text-ink-soft">読み込めませんでした</p>
       <button type="button" class="btn btn-quiet" @click="load">もう一度</button>
     </section>
 
@@ -171,6 +174,7 @@ watch(() => props.id, load);
             <button type="button" class="min-h-11 rounded-full border px-3.5 text-base" :class="r.feedback === 'helpful' ? 'border-moss bg-moss-soft text-ink' : 'border-line bg-card text-ink'" :aria-pressed="r.feedback === 'helpful'" @click="react(r, 'helpful')">そうだった</button>
             <button type="button" class="min-h-11 rounded-full border px-3.5 text-base" :class="r.feedback === 'not_related' ? 'border-line bg-paper text-ink-soft opacity-70' : 'border-line bg-card text-ink-soft'" :aria-pressed="r.feedback === 'not_related'" @click="react(r, 'not_related')">関係ないかも</button>
           </div>
+          <p v-if="feedbackNotice.key.value === r.id" class="mt-2 text-sm text-ink-soft" role="status" aria-live="polite">{{ feedbackNotice.message.value }}</p>
         </article>
         <!-- この記憶を書いたとき浮かんだ札（相手 = 昔の記憶） -->
         <RecallCard v-for="r in detail.recalls.items" :key="r.id" :recall="r" :from="from" :heading="false" />

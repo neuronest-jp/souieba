@@ -2,6 +2,7 @@
 // 候補の行（wireframes 2.3）。種別 + 値 + 根拠、「そう」「ちがう」。確定は moss、却下は薄く残す。
 import { ref } from "vue";
 import { api } from "../api";
+import { useNotice } from "../composables/useNotice";
 import type { Fact } from "../api/types";
 import { formatFactDate } from "../date";
 
@@ -10,6 +11,7 @@ const emit = defineEmits<{ decided: [fact: Fact] }>();
 
 const KIND_LABEL = { person: "人", place: "場所", date: "日", thing: "もの" } as const;
 const busy = ref<Set<string>>(new Set());
+const notice = useNotice();
 
 const display = (f: Fact) => (f.kind === "date" ? formatFactDate(f.value) : f.value);
 const showEvidence = (f: Fact) => f.evidence && f.evidence !== f.value && !f.evidence.startsWith("photo:");
@@ -23,7 +25,8 @@ const decide = async (f: Fact, status: "confirmed" | "rejected") => {
     await api.decideFact(f.id, status);
     emit("decided", f);
   } catch {
-    f.status = prev;
+    f.status = prev; // 表示を戻し、その行の下にそっと知らせる（F4 エラー時）
+    notice.show("記録できませんでした", f.id);
   } finally {
     busy.value.delete(f.id);
   }
@@ -51,6 +54,7 @@ const decide = async (f: Fact, status: "confirmed" | "rejected") => {
           <button type="button" class="min-h-11 rounded-full border border-line bg-card px-3.5 text-base text-ink-soft" :disabled="busy.has(f.id)" @click="decide(f, 'rejected')">ちがう</button>
         </span>
         <span v-else-if="f.status === 'confirmed'" class="rounded-full border border-moss bg-moss-soft px-3.5 py-1 text-sm text-ink">✓ そう</span>
+        <p v-if="notice.key.value === f.id" class="w-full text-sm text-ink-soft" role="status" aria-live="polite">{{ notice.message.value }}</p>
       </li>
     </ul>
   </section>
