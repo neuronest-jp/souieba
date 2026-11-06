@@ -16,8 +16,8 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
   plugins: {
-    // 起動画面とスプラッシュは同じ画像（地の色に「そういえば。」）。画面の準備ができたら native.ts の hideSplash が
-    // 少なくとも 0.9 秒は見せてからふわっと消す。3 秒は画面が動かなかったときの保険
+    // 起動画面とスプラッシュは同じ画像（地の色に「そういえば。」）。画面側の SplashOverlay.vue が同じ絵を同じ位置に描いたら
+    // native.ts の hideSplash がすぐ外し、そこから画面側で動かす。3 秒は画面が動かなかったときの保険
     SplashScreen: {
       launchShowDuration: 3000,
       launchAutoHide: true,

@@ -121,7 +121,7 @@ cd android && ./gradlew assembleDebug
 ## 4. 見た目
 
 - ステータスバー: `web/src/native.ts` が文字色を `Style.Light`（明るい地に濃い文字）にする。Android 16（API 36）以降ではステータスバーは常に画面に重なり、背景色の指定は効かない。上の余白は `web/src/style.css` の `.safe-area` が `env(safe-area-inset-top)` で取る
-- スプラッシュ: 地の色 `#FAF5EC` に「そういえば。」（Zen Maru Gothic の太字、句点は ember。ADR-0008）。iOS は `ios/App/App/Assets.xcassets/Splash.imageset`（2732px 四方、`LaunchScreen.storyboard` も同じ画像なので起動画面から一続き）、Android は `res/drawable*/splash.png`（解像度ごと）と `values/styles.xml` の `windowSplashScreenBackground`（Android 12 以降はシステムの起動画面にアイコンが出る）。`capacitor.config.ts` の `SplashScreen` は 3 秒の保険と `androidScaleType: "CENTER_CROP"`、`web/src/native.ts` の `hideSplash` が少なくとも 0.9 秒見せてから 0.3 秒で消す
+- スプラッシュ: 地の色 `#FAF5EC` に「そういえば。」（Zen Maru Gothic の太字、句点は ember。ADR-0008）。iOS は `ios/App/App/Assets.xcassets/Splash.imageset`（2732px 四方、`LaunchScreen.storyboard` も同じ画像なので起動画面から一続き）、Android は `res/drawable*/splash.png`（解像度ごと）と `values/styles.xml` の `windowSplashScreenBackground`（Android 12 以降はシステムの起動画面にアイコンが出る）。`capacitor.config.ts` の `SplashScreen` は 3 秒の保険と `androidScaleType: "CENTER_CROP"`、`web/src/native.ts` の `hideSplash` が少なくとも 0.9 秒見せてから 0.3 秒で消す。動きは画面側の `web/src/components/SplashOverlay.vue`（起動画像を 1 字ずつ切った `web/src/assets/splash/` と位置の `web/src/splashMark.ts`。起動画像を作り直したら、この 2 つも作り直す）
 - アイコン: Capacitor の既定のまま。`ios/App/App/Assets.xcassets/AppIcon.appiconset` と `android/app/src/main/res/mipmap-*` を差し替える。素材は開発者が権利を持つものだけ
 - セーフエリア: `web/src/style.css` の `.safe-area` と下部ナビの `env(safe-area-inset-bottom)`。iOS は `capacitor.config.ts` の `ios.contentInset` を `"never"`（Capacitor の既定）にして、セーフエリアを CSS の `env()` だけで取る。`"automatic"` にすると、ページがスクロールできるときだけ WKWebView がずらして `env()` が 0 になり、画面ごとに下部ナビの高さが変わる（wireframes 第8節 #23）。ステータスバーの下の地は `App.vue` の固定の `div`
 

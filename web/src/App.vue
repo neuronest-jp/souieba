@@ -4,7 +4,8 @@ import { api, ApiError, type Me } from "./api";
 import { clearToken, loadToken } from "./auth";
 import BottomNav from "./components/BottomNav.vue";
 import { focusScreenHeading, useScreen } from "./composables/useScreen";
-import { hideSplash } from "./native";
+import SplashOverlay from "./components/SplashOverlay.vue";
+import { hideSplash, isNative, platform } from "./native";
 import MemoryDetailScreen from "./screens/MemoryDetailScreen.vue";
 import TimelineScreen from "./screens/TimelineScreen.vue";
 import TodayScreen from "./screens/TodayScreen.vue";
@@ -13,6 +14,13 @@ import WelcomeScreen from "./screens/WelcomeScreen.vue";
 type State = { kind: "loading" } | { kind: "signed_out" } | { kind: "ready"; me: Me } | { kind: "trouble" };
 
 const state = ref<State>({ kind: "loading" });
+
+// 起動のときの「そういえば。」の動き。ネイティブでだけ出す（Web の開発では ?splash か ?splash=ios で確かめられる）。
+// iOS は起動画面と同じ絵から引き継ぐ（seamless）。Android は起動画面がアイコンなので、ふわっと出してから動かす
+const splashParam = import.meta.env.DEV ? new URLSearchParams(window.location.search).get("splash") : null;
+const splash = ref(isNative() || splashParam !== null);
+const splashSeamless = platform() === "ios" || splashParam?.startsWith("ios") === true;
+const splashHold = splashParam?.endsWith("-hold") === true; // ?splash=ios-hold は消さずに止める（動きの確認用）
 const { screen } = useScreen();
 
 const boot = async () => {
@@ -52,6 +60,13 @@ onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthori
 </script>
 
 <template>
+  <SplashOverlay
+    v-if="splash"
+    :ready="state.kind !== 'loading' && !splashHold"
+    :seamless="splashSeamless"
+    @shown="hideSplash"
+    @done="splash = false"
+  />
   <!-- ステータスバーの下の地。一覧をスクロールしても時計に本文が重ならないようにする（ブラウザでは env() が 0 で高さ 0） -->
   <div
     class="pointer-events-none fixed inset-x-0 top-0 z-10 h-[env(safe-area-inset-top)] bg-paper/90 backdrop-blur-md"
