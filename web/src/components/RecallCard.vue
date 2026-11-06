@@ -18,6 +18,6 @@ withDefaults(defineProps<{ recall: Recall; from: "today" | "past"; heading?: boo
     <p v-if="firstLine(recall.related_memory.body) !== recall.evidence" class="mt-2 truncate text-sm text-ink-soft">
       {{ firstLine(recall.related_memory.body) }}
     </p>
-    <a :href="hrefFor({ name: 'memory', id: recall.related_memory.id, from })" class="mt-3 inline-flex min-h-11 items-center text-ink-soft">ひらく ›</a>
+    <a :href="hrefFor({ name: 'memory', id: recall.related_memory.id, from, recall: recall.id })" class="mt-3 inline-flex min-h-11 items-center text-ink-soft">ひらく ›</a>
   </article>
 </template>

@@ -68,7 +68,7 @@ onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthori
     <template v-else>
       <TodayScreen v-if="screen.name === 'today'" />
       <TimelineScreen v-else-if="screen.name === 'past'" />
-      <MemoryDetailScreen v-else :id="screen.id" :from="screen.from" />
+      <MemoryDetailScreen v-else :id="screen.id" :from="screen.from" :recall="screen.recall" />
       <BottomNav :current="screen.name === 'past' || (screen.name === 'memory' && screen.from === 'past') ? 'past' : 'today'" />
     </template>
   </div>

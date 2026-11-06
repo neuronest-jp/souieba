@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // S3 記憶の詳細。本文、起きた日、確定済みの事実、「そういえば。」の枠、削除。
 // 写真の無い記憶には「写真を添える」を出す（S1 で写真だけ失敗したときの添え直し先）。
+// 札の「ひらく ›」から来たとき（?recall=）は、その札を本文のすぐ下に反応ボタン付きで出す（wireframes 4.2）。
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { api, ApiError } from "../api";
 import PhotoImg from "../components/PhotoImg.vue";
@@ -9,11 +10,12 @@ import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
 import type { MemoryDetail, RecalledBy } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
+import RecalledByCard from "../components/RecalledByCard.vue";
 import { formatHappenedOn } from "../date";
 import { useNotice } from "../composables/useNotice";
 import { back as goBack, go } from "../composables/useScreen";
 
-const props = defineProps<{ id: string; from: "today" | "past" }>();
+const props = defineProps<{ id: string; from: "today" | "past"; recall?: string }>();
 
 const detail = ref<MemoryDetail | null>(null);
 const state = ref<"loading" | "ready" | "missing" | "error">("loading");
@@ -72,8 +74,13 @@ const bodyParts = computed(() => {
   return parts;
 });
 
+// 札から開いたときの札（recalled_by のうち ?recall= と同じ id）。見つからなければ 4.1 の並びのまま
+const pinned = computed(() => (props.recall ? (detail.value?.recalled_by.items.find((r) => r.id === props.recall) ?? null) : null));
+const restRecalledBy = computed(() => detail.value?.recalled_by.items.filter((r) => r.id !== pinned.value?.id) ?? []);
+
 const feedbackBusy = ref<Set<string>>(new Set());
 const feedbackNotice = useNotice();
+const noticeFor = (r: RecalledBy) => (feedbackNotice.key.value === r.id ? feedbackNotice.message.value : "");
 const react = async (r: RecalledBy, feedback: "helpful" | "not_related") => {
   if (feedbackBusy.value.has(r.id)) return;
   feedbackBusy.value.add(r.id);
@@ -154,6 +161,8 @@ watch(() => props.id, load);
         </template>
       </p>
 
+      <RecalledByCard v-if="pinned" :item="pinned" heading :notice="noticeFor(pinned)" @react="(f) => react(pinned!, f)" />
+
       <div v-if="!detail.memory.photo_key" class="flex flex-col gap-2">
         <p v-if="photoBusy" class="text-sm text-ink-soft" role="status">写真を添えています</p>
         <PhotoPicker v-else v-model="addingPhoto" />
@@ -162,20 +171,10 @@ watch(() => props.id, load);
 
       <FactChips v-if="visibleFacts.length > 0" class="mt-6" :facts="visibleFacts" title="おぼえていること" />
 
-      <section v-if="detail.recalled_by.items.length > 0 || detail.recalls.items.length > 0" class="mt-6 flex flex-col gap-3">
+      <section v-if="restRecalledBy.length > 0 || detail.recalls.items.length > 0" class="mt-6 flex flex-col gap-3">
         <h2 class="font-display text-[22px] font-bold text-ember">そういえば。</h2>
-        <!-- この記憶が思い出された側（相手 = 新しい記憶）。反応はここで返す -->
-        <article v-for="r in detail.recalled_by.items" :key="r.id" class="card border-l-[3px] border-l-ember p-4">
-          <p class="text-sm text-ink-soft">{{ formatHappenedOn(r.memory.happened_on, r.memory.happened_on_precision) }}のひとことから</p>
-          <a :href="`#memory/${encodeURIComponent(r.memory.id)}`" class="mt-1 block truncate text-sm text-ink-soft">{{ r.memory.body.split(/\r?\n/)[0] }}</a>
-          <p class="mt-2 line-clamp-3 leading-relaxed text-ink">「{{ r.evidence }}」</p>
-          <p class="mt-1 text-sm text-ink-soft">{{ r.reason }}</p>
-          <div class="mt-3 flex gap-2">
-            <button type="button" class="min-h-11 rounded-full border px-3.5 text-base" :class="r.feedback === 'helpful' ? 'border-moss bg-moss-soft text-ink' : 'border-line bg-card text-ink'" :aria-pressed="r.feedback === 'helpful'" @click="react(r, 'helpful')">そうだった</button>
-            <button type="button" class="min-h-11 rounded-full border px-3.5 text-base" :class="r.feedback === 'not_related' ? 'border-line bg-paper text-ink-soft opacity-70' : 'border-line bg-card text-ink-soft'" :aria-pressed="r.feedback === 'not_related'" @click="react(r, 'not_related')">関係ないかも</button>
-          </div>
-          <p v-if="feedbackNotice.key.value === r.id" class="mt-2 text-sm text-ink-soft" role="status" aria-live="polite">{{ feedbackNotice.message.value }}</p>
-        </article>
+        <!-- この記憶が思い出された側（相手 = 新しい記憶）。反応はここで返す。本文の下に出した札はここに重ねない -->
+        <RecalledByCard v-for="r in restRecalledBy" :key="r.id" :item="r" :notice="noticeFor(r)" @react="(f) => react(r, f)" />
         <!-- この記憶を書いたとき浮かんだ札（相手 = 昔の記憶） -->
         <RecallCard v-for="r in detail.recalls.items" :key="r.id" :recall="r" :from="from" :heading="false" />
       </section>
