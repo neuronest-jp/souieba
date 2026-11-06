@@ -8,9 +8,13 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- 字体の CSS は描画を止めない読み方にする（print で読み、届いたら all に切り替える）。届くまでは端末の字体
+         （iOS ではヒラギノ丸ゴ / 角ゴ）で出し、通信が無くても画面が白いまま待たない -->
     <link
       href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
   </head>
   <body>

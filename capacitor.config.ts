@@ -16,9 +16,13 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
   plugins: {
+    // 起動画面とスプラッシュは同じ画像（地の色に「そういえば。」）。画面の準備ができたら native.ts の hideSplash が
+    // 少なくとも 0.9 秒は見せてからふわっと消す。3 秒は画面が動かなかったときの保険
     SplashScreen: {
-      launchShowDuration: 800,
+      launchShowDuration: 3000,
       launchAutoHide: true,
+      launchFadeOutDuration: 300,
+      androidScaleType: "CENTER_CROP",
       backgroundColor: "#FAF5EC",
       showSpinner: false,
       splashFullScreen: true,

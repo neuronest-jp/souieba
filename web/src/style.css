@@ -13,8 +13,8 @@
   --color-moss: #7e9478;
   --color-moss-soft: #e3eadf;
 
-  --font-display: "Zen Maru Gothic", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
-  --font-body: "Noto Sans JP", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-display: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, "Yu Gothic", sans-serif;
 
   /* 余白・文字サイズは rem ではなく px で決める（html の 17px に引きずられない。wireframes 0 節） */
   --spacing: 4px;
@@ -69,6 +69,19 @@
   textarea::placeholder,
   input::placeholder {
     color: var(--color-ink-faint);
+  }
+  /* iOS の WebKit は日付と年月の入力欄に固有の最小幅と中央寄せを持たせ、w-full でもシートの枠から右にはみ出す（11/7 実機） */
+  input[type="date"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-width: 0;
+    text-align: left;
+  }
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="month"]::-webkit-date-and-time-value {
+    text-align: left;
   }
   :focus-visible {
     outline: 2px solid var(--color-ember);

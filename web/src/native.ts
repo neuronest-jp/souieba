@@ -15,10 +15,15 @@ export async function setupNative(): Promise<void> {
   }
 }
 
+// スプラッシュ（「そういえば。」）を、起動から少なくともこの時間は見せる。すぐ消えると一瞬ちらつくだけになる
+const SPLASH_MIN_MS = 900;
+
 export async function hideSplash(): Promise<void> {
   if (!isNative()) return;
+  const wait = SPLASH_MIN_MS - performance.now();
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   try {
-    await SplashScreen.hide();
+    await SplashScreen.hide({ fadeOutDuration: 300 });
   } catch {
     /* 無視 */
   }
