@@ -24,6 +24,9 @@
   --text-xl: 22px;
   --text-2xl: 26px;
 
+  /* 本文の行間は 1.8（ADR-0004、N-3）。入力欄・本文・札の引用の leading-relaxed を Tailwind の既定 1.625 にしない */
+  --leading-relaxed: 1.8;
+
   --radius-card: 20px;
   --radius-pill: 999px;
 
