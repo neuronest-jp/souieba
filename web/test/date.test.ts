@@ -77,6 +77,15 @@ describe("formatHappenedOn（wireframes 3.2）", () => {
     expect(formatHappenedOn("2025-06-15", "day", NOW)).toBe("2025年6月15日");
   });
 
+  it("「今年」は Asia/Tokyo の年。端末の時刻設定が UTC などでも、既定の日付（todayInTokyo）と食い違わない", () => {
+    // UTC の時刻で渡すので、テストを動かす端末の TZ に依らない。端末が JST だと直す前でも通るので、TZ=UTC と
+    // TZ=Pacific/Kiritimati でも回して確かめる（CI は UTC）
+    const newYearInTokyo = new Date("2026-12-31T20:00:00Z"); // JST 2027-01-01 05:00。UTC ではまだ 2026 年
+    expect(formatHappenedOn(todayInTokyo(newYearInTokyo), "day", newYearInTokyo)).toBe("1月1日（金）");
+    const newYearEveInTokyo = new Date("2026-12-31T12:00:00Z"); // JST 2026-12-31 21:00。UTC+14 ではもう 2027 年
+    expect(formatHappenedOn(todayInTokyo(newYearEveInTokyo), "day", newYearEveInTokyo)).toBe("12月31日（木）");
+  });
+
   it("month / year は精度で丸めて出す", () => {
     expect(formatHappenedOn("2024-06-01", "month", NOW)).toBe("2024年6月");
     expect(formatHappenedOn("2024-01-01", "year", NOW)).toBe("2024年");

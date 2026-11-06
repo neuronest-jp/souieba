@@ -56,14 +56,17 @@ export const formatDateJa = (d: Date, opts: { withYear?: boolean } = {}): string
 
 // 起きた日の表示（wireframes 3.2）: day は今年なら「11月3日（月）」、去年以前は「2025年6月15日」。
 // month は「2025年6月」、year は「2025年」、unknown は「いつだったか」。
+// 「今年」は Asia/Tokyo の年（S1 の既定の日付 todayInTokyo や、Worker が決める happened_on と同じ基準）。
+// 端末の年で見ると、端末の時刻設定が UTC などのとき、年明けの数時間だけ今日の日付が去年以前の書き方になる
 export const formatHappenedOn = (happenedOn: string | null, precision: Precision, now: Date = new Date()): string => {
   if (precision === "unknown" || !happenedOn) return "いつだったか";
   const p = parseYmd(happenedOn);
   if (!p) return "いつだったか";
   if (precision === "year") return `${p.y}年`;
   if (precision === "month") return `${p.y}年${p.m}月`;
+  // 曜日は年月日だけで決まる。端末のローカルで組み立てても TZ に左右されない
   const d = new Date(p.y, p.m - 1, p.d);
-  if (p.y === now.getFullYear()) return `${p.m}月${p.d}日（${WEEKDAYS[d.getDay()]}）`;
+  if (p.y === Number(todayInTokyo(now).slice(0, 4))) return `${p.m}月${p.d}日（${WEEKDAYS[d.getDay()]}）`;
   return `${p.y}年${p.m}月${p.d}日`;
 };
 
