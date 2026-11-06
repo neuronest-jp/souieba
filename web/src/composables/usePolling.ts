@@ -10,6 +10,8 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (v: T) => boole
   let timer: ReturnType<typeof setTimeout> | null = null;
   let tries = 0;
   let generation = 0; // start / stop のたびに進める。飛行中の古い fetch の結果は捨てる
+  // 画面が外れたら立てる。外れたあとに届いた応答の続きから start されても（読み込み中に S3 を離れたときなど）、走らせない
+  let disposed = false;
 
   const stop = () => {
     generation += 1;
@@ -41,6 +43,7 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (v: T) => boole
   };
 
   const start = () => {
+    if (disposed) return;
     stop();
     tries = 0;
     value.value = null;
@@ -48,6 +51,9 @@ export function usePolling<T>(fetcher: () => Promise<T>, isDone: (v: T) => boole
     void tick(generation);
   };
 
-  onUnmounted(stop);
+  onUnmounted(() => {
+    disposed = true;
+    stop();
+  });
   return { value, active, start, stop };
 }

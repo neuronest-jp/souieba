@@ -1,14 +1,19 @@
 // 保存直後のポーリング（requirements N-2、architecture 7.2）。2 秒間隔、done か 15 回で止まる、古い応答は捨てる。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// コンポーネントの外で呼ぶため onUnmounted だけ差し替える（Vue の警告を出さない）
-vi.mock("vue", async (orig) => ({ ...(await orig<typeof import("vue")>()), onUnmounted: vi.fn() }));
+// コンポーネントの外で呼ぶため onUnmounted だけ差し替える（Vue の警告を出さない）。渡された関数は取っておき、外れたときを再現する
+const unmounted: Array<() => void> = [];
+vi.mock("vue", async (orig) => ({
+  ...(await orig<typeof import("vue")>()),
+  onUnmounted: (fn: () => void) => unmounted.push(fn),
+}));
 
 const { POLL_INTERVAL_MS, POLL_MAX_TRIES, usePolling } = await import("../src/composables/usePolling");
 
 type V = { pending: boolean; n: number };
 
 beforeEach(() => {
+  unmounted.length = 0;
   vi.useFakeTimers();
 });
 afterEach(() => {
@@ -87,6 +92,28 @@ describe("usePolling", () => {
     releases[1]!({ pending: false, n: 2 });
     await vi.advanceTimersByTimeAsync(0);
     expect(p.value.value).toEqual({ pending: false, n: 2 });
+    expect(p.active.value).toBe(false);
+  });
+
+  it("外れたあと（onUnmounted のあと）の start は何もしない（読み込み中に S3 を離れたとき）", async () => {
+    const fetcher = vi.fn(async (): Promise<V> => ({ pending: true, n: 0 }));
+    const p = usePolling(fetcher, (v) => !v.pending);
+    for (const fn of unmounted) fn();
+    p.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 40);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(p.active.value).toBe(false);
+  });
+
+  it("外れたら走っているポーリングも止まる", async () => {
+    const fetcher = vi.fn(async (): Promise<V> => ({ pending: true, n: 0 }));
+    const p = usePolling(fetcher, (v) => !v.pending);
+    p.start();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    for (const fn of unmounted) fn();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 40);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect(p.active.value).toBe(false);
   });
 });

@@ -41,7 +41,12 @@ const onKey = (e: KeyboardEvent) => {
   if (e.key === "Escape" && confirming.value) closeConfirm();
 };
 onMounted(() => window.addEventListener("keydown", onKey));
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+// S3 は KeepAlive で残さないので、離れると外れる。読み込み中に離れたとき、外れた画面の続き（状態の書き込み・ポーリング・フォーカス）をしない
+let alive = true;
+onUnmounted(() => {
+  alive = false;
+  window.removeEventListener("keydown", onKey);
+});
 
 // 候補や札がまだ届いていない記憶（保存した直後に開いたときなど）は、届くまで静かに取り直す。
 // 間隔と打ち切りは S1 と同じ（2 秒、30 秒）。文言は出さない。書き換えるのは facts と recalls だけで、
@@ -66,7 +71,7 @@ const load = async () => {
   state.value = "loading";
   try {
     const d = await api.getMemory(id);
-    if (id !== props.id) return; // その間に別の記憶へ移った
+    if (!alive || id !== props.id) return; // その間に画面を離れた、または別の記憶へ移った
     detail.value = d;
     state.value = "ready";
     if (d.facts.pending || d.recalls.pending) polling.start();
@@ -74,7 +79,7 @@ const load = async () => {
     // 押したリンクや「もう一度」が消えて body に落ちているときだけ動かす
     void nextTick(() => focusHeading(heading.value));
   } catch (e) {
-    if (id !== props.id) return;
+    if (!alive || id !== props.id) return;
     state.value = e instanceof ApiError && e.status === 404 ? "missing" : "error";
   }
 };
