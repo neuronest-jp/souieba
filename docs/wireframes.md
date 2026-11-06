@@ -576,7 +576,7 @@ S1 の札「ひらく ›」から来た場合は、`recall_id` をクエリ（`
 | 色だけに頼らない | 確定は色に加えて「✓」、却下は薄さに加えて「そう」「ちがう」が消えること、反応は選択状態に加えて `aria-pressed`、下部ナビの選択中は色でなく 2px の線と `aria-current="page"` | |
 | 動き | 札のフェード（`.appear`）は `prefers-reduced-motion: reduce` で無効。自動で動くものは他に無い | architecture 8.1、style.css |
 | 構造 | 画面ごとに `h1` は 1 つ（きょう / これまで / 起きた日 / ふりかえり）。札は `article`、候補の行は `li`、「そう」「ちがう」は `button`。本文中の強調は `mark`（`bg-ember-soft` を当てる）。画像には本文 1 行目を `alt` に入れる | |
-| フォーカス | キーボード操作時は `outline` を `ember` 2px で出す（style.css の `:focus-visible`）。PC で崩れない（第5節） | |
+| フォーカス | キーボード操作時は `outline` を `ember` 2px で出す（style.css の `:focus-visible`）。PC で崩れない（第5節）。「そう」「ちがう」をキーボードや読み上げソフトで押したときは、押したボタンが消えるので、フォーカスをその行（S3 の却下で行が消えたときは同じ位置の行、無ければひとつ前の行、それも無ければ見出し）へ移す。指やマウスで押したときは動かさない（S1 では記憶カードの `:focus-within` の縁が光ったまま残るため）。選んだ結果は、候補の一覧に置いた見えない `role="status"` で「（値）、そう」「（値）、ちがう」と読み上げる | |
 | 入力 | 入力欄は `textarea`、`enterkeyhint="done"`。Enter は改行で、保存はボタンだけ。日付は `<input type="date">` / `<input type="month">` / `<select>`（2.1） | |
 
 ## 7. 文言一覧（確定）
