@@ -44,11 +44,27 @@ pnpm dev:worker                  # Worker: http://localhost:8787
 pnpm dev                         # 画面:   http://localhost:5173（/api は 8787 に中継）
 ```
 
-ローカルの Worker は development として起動し、`X-Dev-User: you@example.com` ヘッダをログイン相当として受け付けます。
-画面の開発サーバがこのヘッダを自動で付けるので、ブラウザではログイン画面を通らずに使えます（`DEV_USER=you@example.com pnpm dev` で変更）。本番ではこのヘッダは無視されます。
+ローカルの Worker は development として起動し、`X-Dev-User` ヘッダをログイン相当として受け付けます。
+画面の開発サーバがこのヘッダ（既定は `X-Dev-User: dev@example.com`）を自動で付けるので、ブラウザではログイン画面を通らずに使えます（`DEV_USER=<メールアドレス> pnpm dev` で変更）。本番ではこのヘッダは無視されます。
 
 ローカルの Worker には開発専用の招待コード `dev` が入っています（`pnpm dev:worker` が渡す既定値。`.dev.vars` に `INVITE_CODE` / `JWT_SECRET` を書けばそちらが優先）。
 `pnpm preview`（画面を Worker から配信する本番と同じ形、http://localhost:8787）で開くと、ログイン画面に `dev` と好きなメールアドレスを入れて中に入れます（`=` の無い招待コードをどのメールでも受け付けるのは development だけ）。
+
+### デモの状態で見る
+
+既定の `dev@example.com` は記憶 0 件から始まります。想起は過去の記憶があるときだけ動くので、最初の 1 件では「そういえば。」は出ません。
+デモ用の過去の記憶（`demo@example.com` の 16 件、2024〜2026）を入れて、そのユーザーで開きます。
+
+```sh
+pnpm db:migrate:local
+pnpm db:seed:local                   # demo@example.com と other@example.com の D1 の行を消してから入れ直す
+pnpm dev:worker
+DEV_USER=demo@example.com pnpm dev   # fish なら env DEV_USER=demo@example.com pnpm dev
+```
+
+`pnpm preview` で開くときは、ログイン画面に招待コード `dev` とメールアドレス `demo@example.com` を入れます。
+新しいひとことに「スーパーで青梅を見かけた」と書くと、2024 年のおばあちゃんの梅干しの記憶が札で出るはずです（`.dev.vars` の `ANTHROPIC_API_KEY` が要ります。札が出るか、その文面はモデルの出力しだい）。4 つのシナリオと seed の中身は demo/fixtures/README.md を参照。
+seed は流すたびに `demo@example.com` と `other@example.com` の記憶を消して入れ直します。ふだんの作業は既定の `dev@example.com` のままにしてください。
 
 ### ログイン
 
