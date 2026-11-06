@@ -1,6 +1,6 @@
 // location.hash を画面に写す。#today（既定）/ #past / #memory/<id>[?from=today][&recall=<recall_id>]。
 // 戻るボタンは hashchange で追従する。recall は S1 の札から開いたときの札の id（wireframes 4.2）。
-import { onMounted, onUnmounted, ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref } from "vue";
 
 export type Screen =
   | { name: "today" }
@@ -57,14 +57,28 @@ export const back = (fallback: Screen) => {
   }
 };
 
+// S1 / S2 は App.vue の KeepAlive で残すので、離れたときの位置を覚えて、戻ったときにそこへ戻す。S3 は毎回いちばん上。
+const keptKey = (s: Screen): string | null => (s.name === "memory" ? null : s.name);
+
 export function useScreen() {
   const screen = ref<Screen>(parseHash(window.location.hash));
+  const positions = new Map<string, number>();
   const onChange = () => {
     depth += 1;
+    const leaving = keptKey(screen.value);
+    if (leaving) positions.set(leaving, window.scrollY);
     screen.value = parseHash(window.location.hash);
+    const arriving = keptKey(screen.value);
+    const top = arriving ? (positions.get(arriving) ?? 0) : 0;
     window.scrollTo({ top: 0 });
+    // 残した画面の DOM が戻るのは次の描画。そのあとで位置を戻す
+    if (top > 0) void nextTick(() => window.scrollTo({ top }));
   };
-  onMounted(() => window.addEventListener("hashchange", onChange));
+  onMounted(() => {
+    // 位置は自分で戻す。ブラウザに任せると、戻る操作では hashchange より先に位置が変わり、離れる画面の位置を取り違える
+    if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+    window.addEventListener("hashchange", onChange);
+  });
   onUnmounted(() => window.removeEventListener("hashchange", onChange));
   return { screen };
 }

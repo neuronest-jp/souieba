@@ -66,9 +66,13 @@ onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthori
     </main>
 
     <template v-else>
-      <TodayScreen v-if="screen.name === 'today'" />
-      <TimelineScreen v-else-if="screen.name === 'past'" />
-      <MemoryDetailScreen v-else :id="screen.id" :from="screen.from" :recall="screen.recall" />
+      <!-- S1（書きかけ・残しました・候補・札）と S2（読み込んだ一覧）は画面を行き来しても残す（wireframes 0 節）。
+           S3 は開くたびに読み直す。401 で S0 に戻ると v-else ごと外れ、残した画面も捨てる -->
+      <KeepAlive include="TodayScreen,TimelineScreen">
+        <TodayScreen v-if="screen.name === 'today'" />
+        <TimelineScreen v-else-if="screen.name === 'past'" />
+        <MemoryDetailScreen v-else :id="screen.id" :from="screen.from" :recall="screen.recall" />
+      </KeepAlive>
       <BottomNav :current="screen.name === 'past' || (screen.name === 'memory' && screen.from === 'past') ? 'past' : 'today'" />
     </template>
   </div>

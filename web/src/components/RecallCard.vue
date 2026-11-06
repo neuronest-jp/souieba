@@ -4,11 +4,15 @@ import type { Recall } from "../api/types";
 import { hrefFor } from "../composables/useScreen";
 import { firstLine, formatHappenedOn } from "../date";
 
-withDefaults(defineProps<{ recall: Recall; from: "today" | "past"; heading?: boolean }>(), { heading: true });
+// animate: 現れる動き（.appear）を付けるか。S1 に戻ってきたとき、もう見せた札は動かさない
+withDefaults(defineProps<{ recall: Recall; from: "today" | "past"; heading?: boolean; animate?: boolean }>(), {
+  heading: true,
+  animate: true,
+});
 </script>
 
 <template>
-  <article class="card appear border-l-[3px] border-l-ember p-4">
+  <article class="card border-l-[3px] border-l-ember p-4" :class="animate ? 'appear' : ''">
     <h2 v-if="heading" class="font-display text-[22px] font-bold text-ember">そういえば。</h2>
     <p class="mt-1 text-sm text-ink-soft">
       {{ formatHappenedOn(recall.related_memory.happened_on, recall.related_memory.happened_on_precision) }}のひとこと

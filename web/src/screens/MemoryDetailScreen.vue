@@ -13,7 +13,10 @@ import RecallCard from "../components/RecallCard.vue";
 import RecalledByCard from "../components/RecalledByCard.vue";
 import { formatHappenedOn } from "../date";
 import { useNotice } from "../composables/useNotice";
+import { usePolling } from "../composables/usePolling";
+import { notifyMemoryDeleted } from "../composables/useMemoryDeleted";
 import { back as goBack, go } from "../composables/useScreen";
+import { keepDecided } from "../facts";
 
 const props = defineProps<{ id: string; from: "today" | "past"; recall?: string }>();
 
@@ -39,12 +42,35 @@ const onKey = (e: KeyboardEvent) => {
 onMounted(() => window.addEventListener("keydown", onKey));
 onUnmounted(() => window.removeEventListener("keydown", onKey));
 
+// 候補や札がまだ届いていない記憶（保存した直後に開いたときなど）は、届くまで静かに取り直す。
+// 間隔と打ち切りは S1 と同じ（2 秒、30 秒）。文言は出さない。書き換えるのは facts と recalls だけで、
+// 本文・写真・recalled_by（反応の印）には触らない。候補は画面で決めた印を残して重ねる
+const polling = usePolling(
+  () => api.getMemory(props.id),
+  (d) => !d.facts.pending && !d.recalls.pending,
+);
+watch(
+  () => polling.value.value,
+  (d) => {
+    const cur = detail.value;
+    if (!d || !cur || d.memory.id !== cur.memory.id) return;
+    cur.facts = { pending: d.facts.pending, items: keepDecided(cur.facts.items, d.facts.items) };
+    cur.recalls = d.recalls;
+  },
+);
+
 const load = async () => {
+  polling.stop();
+  const id = props.id;
   state.value = "loading";
   try {
-    detail.value = await api.getMemory(props.id);
+    const d = await api.getMemory(id);
+    if (id !== props.id) return; // その間に別の記憶へ移った
+    detail.value = d;
     state.value = "ready";
+    if (d.facts.pending || d.recalls.pending) polling.start();
   } catch (e) {
+    if (id !== props.id) return;
     state.value = e instanceof ApiError && e.status === 404 ? "missing" : "error";
   }
 };
@@ -101,6 +127,7 @@ const remove = async () => {
   deleteError.value = "";
   try {
     await api.deleteMemory(props.id);
+    notifyMemoryDeleted(props.id); // 残してある S1 / S2 から消す
     go({ name: "past" });
   } catch {
     closeConfirm();
