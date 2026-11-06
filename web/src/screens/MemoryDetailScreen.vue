@@ -180,7 +180,12 @@ watch(() => props.id, load);
 
     <template v-else-if="detail">
       <h1 class="text-[22px]">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
-      <PhotoImg v-if="detail.memory.photo_key" :photo-key="detail.memory.photo_key" class="max-h-[360px] min-h-[120px] w-full rounded-card object-cover" />
+      <!-- 写真は比率のまま出し、縦長でも上下を切らない（S3 は写真全体を見られる唯一の場所。wireframes 4.1）。
+           横長は幅いっぱい、縦長は高さ 360px まで縮めて中央に置く。img を main（flex）の子にすると伸び縮みで比率が崩れうるので、
+           ふつうの div に入れる。読み込み中と読めなかったときの枠は、これまでどおり幅いっぱい・高さ 120px -->
+      <div v-if="detail.memory.photo_key">
+        <PhotoImg :photo-key="detail.memory.photo_key" class="mx-auto block max-h-[360px] max-w-full rounded-card" box-class="h-[120px] w-full rounded-card" />
+      </div>
       <p class="whitespace-pre-wrap leading-relaxed">
         <template v-for="(p, i) in bodyParts" :key="i">
           <mark v-if="p.hit" class="rounded bg-ember-soft text-ink">{{ p.text }}</mark>
