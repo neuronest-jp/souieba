@@ -181,3 +181,45 @@ describe("S3 で見えている最後の候補を「ちがう」にしたとき"
     expect(statusText(container)).toContain("ゆき、ちがう");
   });
 });
+
+describe("S3 で記憶が見つからない・読み込めないとき", () => {
+  it("見つからない（404）なら、その一文を h1 にしてフォーカスを置く（読み上げで画面が変わったことが伝わる）", async () => {
+    getMemory.mockRejectedValue(new ApiError(404, "not_found", "x"));
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_gone", from: "past" });
+    await settle();
+    expect(focused()).toBe("H1:この記憶は見つかりませんでした");
+    expect(byTag(container, "H1")).toHaveLength(1); // 画面ごとに h1 は 1 つ
+    expect(errors).toEqual([]);
+  });
+
+  it("読み込めないときも一文へ置く。「もう一度」が消えてまた失敗しても、もう一度その一文へ置く", async () => {
+    getMemory.mockRejectedValue(new ApiError(0, "network", "x"));
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    expect(focused()).toBe("H1:読み込めませんでした");
+    const again = button(container, "もう一度")!;
+    again.focus();
+    again.click(0);
+    await settle();
+    expect(getMemory).toHaveBeenCalledTimes(2);
+    expect(focused()).toBe("H1:読み込めませんでした");
+    // 読めたら、これまでどおり起きた日の h1 へ
+    getMemory.mockResolvedValue(detail([]));
+    button(container, "もう一度")!.click(0);
+    await settle();
+    expect(focused()).toBe("H1:2025年10月5日");
+    expect(errors).toEqual([]);
+  });
+
+  it("読み込みを待つ間に利用者が動かしたフォーカスは奪わない", async () => {
+    const answer = deferred<MemoryDetail>();
+    getMemory.mockReturnValue(answer.promise);
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_gone", from: "past" });
+    await settle();
+    button(container, "‹ これまで")!.focus();
+    answer.reject(new ApiError(404, "not_found", "x"));
+    await settle();
+    expect(focused()).toBe("BUTTON:‹ これまで");
+    expect(errors).toEqual([]);
+  });
+});
