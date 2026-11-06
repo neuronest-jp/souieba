@@ -106,9 +106,10 @@ export async function getMemory(db: D1Database, userId: string, id: string): Pro
   return db.prepare(`SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?1 AND user_id = ?2`).bind(id, userId).first<MemoryRow>();
 }
 
-export async function deleteMemory(db: D1Database, userId: string, id: string): Promise<boolean> {
-  const r = await db.prepare("DELETE FROM memories WHERE id = ?1 AND user_id = ?2").bind(id, userId).run();
-  return (r.meta?.changes ?? 0) > 0;
+// 消した行の photo_key を返す（消す行が無ければ null）。RETURNING で削除した時点の値を受け取るので、
+// 直前に写真が差し替わっていても新しい方のキーが返る。
+export async function deleteMemory(db: D1Database, userId: string, id: string): Promise<{ photo_key: string | null } | null> {
+  return db.prepare("DELETE FROM memories WHERE id = ?1 AND user_id = ?2 RETURNING photo_key").bind(id, userId).first<{ photo_key: string | null }>();
 }
 
 export async function listFacts(db: D1Database, memoryId: string): Promise<FactRow[]> {

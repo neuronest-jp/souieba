@@ -363,6 +363,47 @@ describe("GET / DELETE /api/memories/:id", () => {
     expect((await app().request(`/api/memories/${oldId}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(200);
   });
 
+  // 写真付きの記憶を 1 件作り、R2 にも置く
+  const withPhoto = async () => {
+    const { id } = await create("写真のある記憶");
+    const key = `photos/${ME}/${id}/p.jpg`;
+    const r2 = env.PHOTOS as unknown as { store: Map<string, unknown> };
+    r2.store.set(key, { body: new Uint8Array([1]), contentType: "image/jpeg" });
+    db.raw.prepare("UPDATE memories SET photo_key = ?, photo_content_type = 'image/jpeg' WHERE id = ?").run(key, id);
+    return { id, key, r2 };
+  };
+
+  it("F3 エラー時: D1 の削除が失敗したら 500 で、記憶も R2 の写真も残る", async () => {
+    const { id, key, r2 } = await withPhoto();
+    // DELETE FROM memories の実行だけを失敗させる（ほかの SQL はそのまま）
+    const failing = {
+      ...db,
+      prepare: (sql: string) => {
+        const stmt = db.prepare(sql);
+        if (!/^DELETE FROM memories/.test(sql)) return stmt;
+        const fail = async () => {
+          throw new Error("D1_ERROR: network connection lost");
+        };
+        return { ...stmt, bind: () => ({ first: fail, run: fail, all: fail }) };
+      },
+    } as unknown as D1Database;
+    const d = await app().request(`/api/memories/${id}`, { method: "DELETE", headers: { [DEV_USER_HEADER]: ME } }, { ...env, DB: failing });
+    expect(d.status).toBe(500);
+    expect(r2.store.has(key)).toBe(true);
+    expect((await app().request(`/api/memories/${id}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(200);
+    expect((await app().request(`/api/photos/${key}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(200);
+  });
+
+  it("R2 の削除が失敗しても、D1 から消えていれば 204（写真は参照されなくなる）", async () => {
+    const { id } = await withPhoto();
+    (env.PHOTOS as unknown as { delete: () => Promise<void> }).delete = async () => {
+      throw new Error("R2 down");
+    };
+    const d = await app().request(`/api/memories/${id}`, { method: "DELETE", headers: { [DEV_USER_HEADER]: ME } }, env);
+    expect(d.status).toBe(204);
+    expect((await app().request(`/api/memories/${id}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(404);
+  });
+
   it("削除した記憶を related に持つ札も消える（related 側の CASCADE）", async () => {
     const { id: oldId } = await create("old");
     const { id: newId } = await create("new");

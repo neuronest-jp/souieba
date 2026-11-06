@@ -258,8 +258,8 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 `DELETE /api/memories/:id` の順序:
 
 1. 所有者確認（`user_id` 一致、無ければ 404）
-2. `photo_key` があれば R2 の `delete(photo_key)`（失敗しても続行し、`console.error` に残す）
-3. `DELETE FROM memories WHERE id = ? AND user_id = ?`
+2. `DELETE FROM memories WHERE id = ? AND user_id = ? RETURNING photo_key`。失敗したら 500 で、記憶も写真も残る（requirements F3「削除失敗は記憶を残したまま」）
+3. 2 が返した `photo_key` があれば R2 の `delete(photo_key)`。失敗しても 204 を返し、`console.error` に残す（D1 の行はもう無いので、写真は誰からも参照されない孤児になる。キーは推測できない）。R2 を先に消すと、D1 の削除が失敗したときに写真だけが失われるため、この順にする。RETURNING で削除した時点のキーを受け取るので、1 と 2 の間に写真が差し替わっても新しい方を消す
 4. CASCADE で `memory_facts`、`recalls`（memory_id 側も related_memory_id 側も）が消える。他の記憶に付いていた札も、この記憶を指すものは消える
 5. 進行中の `waitUntil` が後から結果を保存しようとした場合、`memories` が無いので INSERT が外部キーで失敗する。例外は握りつぶして `ai_runs.status = failed` にする
 

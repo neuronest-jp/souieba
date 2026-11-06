@@ -110,14 +110,17 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
     const id = c.req.param("id");
     const memory = await getMemory(c.env.DB, user.id, id);
     if (!memory) throw new ApiError(404, "not_found", "見つかりません");
-    if (memory.photo_key) {
+    // D1 を先に消し、成功してから R2 の写真を消す。D1 が失敗したら 500 で、記憶も写真も残る（F3「削除失敗は記憶を残したまま」）。
+    // 間に並行して消されていたら deleted は null。もう無いので 204 のまま返す。
+    const deleted = await deleteMemory(c.env.DB, user.id, id);
+    if (deleted?.photo_key) {
       try {
-        await c.env.PHOTOS.delete(memory.photo_key);
+        await c.env.PHOTOS.delete(deleted.photo_key);
       } catch (e) {
-        console.error("photo delete failed", memory.photo_key, e);
+        // D1 の行はもう無く、写真は誰からも参照されない（キーは推測できない）。ログに残して続ける
+        console.error("photo delete failed", deleted.photo_key, e);
       }
     }
-    await deleteMemory(c.env.DB, user.id, id);
     return c.body(null, 204);
   });
 
