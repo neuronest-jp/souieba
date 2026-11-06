@@ -93,7 +93,7 @@ const save = async () => {
       const r = await api.putPhoto(memory.id, blob);
       memory = { ...memory, photo_key: r.photo_key, photo_content_type: r.photo_content_type };
     } catch {
-      photoNote.value = "写真だけ、あとでもう一度";
+      photoNote.value = "写真だけ残せませんでした。「ひらく」から添え直せます";
     }
   }
   saved.value = memory;

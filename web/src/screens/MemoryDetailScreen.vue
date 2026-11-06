@@ -1,8 +1,11 @@
 <script setup lang="ts">
 // S3 記憶の詳細。本文、起きた日、確定済みの事実、「そういえば。」の枠、削除。
+// 写真の無い記憶には「写真を添える」を出す（S1 で写真だけ失敗したときの添え直し先）。
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { api, ApiError } from "../api";
 import PhotoImg from "../components/PhotoImg.vue";
+import PhotoPicker from "../components/PhotoPicker.vue";
+import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
 import type { MemoryDetail, RecalledBy } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
@@ -97,6 +100,30 @@ const remove = async () => {
   }
 };
 
+// 写真をあとから添える。新しい API は使わず PUT /api/memories/:id/photo（S1 と同じ）。本文には触らない
+const addingPhoto = ref<File | null>(null);
+const photoBusy = ref(false);
+const photoError = ref("");
+watch(addingPhoto, async (file) => {
+  if (!file || photoBusy.value) return;
+  const id = props.id;
+  photoBusy.value = true;
+  photoError.value = "";
+  try {
+    const blob = await shrinkPhoto(file);
+    if (blob.size > PHOTO_MAX_BYTES) throw new Error("too large");
+    const r = await api.putPhoto(id, blob);
+    if (detail.value && detail.value.memory.id === id) {
+      detail.value.memory = { ...detail.value.memory, photo_key: r.photo_key, photo_content_type: r.photo_content_type };
+    }
+  } catch {
+    photoError.value = "写真を添えられませんでした。もう一度どうぞ";
+  } finally {
+    addingPhoto.value = null;
+    photoBusy.value = false;
+  }
+});
+
 const back = () => goBack({ name: props.from });
 
 onMounted(load);
@@ -123,6 +150,12 @@ watch(() => props.id, load);
           <template v-else>{{ p.text }}</template>
         </template>
       </p>
+
+      <div v-if="!detail.memory.photo_key" class="flex flex-col gap-2">
+        <p v-if="photoBusy" class="text-sm text-ink-soft" role="status">写真を添えています</p>
+        <PhotoPicker v-else v-model="addingPhoto" />
+        <p v-if="photoError" class="text-sm text-ink-soft" role="alert">{{ photoError }}</p>
+      </div>
 
       <FactChips v-if="visibleFacts.length > 0" class="mt-6" :facts="visibleFacts" title="おぼえていること" />
 
