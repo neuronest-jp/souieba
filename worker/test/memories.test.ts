@@ -274,6 +274,32 @@ describe("GET / DELETE /api/memories/:id", () => {
     expect(db.raw.prepare("SELECT count(*) AS n FROM memories").get()).toEqual({ n: 1 });
   });
 
+  it("X-11: 他人の記憶の /facts と /recalls は 404 で、候補の値も札の相手の本文も返さない", async () => {
+    // listFacts / listRecalls は memory_id だけで引くので、所有者の確認はルートの getMemory に頼っている
+    const { id: oldId } = await create("梅干しを漬けていた");
+    const { id: newId } = await create("青梅を見かけた");
+    const now = "2026-11-05T00:00:00.000Z";
+    db.raw
+      .prepare("INSERT INTO memory_facts (id, memory_id, kind, value, status, source, evidence, created_at) VALUES ('f1', ?, 'person', 'おばあちゃん', 'candidate', 'ai', '青梅', ?)")
+      .run(newId, now);
+    db.raw.prepare("INSERT INTO recalls (id, memory_id, related_memory_id, reason, evidence, created_at) VALUES ('r1', ?, ?, 'r', 'e', ?)").run(newId, oldId, now);
+
+    for (const path of ["facts", "recalls"]) {
+      const res = await app().request(`/api/memories/${newId}/${path}`, { headers: { [DEV_USER_HEADER]: OTHER } }, env);
+      expect(res.status).toBe(404);
+      const text = await res.text();
+      expect((JSON.parse(text) as { error: { code: string } }).error.code).toBe("not_found");
+      expect(text).not.toContain("おばあちゃん");
+      expect(text).not.toContain("梅干しを漬けていた");
+    }
+    // 持ち主には 1 件ずつ見える（上の 404 が「行が無いから」ではないことの確認）
+    for (const path of ["facts", "recalls"]) {
+      const res = await app().request(`/api/memories/${newId}/${path}`, { headers: { [DEV_USER_HEADER]: ME } }, env);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { items: unknown[] }).items).toHaveLength(1);
+    }
+  });
+
   it("F3-4: 削除で facts と recalls（両側）と R2 の写真も消え、以後 404", async () => {
     const { id: oldId } = await create("old");
     const { id: newId } = await create("new");
