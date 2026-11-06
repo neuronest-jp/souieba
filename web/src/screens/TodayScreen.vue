@@ -7,7 +7,7 @@ import PhotoImg from "../components/PhotoImg.vue";
 import type { Fact, Memory, Precision, Recall } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
-import { usePolling } from "../composables/usePolling";
+import { triesLeft, usePolling } from "../composables/usePolling";
 import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
 import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
@@ -43,7 +43,9 @@ onUnmounted(() => {
 const photo = ref<File | null>(null);
 const photoNote = ref("");
 
-// 保存直後: 候補と札が届くまで静かに待つ（両方の pending が false で止まる）
+// 保存直後: 候補と札が届くまで静かに待つ（両方の pending が false で止まる）。
+// S1 を離れている間は止め（S3 を開いていれば S3 が自分で取り直す）、戻って取り直した記憶がまだ pending なら残りの回数だけ続ける。
+// 30 秒の打ち切り（requirements N-2）は、離れて戻ったあとも保存した時刻（savedAt）から数える
 const facts = ref<Fact[]>([]);
 const recalls = ref<Recall[]>([]);
 const polling = usePolling(
@@ -63,6 +65,12 @@ const applyPolled = (v: { f: { items: Fact[] }; r: { items: Recall[] } } | null)
   recalls.value = v.r.items;
 };
 watch(() => polling.value.value, (v) => applyPolled(v));
+let savedAt = 0;
+// S1 が表に出ているか（KeepAlive の onActivated / onDeactivated）。離れている間に保存が終わっても、そこではポーリングを始めない
+let shown = true;
+const resumePolling = () => {
+  if (alive && shown && saved.value) polling.start(triesLeft(savedAt));
+};
 
 const MAX = 2000;
 const remaining = computed(() => MAX - Array.from(body.value).length);
@@ -125,7 +133,9 @@ const save = async () => {
   saving.value = false;
   facts.value = [];
   recalls.value = [];
-  if (alive) polling.start();
+  savedAt = Date.now();
+  // 離れている間に保存が終わったときは、戻ったときの recheckSaved が取り直して続ける
+  if (alive && shown) polling.start();
   // 「保存する」は書く画面ごと消えるので、「残しました」の見出しへ（読み上げで残ったことが伝わる）
   void nextTick(() => focusHeading(savedHeading.value));
 };
@@ -158,7 +168,8 @@ const onVisible = () => {
 };
 
 // 保存した記憶を S3 で開いて戻ってきたとき、S3 で決めた候補・添え直した写真・届いた札を映す。
-// 記憶が消えていたら（404）入力に戻す。ほかの失敗は静かに今のまま
+// まだ届いていない候補や札があれば、取り直しを映したあとで、保存から 30 秒の残りだけポーリングを続ける。
+// 記憶が消えていたら（404）入力に戻す。ほかの失敗では表示は今のまま、届いたか分からないので残りの回数だけポーリングを続ける
 const recheckSaved = async (id: string) => {
   try {
     const d = await api.getMemory(id);
@@ -167,18 +178,24 @@ const recheckSaved = async (id: string) => {
     if (d.memory.photo_key) photoNote.value = "";
     facts.value = keepDecided(facts.value, d.facts.items);
     recalls.value = d.recalls.items;
+    if (d.facts.pending || d.recalls.pending) resumePolling();
   } catch (e) {
-    if (e instanceof ApiError && e.status === 404 && saved.value?.id === id) another();
+    if (saved.value?.id !== id) return;
+    if (e instanceof ApiError && e.status === 404) another();
+    else resumePolling();
   }
 };
 
 onActivated(() => {
+  shown = true;
   document.addEventListener("visibilitychange", onVisible);
   refreshDefaultDate();
   if (saved.value) void recheckSaved(saved.value.id);
 });
-// 離れるとき: シートを閉じ（選んだ値はそのまま残る）、いま見えているカードと札を「見せた」に数える
+// 離れるとき: ポーリングを止め、シートを閉じ（選んだ値はそのまま残る）、いま見えているカードと札を「見せた」に数える
 onDeactivated(() => {
+  shown = false;
+  polling.stop();
   document.removeEventListener("visibilitychange", onVisible);
   sheetOpen.value = false;
   shownIds.value = new Set([...(saved.value ? [saved.value.id] : []), ...recalls.value.map((r) => r.id)]);

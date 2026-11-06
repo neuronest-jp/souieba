@@ -8,7 +8,7 @@ vi.mock("vue", async (orig) => ({
   onUnmounted: (fn: () => void) => unmounted.push(fn),
 }));
 
-const { POLL_INTERVAL_MS, POLL_MAX_TRIES, usePolling } = await import("../src/composables/usePolling");
+const { POLL_INTERVAL_MS, POLL_MAX_TRIES, triesLeft, usePolling } = await import("../src/composables/usePolling");
 
 type V = { pending: boolean; n: number };
 
@@ -47,6 +47,43 @@ describe("usePolling", () => {
     expect(fetcher).toHaveBeenCalledTimes(POLL_MAX_TRIES);
     expect(POLL_MAX_TRIES * POLL_INTERVAL_MS).toBe(30_000);
     expect(p.active.value).toBe(false);
+  });
+
+  it("start に回数を渡すと、その回数で打ち切る（S1 に戻ったとき、保存から 30 秒の残りだけ続ける）", async () => {
+    const fetcher = vi.fn(async (): Promise<V> => ({ pending: true, n: 0 }));
+    const p = usePolling(fetcher, (v) => !v.pending);
+    p.start(4);
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 40);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(p.active.value).toBe(false);
+    p.start(); // 渡さなければこれまでどおり 15 回
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 40);
+    expect(fetcher).toHaveBeenCalledTimes(4 + POLL_MAX_TRIES);
+  });
+
+  it("start に 0 回を渡したら走らせず、走っていた分も止める", async () => {
+    const fetcher = vi.fn(async (): Promise<V> => ({ pending: true, n: 0 }));
+    const p = usePolling(fetcher, (v) => !v.pending);
+    p.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    p.start(0);
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 40);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(p.active.value).toBe(false);
+  });
+
+  it("triesLeft: 始めた時刻から 30 秒の残りの回数。最後の回は始めてから 30 秒より前に収まり、過ぎたら 0", () => {
+    const t0 = 1_000_000;
+    expect(triesLeft(t0, t0)).toBe(POLL_MAX_TRIES);
+    expect(triesLeft(t0, t0 + 1999)).toBe(POLL_MAX_TRIES);
+    expect(triesLeft(t0, t0 + 5000)).toBe(POLL_MAX_TRIES - 2);
+    // 5 秒で戻って 13 回: 5, 7, …, 29 秒。30 秒を越えない
+    expect(5000 + (triesLeft(t0, t0 + 5000) - 1) * POLL_INTERVAL_MS).toBeLessThan(30_000);
+    expect(triesLeft(t0, t0 + 29_999)).toBe(1);
+    expect(triesLeft(t0, t0 + 30_000)).toBe(0);
+    expect(triesLeft(t0, t0 + 600_000)).toBe(0);
+    expect(triesLeft(t0, t0 - 10_000)).toBe(POLL_MAX_TRIES); // 時計が戻っても 15 回を越えない
   });
 
   it("失敗は静かに次の回へ。失敗も回数に数える", async () => {

@@ -601,6 +601,8 @@ web/src/
 ### 7.2 ポーリング
 
 - 保存直後、`usePolling(() => Promise.all([getFacts(id), getRecalls(id)]))` を開始。2 秒間隔、両方の `pending` が false になった時点で止める。30 秒（15 回目）で打ち切る（requirements N-2、tasks T-1106-08。API の timeout 20 秒と保存の遅延を吸収できる長さ）
+- S1 は `KeepAlive` で残すが、離れている間（`onDeactivated`）はポーリングを止める（S3 で同じ記憶を開くと S3 も取り直すので、二重にしない）。戻ったとき（`onActivated`）は保存した記憶を `GET /api/memories/:id` で取り直し、まだ `pending` なら（取り直しに失敗したときも）残りの回数だけ続ける。30 秒は保存した時刻から数える（`triesLeft`）
+- S3 は開いた記憶の `pending` の間だけ同じ間隔・打ち切りで `GET /api/memories/:id` を取り直す。画面が外れたあと（`onUnmounted` のあと）の `start` は何もしない（読み込み中に離れたとき、外れた画面のポーリングを残さない）
 - 札（RecallCard）は結果が初めて届いたときに ADR-0004 の 600ms フェードで現れる。0 件なら何も描かない。「読み込み中」の表示も出さない（静かに待つ）
 - 候補（FactChips）は届き次第、本文の下に並ぶ。「そう」「ちがう」はその場で PATCH し、楽観更新する
 
