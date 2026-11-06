@@ -15,6 +15,7 @@ import { formatHappenedOn } from "../date";
 import { useNotice } from "../composables/useNotice";
 import { usePolling } from "../composables/usePolling";
 import { notifyMemoryDeleted } from "../composables/useMemoryDeleted";
+import { notifyMemoryPhoto } from "../composables/useMemoryPhoto";
 import { back as goBack, focusHeading, go } from "../composables/useScreen";
 import { keepDecided } from "../facts";
 
@@ -159,6 +160,8 @@ watch(addingPhoto, async (file) => {
     const blob = await shrinkPhoto(file);
     if (blob.size > PHOTO_MAX_BYTES) throw new Error("too large");
     const r = await api.putPhoto(id, blob);
+    // 残してある S1 / S2 にも映す。添えている途中に離れても届くよう、この画面の状態とは関係なく知らせる
+    notifyMemoryPhoto(id, r.photo_key, r.photo_content_type);
     if (detail.value && detail.value.memory.id === id) {
       detail.value.memory = { ...detail.value.memory, photo_key: r.photo_key, photo_content_type: r.photo_content_type };
     }

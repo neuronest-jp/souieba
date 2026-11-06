@@ -14,6 +14,7 @@ import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
 import { formatHappenedOn, isRealYmd, todayInTokyo } from "../date";
 import { focusHeading, hrefFor } from "../composables/useScreen";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
+import { useMemoryPhoto } from "../composables/useMemoryPhoto";
 import { keepDecided } from "../facts";
 
 defineOptions({ name: "TodayScreen" }); // KeepAlive の include で使う
@@ -174,8 +175,10 @@ const recheckSaved = async (id: string) => {
   try {
     const d = await api.getMemory(id);
     if (saved.value?.id !== id) return;
-    saved.value = d.memory;
-    if (d.memory.photo_key) photoNote.value = "";
+    // 写真は外せないので、取り直しの間に S3 からの知らせ（useMemoryPhoto）で足した写真を、それより前に読んだ応答で消さない
+    const cur = saved.value;
+    saved.value = d.memory.photo_key || !cur.photo_key ? d.memory : { ...d.memory, photo_key: cur.photo_key, photo_content_type: cur.photo_content_type };
+    if (saved.value.photo_key) photoNote.value = "";
     facts.value = keepDecided(facts.value, d.facts.items);
     recalls.value = d.recalls.items;
     if (d.facts.pending || d.recalls.pending) resumePolling();
@@ -205,6 +208,13 @@ onDeactivated(() => {
 useMemoryDeleted((id) => {
   if (saved.value?.id === id) another();
   else recalls.value = recalls.value.filter((r) => r.related_memory.id !== id);
+});
+
+// S3 で添え直した写真を映す（非アクティブの間に届く）。添えている途中に戻ると、戻ったときの取り直しが PUT より先に終わるため
+useMemoryPhoto((id, photo_key, photo_content_type) => {
+  if (saved.value?.id !== id) return;
+  saved.value = { ...saved.value, photo_key, photo_content_type };
+  photoNote.value = "";
 });
 </script>
 

@@ -7,6 +7,7 @@ import { api } from "../api";
 import type { Memory } from "../api/types";
 import MemoryCard from "../components/MemoryCard.vue";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
+import { useMemoryPhoto } from "../composables/useMemoryPhoto";
 
 defineOptions({ name: "TimelineScreen" }); // KeepAlive の include で使う
 
@@ -79,6 +80,11 @@ onActivated(() => {
 // S3 で消した記憶の行は、取り直しを待たずに外す（非アクティブの間に届く）
 useMemoryDeleted((id) => {
   items.value = items.value.filter((m) => m.id !== id);
+});
+
+// S3 で添え直した写真は、その行に映す（非アクティブの間に届く。添えている途中に戻ると取り直しが PUT より先に終わるため）
+useMemoryPhoto((id, photo_key, photo_content_type) => {
+  items.value = items.value.map((m) => (m.id === id ? { ...m, photo_key, photo_content_type } : m));
 });
 </script>
 
