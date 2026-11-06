@@ -20,6 +20,7 @@ export const unescapeXml = (s: string): string =>
   s.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 
 // body に逐語で含まれる形の evidence を返す（無ければ null）。正規化や trim はしない（X-7）。
+// C2 の date 以外の value の照合にも使う。
 export const matchEvidence = (evidence: string, body: string): string | null => {
   if (evidence.length === 0) return null;
   if (body.includes(evidence)) return evidence;
@@ -132,17 +133,32 @@ export function verifyFacts(out: unknown, body: string): { items: VerifiedFact[]
       stats.dropped.push({ reason: "evidence_not_in_body", item: raw });
       continue;
     }
-    if (raw.kind === "date" && !isValidDateValue(raw.value)) {
-      stats.dropped.push({ reason: "bad_date", item: raw });
-      continue;
+    // date 以外の value も本文の言葉そのままでなければ捨てる。「はると（息子）」「祖母」のような推測や言い換えが、
+    // 引用を添えた候補として並ぶのを防ぐ（原則 1・3）。date は「先月」→ 2026-10 のように本文と違う形に直した値が正しいので、
+    // 形と実在だけを見る。
+    let value: string;
+    if (raw.kind === "date") {
+      if (!isValidDateValue(raw.value)) {
+        stats.dropped.push({ reason: "bad_date", item: raw });
+        continue;
+      }
+      value = raw.value;
+    } else {
+      const matched = matchEvidence(raw.value, body);
+      if (matched === null) {
+        stats.dropped.push({ reason: "value_not_in_body", item: raw });
+        continue;
+      }
+      value = matched;
     }
-    const key = `${raw.kind}\u0000${raw.value}`;
+    // 重複は保存する形（エスケープを戻した値）で見る。&quot; の有無で同じ候補が 2 つ残らないように
+    const key = `${raw.kind}\u0000${value}`;
     if (seen.has(key)) {
       stats.dropped.push({ reason: "duplicate", item: raw });
       continue;
     }
     seen.add(key);
-    kept.push({ kind: raw.kind as VerifiedFact["kind"], value: unescapeXml(raw.value), evidence });
+    kept.push({ kind: raw.kind as VerifiedFact["kind"], value, evidence });
   }
   stats.kept = kept.length;
   return { items: kept, stats };

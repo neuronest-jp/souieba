@@ -138,7 +138,7 @@ S0 ようこそ はログイン画面そのもの。保存したトークンが�
 | `GET /api/memories/:id/facts` | `{ pending: boolean, items: [{ id, kind, value, status, source, evidence }] }`。`pending` の導出は第2節「AI 処理の状態」 |
 | `PATCH /api/facts/:id` JSON `{ status: "confirmed" \| "rejected" }` | 200、更新後の fact。`decided_at` を設定 |
 
-Worker の検証と保存（この順に適用する）: (1) `evidence` が空、または `body` の部分文字列でないもの（X-6, X-7）、`kind` が 4 種以外のものを捨てる → (2) `(kind, value)` が同じものは最初の 1 件を残して除く → (3) 残りを `source='ai'`, `status='candidate'` で保存。0 件なら `ai_runs.status='empty'`。
+Worker の検証と保存（この順に適用する）: (1) `evidence` が空、または `body` の部分文字列でないもの（X-6, X-7）、`kind` が 4 種以外のもの、`date` 以外で `value` が `body` の部分文字列でないもの（F4-9）を捨てる → (2) `(kind, value)` が同じものは最初の 1 件を残して除く → (3) 残りを `source='ai'`, `status='candidate'` で保存。0 件なら `ai_runs.status='empty'`。`value` も照合するのは、引用は本文にあっても値が推測（「はると（息子）」「祖母」）だと、根拠付きの候補に見えたまま「そう」で確定事実になり、想起の入力に入るため（原則 1・3）。`date` は相対表現を解いた値（「先月」→ `2026-10`）が正しいので、形と実在だけを見る。
 
 日付候補の精度: `memory_facts` に精度の列はないため `value` の長さで表す（`YYYY-MM-DD` = 日、`YYYY-MM` = 月、`YYYY` = 年）。不明なら候補を出さない。画面では精度に応じて語尾を付けて表示する（`2026-06-15` → 「2026年6月15日」、`2026-06` → 「2026年6月ごろ」、`2024` → 「2024年ごろ」）。確定しても `happened_on` には反映しない（X-3）。
 
@@ -154,6 +154,7 @@ Worker の検証と保存（この順に適用する）: (1) `evidence` が空�
 | F4-6 | 他人の候補 C | `PATCH /api/facts/C` | 404 | 単体 |
 | F4-7 | Claude が `thing: 梅干し` を 2 件（evidence はどちらも本文にある）返した | Worker の検証 | 保存は 1 件 | 単体 |
 | F4-8 | Claude が `kind='date', value='2026-06'` を返した | 画面 | 「2026年6月ごろ」と表示される | 単体（表示関数）、画面 |
+| F4-9 | `body = "はると、今日補助輪なしで乗れた"`、Claude が `person: はると（息子）`（`evidence = "はると"`）と `person: はると` を返した | Worker の検証 | 保存は `はると` の 1 件だけ（`value` が本文に無い候補は捨てる）。`date` の `value`（`先月` → `2026-10`）はこの照合から外す | 単体 |
 
 エラー時: Claude 呼び出し失敗（HTTP エラー、タイムアウト、JSON 不正、`stop_reason='max_tokens'`）は `ai_runs(kind='facts', status='failed')` を記録し、`pending = false`, `items = []` を返す。`stop_reason='refusal'`（HTTP 200）も失敗と同じ扱い: `status='failed'`、`error` に `refusal:<stop_details.category>` を記録、画面は静か（ADR-0005）。再試行はしない（第9節）。
 

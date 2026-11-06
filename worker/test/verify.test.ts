@@ -112,8 +112,55 @@ describe("verifyFacts", () => {
     const r = verifyFacts(out, body);
     expect(r.items.map((i) => `${i.kind}:${i.value}`)).toEqual(["person:おばあちゃん", "place:公園", "date:2024-06-15"]);
     expect(r.stats.dropped.map((d) => d.reason)).toEqual(["duplicate", "bad_date", "bad_date", "evidence_not_in_body", "bad_kind", "empty"]);
-    const many = { items: Array.from({ length: 12 }, (_, i) => ({ kind: "thing", value: `梅${i}`, evidence: "梅", date_precision: "unknown" })) };
-    expect(verifyFacts(many, body).items).toHaveLength(10);
+    // 上限: value も本文にある 12 件を渡す
+    const manyBody = Array.from({ length: 12 }, (_, i) => `梅${i}`).join(" ");
+    const many = { items: Array.from({ length: 12 }, (_, i) => ({ kind: "thing", value: `梅${i}`, evidence: `梅${i}`, date_precision: "unknown" })) };
+    expect(verifyFacts(many, manyBody).items).toHaveLength(10);
+  });
+  it("date 以外の value が本文に無ければ捨てる（関係性の推測や言い換え。原則 1・3）", () => {
+    const d4 = "はると、今日補助輪なしで乗れた";
+    const r = verifyFacts(
+      {
+        items: [
+          { kind: "person", value: "はると（息子）", evidence: "はると", date_precision: "unknown" },
+          { kind: "person", value: "息子", evidence: "はると", date_precision: "unknown" },
+          { kind: "thing", value: "自転車", evidence: "補助輪なしで乗れた", date_precision: "unknown" },
+          { kind: "person", value: "はると", evidence: "はると", date_precision: "unknown" },
+          { kind: "thing", value: "補助輪", evidence: "補助輪なしで乗れた", date_precision: "unknown" },
+        ],
+      },
+      d4,
+    );
+    expect(r.items.map((i) => `${i.kind}:${i.value}`)).toEqual(["person:はると", "thing:補助輪"]);
+    expect(r.stats.dropped.map((d) => d.reason)).toEqual(["value_not_in_body", "value_not_in_body", "value_not_in_body"]);
+    // 引用は本文にあっても、本文に無い呼び方は通さない
+    const d1 = "おばあちゃんは毎年6月になると、縁側で梅干しを漬けていた";
+    expect(verifyFacts({ items: [{ kind: "person", value: "祖母", evidence: "おばあちゃん", date_precision: "unknown" }] }, d1).stats.dropped[0]!.reason).toBe(
+      "value_not_in_body",
+    );
+  });
+  it("date の value は本文の表記と違ってよい（相対表現を解いた値。形と実在だけを見る）", () => {
+    const d2 = "電気代を払った。先月より少し安かった";
+    const r = verifyFacts({ items: [{ kind: "date", value: "2026-10", evidence: "先月", date_precision: "month" }] }, d2);
+    expect(r.items).toEqual([{ kind: "date", value: "2026-10", evidence: "先月" }]);
+  });
+  it("value のエスケープの有無で同じ候補が 2 つ残らない", () => {
+    const body = 'A&W で "ルートビア" を飲んだ';
+    const r = verifyFacts(
+      {
+        items: [
+          { kind: "thing", value: "&quot;ルートビア&quot;", evidence: "ルートビア", date_precision: "unknown" },
+          { kind: "thing", value: '"ルートビア"', evidence: "ルートビア", date_precision: "unknown" },
+          { kind: "place", value: "A&amp;W", evidence: "A&amp;W", date_precision: "unknown" },
+        ],
+      },
+      body,
+    );
+    expect(r.items).toEqual([
+      { kind: "thing", value: '"ルートビア"', evidence: "ルートビア" },
+      { kind: "place", value: "A&W", evidence: "A&W" },
+    ]);
+    expect(r.stats.dropped.map((d) => d.reason)).toEqual(["duplicate"]);
   });
   it("isValidDateValue", () => {
     expect(isValidDateValue("2024")).toBe(true);

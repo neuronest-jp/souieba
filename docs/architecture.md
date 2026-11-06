@@ -554,7 +554,8 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 | 件数 | 先頭 3 件に切る（C1）。C2 は 10 件に切る |
 | C2: `date` の `value` が精度に合う形（`YYYY-MM-DD` / `YYYY-MM` / `YYYY`、実在する日付） | 捨てる |
 | C2: `evidence` と `value` が空 | 捨てる |
-| C2: 同じ (kind, value) の重複 | 2 件目以降を捨てる |
+| C2: `date` 以外の `value` が新しい記憶の body に部分文字列として含まれる（`evidence` と同じ照合。エスケープを戻した形でも見る）。推測した関係性や言い換え（「はると（息子）」「祖母」）を根拠付きの候補に見せないため。`date` は相対表現を解いた値なので対象外（requirements F4-9） | 捨てる |
+| C2: 同じ (kind, value) の重複（`value` はエスケープを戻した、保存する形で比べる） | 2 件目以降を捨てる |
 
 1 件も残らなければ `ai_runs.status = 'empty'`。検証関数は純粋関数にして `worker/test/` で検証する。
 
