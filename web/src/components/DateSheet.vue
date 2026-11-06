@@ -56,7 +56,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 
 <template>
   <div class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="emit('close')">
-    <div class="w-full max-w-[560px] rounded-t-[20px] bg-card p-5 shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
+    <div class="w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
       <h2 id="date-sheet-title" class="text-xl">いつのこと</h2>
       <div class="mt-4 flex flex-wrap gap-2">
         <button

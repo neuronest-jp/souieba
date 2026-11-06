@@ -212,7 +212,7 @@ watch(() => props.id, load);
       </div>
 
       <div v-if="confirming" class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="closeConfirm">
-        <div class="w-full max-w-[560px] rounded-t-[20px] bg-card p-5 shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+        <div class="w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
           <h2 id="delete-title" class="text-[22px]">この記憶を消しますか</h2>
           <p class="mt-2 text-sm text-ink-soft">写真も、この記憶から浮かんだ「そういえば。」も一緒に消えます。</p>
           <div class="mt-5 flex flex-col items-center gap-3">
