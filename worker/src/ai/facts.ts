@@ -26,7 +26,9 @@ export async function runFacts(env: Env, runId: string, memory: MemoryRow, deps:
       await finishAiRun(env.DB, runId, { status: "failed", error: res.error, input_tokens: res.input_tokens, output_tokens: res.output_tokens, model: res.model, now: nowIso() });
       return;
     }
-    const { items, stats } = verifyFacts(res.json, memory.body);
+    // 起きた日の扱いはプロンプト（happenedAttr）と同じ: 精度が unknown なら不明
+    const happenedOn = memory.happened_on_precision === "unknown" ? null : memory.happened_on;
+    const { items, stats } = verifyFacts(res.json, memory.body, happenedOn);
     if (stats.dropped.length) console.log("facts dropped", memory.id, JSON.stringify(stats.dropped.map((d) => d.reason)));
     if (items.length === 0) {
       await finishAiRun(env.DB, runId, { status: "empty", input_tokens: res.input_tokens, output_tokens: res.output_tokens, model: res.model, now: nowIso() });

@@ -204,6 +204,32 @@ describe("想起の入力の範囲", () => {
   });
 });
 
+describe("日付の候補と起きた日", () => {
+  // 「きのう」を 2026-11-06 に解いた候補を返す偽の Claude
+  const yesterday = () => fakeCall(() => ({ items: [{ kind: "date", value: "2026-11-06", evidence: "きのう", date_precision: "day" }] }));
+  const postWith = async (app: ReturnType<typeof createApp>, input: Record<string, unknown>) => {
+    const ctx = fakeExecutionCtx();
+    const res = await app.request("/api/memories", { method: "POST", headers: H, body: JSON.stringify(input) }, env, ctx);
+    expect(res.status).toBe(201);
+    await ctx.settle();
+    return (await res.json()) as { id: string };
+  };
+
+  it("起きた日が「いつだったか」なら、本文に無い年の日付候補は保存しない", async () => {
+    const call = yesterday();
+    const m = await postWith(appWith(call), { body: "きのう公園で花を見た", happened_on_precision: "unknown" });
+    expect(call.requests[0]!.user).toContain('happened_on="不明"');
+    expect(runs(m.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:empty"]);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM memory_facts").get()).toEqual({ n: 0 });
+  });
+
+  it("起きた日があれば、同じ候補は保存する", async () => {
+    const m = await postWith(appWith(yesterday()), { body: "きのう公園で花を見た", happened_on: "2026-11-07", happened_on_precision: "day" });
+    expect(runs(m.id).map((r) => `${r.kind}:${r.status}`)).toEqual(["facts:succeeded"]);
+    expect(db.raw.prepare("SELECT kind, value FROM memory_facts WHERE memory_id = ?").all(m.id)).toEqual([{ kind: "date", value: "2026-11-06" }]);
+  });
+});
+
 describe("C1（想起）と C2（候補）は独立", () => {
   it("想起だけが失敗しても、候補は保存される", async () => {
     const quiet = appWith(fakeCall(() => ({ items: [] })));

@@ -526,7 +526,7 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 }
 ```
 
-入力: `<memory happened_on="2026-11-04" precision="day">本文</memory>`。「昨日」「先月」のような相対表現は `happened_on` を基準に解く。
+入力: `<memory happened_on="2026-11-04" precision="day">本文</memory>`。「昨日」「先月」のような相対表現は `happened_on` を基準に解く。`happened_on` が「不明」で年が本文からも決まらないときは `date` を出さない（6.5 でも捨てる）。
 
 ### 6.4 システムプロンプトの要点（両方に共通、日本語）
 
@@ -553,6 +553,7 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 | C1: `reason` が空 | 捨てる。80 文字超は `Array.from` で 80 文字に切り詰めて残す（requirements 第2節。`evidence` は切らない） |
 | 件数 | 先頭 3 件に切る（C1）。C2 は 10 件に切る |
 | C2: `date` の `value` が精度に合う形（`YYYY-MM-DD` / `YYYY-MM` / `YYYY`、実在する日付） | 捨てる |
+| C2: 起きた日が不明（`happened_on` が NULL）の記憶では、`date` の `value` の年（4 桁、半角か全角）が body にある（requirements F4-10。漢数字や和暦は見ないので、その書き方の正しい候補も落ちる） | 捨てる |
 | C2: `evidence` と `value` が空 | 捨てる |
 | C2: `date` 以外の `value` が新しい記憶の body に部分文字列として含まれる（`evidence` と同じ照合。エスケープを戻した形でも見る）。推測した関係性や言い換え（「はると（息子）」「祖母」）を根拠付きの候補に見せないため。`date` は相対表現を解いた値なので対象外（requirements F4-9） | 捨てる |
 | C2: 同じ (kind, value) の重複（`value` はエスケープを戻した、保存する形で比べる） | 2 件目以降を捨てる |

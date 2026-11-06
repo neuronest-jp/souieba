@@ -141,8 +141,26 @@ describe("verifyFacts", () => {
   });
   it("date の value は本文の表記と違ってよい（相対表現を解いた値。形と実在だけを見る）", () => {
     const d2 = "電気代を払った。先月より少し安かった";
-    const r = verifyFacts({ items: [{ kind: "date", value: "2026-10", evidence: "先月", date_precision: "month" }] }, d2);
+    const r = verifyFacts({ items: [{ kind: "date", value: "2026-10", evidence: "先月", date_precision: "month" }] }, d2, "2026-11-07");
     expect(r.items).toEqual([{ kind: "date", value: "2026-10", evidence: "先月" }]);
+  });
+  it("起きた日が不明（happened_on が null）なら、本文に年が無い date は捨てる（年を当てはめない。原則 1）", () => {
+    const date = (value: string, evidence: string) => ({ items: [{ kind: "date", value, evidence, date_precision: value.length === 10 ? "day" : "year" }] });
+    // 相対表現も、月日だけの表記も、年の根拠が無い
+    const a = verifyFacts(date("2026-11-06", "きのう"), "きのう公園で花を見た", null);
+    expect(a.items).toEqual([]);
+    expect(a.stats.dropped[0]!.reason).toBe("date_no_year");
+    expect(verifyFacts(date("2025-06-15", "6月15日"), "6月15日に公園で花を見た", null).stats.dropped[0]!.reason).toBe("date_no_year");
+    // 年が本文にあれば残す（引用が月日だけでも、本文のどこかに年があればよい）。全角の数字も見る
+    expect(verifyFacts(date("2019-06-15", "6月15日"), "2019年の6月15日に公園で花を見た", null).items).toHaveLength(1);
+    expect(verifyFacts(date("2019", "２０１９年"), "２０１９年の夏、公園で花を見た", null).items).toHaveLength(1);
+    // 省略時は不明として扱う
+    expect(verifyFacts(date("2026-11-06", "きのう"), "きのう公園で花を見た").items).toEqual([]);
+  });
+  it("起きた日があれば、相対表現を解いた date は残す（D4: 今日 → 2026-11-07）", () => {
+    const d4 = "はると、今日補助輪なしで乗れた";
+    const r = verifyFacts({ items: [{ kind: "date", value: "2026-11-07", evidence: "今日", date_precision: "day" }] }, d4, "2026-11-07");
+    expect(r.items).toEqual([{ kind: "date", value: "2026-11-07", evidence: "今日" }]);
   });
   it("value のエスケープの有無で同じ候補が 2 つ残らない", () => {
     const body = 'A&W で "ルートビア" を飲んだ';

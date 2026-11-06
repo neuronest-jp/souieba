@@ -21,7 +21,7 @@ export const FACTS_SYSTEM = `${COMMON}
 あなたの仕事: 記憶（memory）の本文から、人物（person）・場所（place）・日付（date）・もの（thing）の候補を取り出します。
 - 本文に出てくるものだけを取り出します。推測で増やしません。候補が無ければ items を空配列にします。
 - value は本文の言葉をそのまま使います。date の value は YYYY-MM-DD / YYYY-MM / YYYY のいずれかで、date_precision をそれに合わせます。
-  「きのう」「先月」のような相対表現は memory の happened_on を基準に解きます。年が分からなければ月や年だけにします。
+  「きのう」「先月」のような相対表現は memory の happened_on を基準に解きます。日まで分からなければ月や年だけにします。年が本文からも happened_on からも決まらないとき（happened_on が「不明」のときなど）は、date を出しません。
 - date 以外の date_precision は unknown にします。
 - evidence はその候補が出てくる本文の箇所からの逐語引用です。
 - 最大 10 件。`;

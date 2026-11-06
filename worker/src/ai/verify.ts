@@ -104,8 +104,15 @@ export const isValidDateValue = (v: string): boolean => {
   return true;
 };
 
-// C2 候補抽出。body: 新しい記憶の本文。
-export function verifyFacts(out: unknown, body: string): { items: VerifiedFact[]; stats: VerifyStats } {
+// 年（4 桁）が本文に書かれているか。半角と全角の数字を見る（漢数字や和暦は見ない）。
+const yearInBody = (year: string, body: string): boolean => {
+  const wide = year.replace(/[0-9]/g, (d) => String.fromCharCode(d.charCodeAt(0) + 0xfee0));
+  return body.includes(year) || body.includes(wide);
+};
+
+// C2 候補抽出。body: 新しい記憶の本文。happenedOn: その記憶の起きた日（「いつだったか」なら null）。
+// 省略すると null（起きた日が不明）として、年の根拠を本文に求める側に倒す。
+export function verifyFacts(out: unknown, body: string, happenedOn: string | null = null): { items: VerifiedFact[]; stats: VerifyStats } {
   const stats: VerifyStats = { kept: 0, dropped: [] };
   const items = parseItems(out);
   if (!items) return { items: [], stats: { kept: 0, dropped: [{ reason: "malformed", item: out }] } };
@@ -140,6 +147,11 @@ export function verifyFacts(out: unknown, body: string): { items: VerifiedFact[]
     if (raw.kind === "date") {
       if (!isValidDateValue(raw.value)) {
         stats.dropped.push({ reason: "bad_date", item: raw });
+        continue;
+      }
+      // 起きた日が不明な記憶では、年の根拠は本文にしか無い。本文に無い年は当てはめた推測なので捨てる（原則 1）
+      if (happenedOn === null && !yearInBody(raw.value.slice(0, 4), body)) {
+        stats.dropped.push({ reason: "date_no_year", item: raw });
         continue;
       }
       value = raw.value;
