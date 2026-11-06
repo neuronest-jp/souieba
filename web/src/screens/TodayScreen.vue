@@ -12,7 +12,7 @@ import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
 import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
 import { formatHappenedOn, toIsoDate } from "../date";
-import { hrefFor } from "../composables/useScreen";
+import { focusHeading, hrefFor } from "../composables/useScreen";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
 import { keepDecided } from "../facts";
 
@@ -25,6 +25,9 @@ const date = ref(toIsoDate(new Date())); // 常に YYYY-MM-DD。精度に応じ�
 const dateTouched = ref(false);
 const sheetOpen = ref(false);
 const whenButton = ref<HTMLButtonElement | null>(null);
+// 書く画面の見出し（起きた日）と、保存後の見出し「残しました」。押したボタンが消えたあと、ここへフォーカスを置く
+const dateHeading = ref<HTMLElement | null>(null);
+const savedHeading = ref<HTMLElement | null>(null);
 const saving = ref(false);
 const error = ref("");
 const saved = ref<Memory | null>(null);
@@ -119,6 +122,8 @@ const save = async () => {
   facts.value = [];
   recalls.value = [];
   if (alive) polling.start();
+  // 「保存する」は書く画面ごと消えるので、「残しました」の見出しへ（読み上げで残ったことが伝わる）
+  void nextTick(() => focusHeading(savedHeading.value));
 };
 
 const another = () => {
@@ -130,6 +135,13 @@ const another = () => {
   date.value = toIsoDate(new Date());
   dateTouched.value = false;
   shownIds.value = new Set();
+};
+
+// 「もうひとつ書く」。ボタンは保存後の画面ごと消えるので、書く画面の見出しへ。入力欄に置くとスマホでキーボードが勝手に開く。
+// another() は S3 で消したときや 404 でも呼ぶが、そちらは利用者の操作ではないのでフォーカスは動かさない
+const writeAnother = () => {
+  another();
+  void nextTick(() => focusHeading(dateHeading.value));
 };
 
 // 残しておいた S1 に戻ってきたとき。日をまたいで残っていても、触っていない既定の日付は今日にする
@@ -173,7 +185,7 @@ useMemoryDeleted((id) => {
   <main class="flex flex-1 flex-col gap-6 py-6">
     <template v-if="!saved">
       <header class="flex items-baseline justify-between">
-        <h1 class="text-[22px]">{{ headingDate }}</h1>
+        <h1 ref="dateHeading" class="text-[22px] focus:outline-none">{{ headingDate }}</h1>
         <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
       </header>
 
@@ -207,7 +219,9 @@ useMemoryDeleted((id) => {
     </template>
 
     <template v-else>
-      <p class="text-sm text-ink-soft" role="status">残しました</p>
+      <!-- 保存後の画面の h1（wireframes 6 節「画面ごとに h1 は 1 つ」）。保存したらここへフォーカスを置いて読ませるので role="status" は付けない。
+           見た目はこれまでの 14px の添え書きのまま（h1 の字体・太さ・字間を本文に戻す。行間は text-sm が決める） -->
+      <h1 ref="savedHeading" class="font-body text-sm font-normal tracking-normal text-ink-soft focus:outline-none">残しました</h1>
       <article class="card overflow-hidden" :class="shownIds.has(saved.id) ? '' : 'appear'">
         <PhotoImg v-if="saved.photo_key" :photo-key="saved.photo_key" class="h-[200px] w-full object-cover" />
         <div class="p-4">
@@ -224,7 +238,7 @@ useMemoryDeleted((id) => {
       </div>
       <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" :animate="!shownIds.has(r.id)" />
       <div class="flex items-baseline gap-6">
-        <button type="button" class="min-h-11 border-b border-ember text-ink" @click="another">もうひとつ書く</button>
+        <button type="button" class="min-h-11 border-b border-ember text-ink" @click="writeAnother">もうひとつ書く</button>
         <!-- いま書いた記憶へ。札の「ひらく ›」は昔の記憶へ行くので、同じ文言にしない -->
         <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">このひとことをひらく ›</a>
       </div>

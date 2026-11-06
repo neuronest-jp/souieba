@@ -43,6 +43,8 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
   };
   vi.stubGlobal("window", win);
+  // 画面が変わると h1 へフォーカスを移す（useScreenFocus.test.ts）。ここでは見出しの無い画面として扱う
+  vi.stubGlobal("document", { body: {}, activeElement: null, querySelector: () => null });
 });
 afterEach(() => {
   vi.unstubAllGlobals();

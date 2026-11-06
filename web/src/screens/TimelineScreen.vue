@@ -85,7 +85,7 @@ useMemoryDeleted((id) => {
 <template>
   <main class="flex flex-1 flex-col gap-6 py-6">
     <header>
-      <h1 class="text-[22px]">これまで</h1>
+      <h1 class="text-[22px] focus:outline-none">これまで</h1>
     </header>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>

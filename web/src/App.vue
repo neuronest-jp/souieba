@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import { api, ApiError, type Me } from "./api";
 import { clearToken, loadToken } from "./auth";
 import BottomNav from "./components/BottomNav.vue";
-import { useScreen } from "./composables/useScreen";
+import { focusScreenHeading, useScreen } from "./composables/useScreen";
 import { hideSplash } from "./native";
 import MemoryDetailScreen from "./screens/MemoryDetailScreen.vue";
 import TimelineScreen from "./screens/TimelineScreen.vue";
@@ -34,6 +34,8 @@ const boot = async () => {
 const onLoggedIn = (userId: string) => {
   state.value = { kind: "ready", me: { user_id: userId, display_name: null, since: new Date().toISOString() } };
   if (!window.location.hash) window.location.hash = "#today"; // 深いリンクで開いていたらそのまま
+  // 「はじめる」は S0 ごと消えるので、S1 / S2 の h1 へ（ハッシュが変わらないと useScreen は動かない。S3 は読み込み後に自分で置く）
+  void nextTick(() => focusScreenHeading());
 };
 
 // どの画面でも /api/* が 401 を返したら S0 へ戻す（wireframes 0 節）

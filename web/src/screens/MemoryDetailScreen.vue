@@ -15,7 +15,7 @@ import { formatHappenedOn } from "../date";
 import { useNotice } from "../composables/useNotice";
 import { usePolling } from "../composables/usePolling";
 import { notifyMemoryDeleted } from "../composables/useMemoryDeleted";
-import { back as goBack, go } from "../composables/useScreen";
+import { back as goBack, focusHeading, go } from "../composables/useScreen";
 import { keepDecided } from "../facts";
 
 const props = defineProps<{ id: string; from: "today" | "past"; recall?: string }>();
@@ -27,6 +27,7 @@ const deleting = ref(false);
 const deleteError = ref("");
 const deleteButton = ref<HTMLButtonElement | null>(null);
 const cancelButton = ref<HTMLButtonElement | null>(null);
+const heading = ref<HTMLElement | null>(null);
 
 const openConfirm = () => {
   confirming.value = true;
@@ -69,6 +70,9 @@ const load = async () => {
     detail.value = d;
     state.value = "ready";
     if (d.facts.pending || d.recalls.pending) polling.start();
+    // h1（起きた日）は読み込みが終わってから描かれるので、画面を開いたときのフォーカスはここで置く（useScreen の分は空振りする）。
+    // 押したリンクや「もう一度」が消えて body に落ちているときだけ動かす
+    void nextTick(() => focusHeading(heading.value));
   } catch (e) {
     if (id !== props.id) return;
     state.value = e instanceof ApiError && e.status === 404 ? "missing" : "error";
@@ -179,7 +183,7 @@ watch(() => props.id, load);
     </section>
 
     <template v-else-if="detail">
-      <h1 class="text-[22px]">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
+      <h1 ref="heading" class="text-[22px] focus:outline-none">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
       <!-- 写真は比率のまま出し、縦長でも上下を切らない（S3 は写真全体を見られる唯一の場所。wireframes 4.1）。
            横長は幅いっぱい、縦長は高さ 360px まで縮めて中央に置く。img を main（flex）の子にすると伸び縮みで比率が崩れうるので、
            ふつうの div に入れる。読み込み中と読めなかったときの枠は、これまでどおり幅いっぱい・高さ 120px -->

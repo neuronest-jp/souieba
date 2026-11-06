@@ -57,6 +57,24 @@ export const back = (fallback: Screen) => {
   }
 };
 
+// 見出し（h1）にフォーカスを置く。押したリンクやボタンが画面ごと消えるとフォーカスは body に落ち、読み上げソフトでは
+// 新しい画面が何も読まれないため（wireframes 6 節）。tabindex="-1" は置くあいだだけ付け、離れたら外す（FactChips と同じ）。
+// 最初から付けておくと、指で見出しに触れただけでそこへフォーカスが移り、S1 では書いている途中の入力欄からキーボードが閉じる。
+// force でなければ、フォーカスが落ちているときだけ動かす（読み込みを待つ間に利用者が動かしたフォーカスは奪わない）。
+// 外れた要素（KeepAlive で離れている画面の見出しなど）には置かない
+export const focusHeading = (el: HTMLElement | null | undefined, { force = false } = {}) => {
+  if (!el || !el.isConnected) return;
+  const active = document.activeElement;
+  if (!force && active && active !== document.body) return;
+  el.setAttribute("tabindex", "-1");
+  el.addEventListener("blur", () => el.removeAttribute("tabindex"), { once: true });
+  el.focus({ preventScroll: true }); // 位置は onChange が戻す。フォーカスで動かさない
+};
+
+// いま出ている画面の h1。S3 は読み込みが終わるまで h1 が無いので、そのときは何もしない（MemoryDetailScreen が置く）
+export const focusScreenHeading = (opts: { force?: boolean } = {}) =>
+  focusHeading(document.querySelector<HTMLElement>("main h1"), opts);
+
 // S1 / S2 は App.vue の KeepAlive で残すので、離れたときの位置を覚えて、戻ったときにそこへ戻す。S3 は毎回いちばん上。
 const keptKey = (s: Screen): string | null => (s.name === "memory" ? null : s.name);
 
@@ -73,6 +91,9 @@ export function useScreen() {
     window.scrollTo({ top: 0 });
     // 残した画面の DOM が戻るのは次の描画。そのあとで位置を戻す
     if (top > 0) void nextTick(() => window.scrollTo({ top }));
+    // 新しい画面の h1 へフォーカスを移し、読み上げで画面が変わったことを伝える。下部ナビのリンクは消えずに
+    // フォーカスを持ったまま残るので、ここでは force で動かす（利用者が画面を移した直後なので奪うものは無い）
+    void nextTick(() => focusScreenHeading({ force: true }));
   };
   onMounted(() => {
     // 位置は自分で戻す。ブラウザに任せると、戻る操作では hashchange より先に位置が変わり、離れる画面の位置を取り違える
