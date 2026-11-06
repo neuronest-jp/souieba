@@ -12,7 +12,10 @@ export const memoryFactsRoute = () => {
     const id = c.req.param("id");
     if (!(await getMemory(c.env.DB, user.id, id))) throw new ApiError(404, "not_found", "見つかりません");
     const now = new Date().toISOString();
-    const [items, pending] = await Promise.all([listFacts(c.env.DB, id), isPending(c.env.DB, id, "facts", now)]);
+    // pending を先に読み、items は後で読む。裏の処理は候補の INSERT → ai_runs の更新の順にコミットするので、
+    // pending=false が見えた時点で items はそろっている（並行に読むと pending=false・items=[] になり得て、画面のポーリングが止まる）
+    const pending = await isPending(c.env.DB, id, "facts", now);
+    const items = await listFacts(c.env.DB, id);
     return c.json({ pending, items: items.map(({ memory_id: _m, ...f }) => f) });
   });
   return app;

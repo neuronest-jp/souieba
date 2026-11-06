@@ -265,6 +265,48 @@ describe("GET / DELETE /api/memories/:id", () => {
     expect(j.recalls.pending).toBe(false);
   });
 
+  // 裏の処理（候補・札の INSERT → ai_runs を succeeded）が、GET の 2 本の読み取りの間に終わる場合を決定的に作る。
+  // ai_runs を最初に読む直前に「書き込みが済んだ」ことにする。items を先に（並行に）読むと pending=false・items=[] になり、
+  // 画面のポーリングが「終わった」と見て止まる。pending を先に読めば、false のとき items はそろっている。
+  it.each([
+    ["/facts", (j: Record<string, unknown>) => [j]],
+    ["/recalls", (j: Record<string, unknown>) => [j]],
+    ["", (j: Record<string, unknown>) => [j.facts, j.recalls]],
+  ] as const)("GET /api/memories/:id%s: pending=false なら items はそろっている（書き込みが読み取りの間に終わっても）", async (path, pick) => {
+    const now = new Date().toISOString();
+    const ins = db.raw.prepare("INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, created_at, updated_at) VALUES (?, ?, ?, NULL, 'unknown', ?, ?)");
+    ins.run("old", ME, "梅干しを漬けていた", now, now);
+    ins.run("new", ME, "青梅を見かけた", now, now);
+    const run = db.raw.prepare("INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, created_at) VALUES (?, ?, 'new', ?, 'm', 'running', ?)");
+    run.run("run-f", ME, "facts", now);
+    run.run("run-r", ME, "recall", now);
+    const finishWriters = () => {
+      db.raw.prepare("INSERT INTO memory_facts (id, memory_id, kind, value, status, source, evidence, created_at) VALUES ('f1', 'new', 'thing', '青梅', 'candidate', 'ai', '青梅', ?)").run(now);
+      db.raw.prepare("UPDATE ai_runs SET status = 'succeeded' WHERE id = 'run-f'").run();
+      db.raw.prepare("INSERT INTO recalls (id, memory_id, related_memory_id, reason, evidence, created_at) VALUES ('r1', 'new', 'old', 'r', '梅干し', ?)").run(now);
+      db.raw.prepare("UPDATE ai_runs SET status = 'succeeded' WHERE id = 'run-r'").run();
+    };
+    let fired = false;
+    const racing = {
+      ...db,
+      prepare: (sql: string) => {
+        if (!fired && sql.includes("FROM ai_runs")) {
+          fired = true;
+          finishWriters();
+        }
+        return db.prepare(sql);
+      },
+    } as unknown as D1Database;
+
+    const res = await app().request(`/api/memories/new${path}`, { headers: { [DEV_USER_HEADER]: ME } }, { ...env, DB: racing });
+    expect(res.status).toBe(200);
+    expect(fired).toBe(true);
+    for (const part of pick((await res.json()) as Record<string, unknown>)) {
+      expect(part).toMatchObject({ pending: false });
+      expect((part as { items: unknown[] }).items).toHaveLength(1);
+    }
+  });
+
   it("F3-5: 他人の記憶は GET も DELETE も 404 で、消えない", async () => {
     const { id } = await create("mine");
     const g = await app().request(`/api/memories/${id}`, { headers: { [DEV_USER_HEADER]: OTHER } }, env);

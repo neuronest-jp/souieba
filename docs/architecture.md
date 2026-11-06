@@ -402,6 +402,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 ```
 
 - `pending` は `ai_runs(kind='facts', memory_id=?)` の最新が `running` のとき true。記録が無いとき（seed データなど）は false
+- 読む順は `pending` が先、`items` が後（5.5 の詳細と 5.11 も同じ）。裏の処理は候補の INSERT → `ai_runs` の更新の順にコミットするので、この順なら `pending=false` のとき `items` はそろっている。並行に読むと `pending=false`・`items=[]` を返し得て、画面のポーリングがそこで止まる
 - `rejected` も返す（画面は出さない）。画面は candidate を「候補」、confirmed を「事実」として描く
 
 ### 5.10 PATCH /api/facts/:id

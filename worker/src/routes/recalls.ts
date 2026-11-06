@@ -21,7 +21,9 @@ export const memoryRecallsRoute = () => {
     const id = c.req.param("id");
     if (!(await getMemory(c.env.DB, user.id, id))) throw new ApiError(404, "not_found", "見つかりません");
     const now = new Date().toISOString();
-    const [items, pending] = await Promise.all([listRecalls(c.env.DB, id), isPending(c.env.DB, id, "recall", now)]);
+    // pending を先に読む（理由は facts.ts の GET と同じ。札の INSERT → ai_runs の更新の順にコミットされる）
+    const pending = await isPending(c.env.DB, id, "recall", now);
+    const items = await listRecalls(c.env.DB, id);
     return c.json({ pending, items: items.map(recallJsonForNew) });
   });
   return app;
