@@ -27,10 +27,11 @@ cd "$S"
 
 ```sh
 FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f \
-  --msg-filter 'sed -e "/^Claude-Session: /d" -e "/^Co-Authored-By: /d" | sed -e :a -e "/^\n*\$/{\$d;N;ba" -e "}"' \
-  --tree-filter '<docs/handoff-2026-11-05.md があれば、元の値を伏せ字に置き換える sed>' \
+  --msg-filter 'sed -e "/^Claude-Session: /d" -e "/^Co-Authored-By: /d" | awk "{l[NR]=\$0} END {n=NR; while (n>0 && l[n] ~ /^[[:space:]]*$/) n--; for (i=1;i<=n;i++) print l[i]}"' \
+  --tree-filter "if [ -f docs/handoff-2026-11-05.md ]; then sed -i '' -f <作業場所の外に置いた置き換えの sed>.sed docs/handoff-2026-11-05.md; fi" \
   -- --all
 git replace -d 32147a9
+# 11/7 の 1 回目: 108 コミット、tree は元の HEAD と同じ、トレーラーと端末の値は 0 件。push 先 neuronest-jp/souieba（非公開）
 for r in $(git for-each-ref --format='%(refname)' refs/original refs/replace); do git update-ref -d "$r"; done
 git reflog expire --expire=now --all && git gc -q --prune=now
 ```
