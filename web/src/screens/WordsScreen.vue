@@ -6,7 +6,7 @@
 // 地図がまだ無いときは「ことばを集める」（POST /api/keywords。数十秒かかる）。記憶が 8 件未満なら集めない。
 // App.vue の KeepAlive で残すので、S3 を開いて戻っても位置と地図はそのまま。戻ったときは裏で取り直す（消した記憶・書いた記憶を映す）。
 // 動き（transform と opacity だけ。動きを減らす設定では止める）: 地図が現れるとき、背骨が上から伸び、年の札が順に、そのあと言葉と線が少しずつ現れる
-import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { api, ApiError } from "../api";
 import type { KeywordsResponse, MapKeyword } from "../api/types";
 import WordSheet from "../components/words/WordSheet.vue";
@@ -50,12 +50,14 @@ const generatedOn = computed(() => (map.value ? formatHappenedOn(todayInTokyo(ne
 // 地図を作ったあとに書いたひとことがあれば、集めなおしを勧める（集めている間と、記憶が少ないときは出さない）
 const staleCount = computed(() => (map.value && !few.value ? (data.value?.stale_count ?? 0) : 0));
 
-// 読み上げの名前: 見えている言葉を先に、どの年にいくつ（bridge は「2020年と2026年」）
+// 読み上げの名前: 見えている言葉を先に、どの年にいくつ（bridge は「2020年と2026年」）。
+// bridge の年は多い年 3 つまでなので、ほかの年にも出ていれば「など」を付ける（WordSheet の見出しの下と同じ。挙げた年だけで合計を数えたように読まない）
 const nameOf = (w: PlacedWord) => {
   const k = w.keyword;
   const years = k.years.map((y) => `${y.year}年`);
   const where = years.length <= 1 ? years.join("") : `${years.slice(0, -1).join("、")}と${years[years.length - 1]}`;
-  return `${k.label}、${where}に ${k.total} こ`;
+  const listed = k.years.reduce((n, y) => n + y.count, 0);
+  return `${k.label}、${where}${listed < k.total ? "など" : ""}に ${k.total} こ`;
 };
 
 const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -203,6 +205,14 @@ const close = ({ immediate = false } = {}) => {
   setInert(false);
   if (!immediate) void nextTick(() => buttonOf(id)?.focus({ preventScroll: true }));
 };
+
+// 開いている言葉が地図から消えたら（集めなおした地図で 2 回を割った・別の年にも出て役が変わった・別の言葉が選ばれた）、
+// シートは外れるので、inert も外してフォーカスを見出しへ置く（残すと、下部ナビも含めて何も押せなくなる）
+watch(openKeyword, (k) => {
+  if (k || !openLabel.value) return;
+  close({ immediate: true });
+  void nextTick(() => focusHeading(heading.value));
+});
 
 const back = () => goBack({ name: "past" });
 // 左端からなぞって戻る（シートが出ている間は拾わない）

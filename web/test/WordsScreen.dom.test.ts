@@ -292,6 +292,61 @@ describe("S6 ことばの地図: 地図", () => {
     expect(errors).toEqual([]);
   });
 
+  it("集めなおしを待つ間に開いた言葉が、集め終えた地図で役が変わったら（leaf → bridge）、シートを閉じて inert を外し、見出しへフォーカス", async () => {
+    const { container, errors } = await open(ready({ stale_count: 2 }));
+    const answer = deferred<KeywordsResponse>();
+    collectKeywords.mockReturnValue(answer.promise);
+    button(container, "集めなおす")!.click();
+    await settle();
+    // 集めている間も、薄くなった地図の言葉は押せる
+    wordButton(container, "そら").click();
+    await settle();
+    expect(dialog()).toBeDefined();
+    expect(container.getAttribute("inert")).toBe("");
+    const next: KeywordMap = {
+      ...MAP,
+      generated_at: "2026-11-07T12:00:00.000Z",
+      keywords: [MAP.keywords[0]!, MAP.keywords[1]!, kw("そら", "bridge", [[2023, 2], [2025, 9]], MAP.keywords[2]!.mentions)],
+    };
+    answer.resolve(ready({ map: next, refreshed: true }));
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(container.hasAttribute("inert")).toBe(false);
+    expect(focused()).toBe("H1:ことばの地図");
+    // 画面はまた押せる（開いている言葉の印も残らない）
+    expect(wordButton(container, "そら").getAttribute("data-role")).toBe("bridge");
+    wordButton(container, "展望台").click();
+    await settle();
+    expect(dialog()!.textContent).toContain("展望台");
+    expect(errors).toEqual([]);
+  });
+
+  it("集めなおせず、前の地図を数え直したら開いている言葉が消えていた（2 回を割った）ときも、シートを閉じて inert を外す", async () => {
+    const { container, errors } = await open(ready({ stale_count: 1 }));
+    const answer = deferred<KeywordsResponse>();
+    collectKeywords.mockReturnValue(answer.promise);
+    button(container, "集めなおす")!.click();
+    await settle();
+    wordButton(container, "ドラマ").click();
+    await settle();
+    expect(container.getAttribute("inert")).toBe("");
+    answer.resolve(ready({ map: { ...MAP, keywords: [MAP.keywords[0]!, MAP.keywords[2]!] }, refreshed: false }));
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(container.hasAttribute("inert")).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it("bridge が挙げた年のほかの年にも出ていれば、読み上げの名前に「など」を付ける（挙げた年だけで合計を数えたように読まない）", async () => {
+    const wide: KeywordMap = { ...MAP, keywords: [{ ...kw("展望台", "bridge", [[2020, 2], [2023, 2], [2025, 2]], TENBO), total: 7 }] };
+    const { container, errors } = await open(ready({ map: wide }));
+    expect(wordButton(container, "展望台").getAttribute("aria-label")).toBe("展望台、2020年、2023年と2025年などに 7 こ");
+    wordButton(container, "展望台").click();
+    await settle();
+    expect(dialog()!.textContent).toContain("2020年・2023年・2025年などに、あわせて 7 こ");
+    expect(errors).toEqual([]);
+  });
+
   it("記憶が 8 件未満になっていたら、地図はそのまま出し、集めなおしは勧めない", async () => {
     const { container, errors } = await open(ready({ stale_count: 3, memory_count: 7, reason: "few" }));
     expect(words(container)).toHaveLength(3);
