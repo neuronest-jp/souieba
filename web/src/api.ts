@@ -1,7 +1,7 @@
 // Worker の API を呼ぶ薄いクライアント。エラーは { error: { code, message } } の形で返ってくる。
 // ネイティブアプリでは VITE_API_BASE（https://<api-domain>）を叩き、Web の開発では同一オリジン（/api）。
 import { clearToken, getTokenSync } from "./auth";
-import type { ConnectionsResponse, Fact, Memory, MemoryDetail, MemoryList, NewMemory, Recall, TodayResponse } from "./api/types";
+import type { ConnectionsResponse, Fact, ListStart, Memory, MemoryDetail, MemoryList, MemoryMonths, NewMemory, Recall, TodayResponse } from "./api/types";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
 
@@ -55,6 +55,14 @@ async function request<T>(path: string, init: RequestInit = {}, opts: { auth?: b
   return (await res.json()) as T;
 }
 
+const listQuery = (cursor?: string | null, start?: ListStart | null): string => {
+  if (cursor) return `?cursor=${encodeURIComponent(cursor)}`;
+  if (!start) return "";
+  if ("month" in start) return `?month=${encodeURIComponent(start.month)}`;
+  if ("year" in start) return `?year=${encodeURIComponent(start.year)}`;
+  return "?undated=1";
+};
+
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { "content-type": "application/json" },
@@ -66,8 +74,10 @@ export const api = {
   login: (invite_code: string, email: string) => request<LoginResult>("/api/auth/login", json("POST", { invite_code, email }), { auth: false }),
   me: () => request<Me>("/api/me"),
   createMemory: (input: NewMemory) => request<Memory>("/api/memories", json("POST", input)),
-  listMemories: (cursor?: string | null) =>
-    request<MemoryList>(`/api/memories${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+  // start: 年月で探したときの始まり（ADR-0015）。続き（cursor）には付けない（続きの位置は cursor が持つ）
+  listMemories: (cursor?: string | null, start?: ListStart | null) =>
+    request<MemoryList>(`/api/memories${listQuery(cursor, start)}`),
+  memoryMonths: () => request<MemoryMonths>("/api/memories/months"),
   getMemory: (id: string) => request<MemoryDetail>(`/api/memories/${encodeURIComponent(id)}`),
   deleteMemory: (id: string) => request<void>(`/api/memories/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getFacts: (id: string) => request<{ pending: boolean; items: Fact[] }>(`/api/memories/${encodeURIComponent(id)}/facts`),

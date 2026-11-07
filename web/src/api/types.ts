@@ -62,6 +62,15 @@ export type MemoryDetail = {
 
 export type MemoryList = { items: Memory[]; next_cursor: string | null };
 
+// 年月で探す（S2。ADR-0015）。GET /api/memories/months の形と、GET /api/memories の始まり（month= / year= / undated=1）。
+// months は精度 day と month の年月（YYYY-MM）、years_only は精度 year の年（YYYY）、undated は日付なし。どれも新しい順
+export type MemoryMonths = {
+  months: Array<{ month: string; count: number }>;
+  years_only: Array<{ year: string; count: number }>;
+  undated: number;
+};
+export type ListStart = { month: string } | { year: string } | { undated: true };
+
 export type NewMemory = { body: string; happened_on?: string; happened_on_precision: Precision };
 
 // きょう（GET /api/today）。S1 の「このごろ」（きょうを右端にした 7 日。古い順）と「あの日のひとこと」と記憶の総数。日付は Asia/Tokyo
