@@ -172,3 +172,30 @@ export const layoutLoom = (input: LoomInput): LoomLayout => {
 
   return { width, height, baseline, labelY, rules, labels, beads, arcs };
 };
+
+// 帯を押したとき（余裕があれば、の仕様。wireframes 9.2）に、押した位置からいちばん近い弧の組を選ぶ。
+// x, y は viewBox の座標（帯は実際の幅を viewBox に渡すので、1 単位 = 1pt）。reach（22 = 44pt の的の半分）より遠ければ null。
+// 弧が密なときは、指にいちばん近い弧を選ぶ（入れ子の内と外は押した高さで分かれる）。同じ近さ（両端の結び目を分け合う弧など）なら、
+// 短い弧（小さくて押しにくい方）を、それも同じなら一覧で先の組を選ぶ
+const ARC_SAMPLES = 32;
+const TIE = 0.5;
+
+export const pickArc = (layout: LoomLayout, x: number, y: number, reach = 22): string | null => {
+  let best: { id: string; dist: number; len: number } | null = null;
+  for (const a of layout.arcs) {
+    const top = layout.baseline - a.height / 0.75;
+    let dist = Infinity;
+    for (let i = 0; i <= ARC_SAMPLES; i++) {
+      const t = i / ARC_SAMPLES;
+      const u = 1 - t;
+      // M x1,base C x1,top x2,top x2,base
+      const px = u * u * u * a.x1 + 3 * u * u * t * a.x1 + 3 * u * t * t * a.x2 + t * t * t * a.x2;
+      const py = u * u * u * layout.baseline + 3 * u * u * t * top + 3 * u * t * t * top + t * t * t * layout.baseline;
+      dist = Math.min(dist, Math.hypot(px - x, py - y));
+    }
+    if (dist > reach) continue;
+    const len = Math.abs(a.x2 - a.x1);
+    if (!best || dist < best.dist - TIE || (Math.abs(dist - best.dist) <= TIE && len < best.len)) best = { id: a.id, dist, len };
+  }
+  return best?.id ?? null;
+};

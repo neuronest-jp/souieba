@@ -1,1 +1,201 @@
-/* connections の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ */
+/* connections の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ。
+   S5 つながりの、紙と糸の動き（糸と結び目、帯の静かな見た目は style.css の「S5 つながり」の節）。
+   約束: 動かすのは transform と opacity だけ。速さと曲線は style.css のトークン（--duration-quick 160 / base 280 / slow 460ms、
+   --ease-spring 少し行きすぎて戻る / --ease-out-soft すっと止まる）。prefers-reduced-motion: reduce では動かさず、状態だけを切り替える。
+   このファイルはレイヤーの外に置かれるので、style.css の @layer components の同じ要素への指定より後勝ちで効く */
+
+/* ---- 引用の印（見直し n=7）: 蛍光ペンの地に、朱の点線の下線を足して色だけに頼らない（リンクの ember-underline は実線 1px） ---- */
+mark.quote-mark {
+  background:
+    repeating-linear-gradient(90deg, var(--color-ember) 0 2px, transparent 2px 4.5px) 0 94% / 100% 1.5px no-repeat,
+    linear-gradient(transparent 30%, var(--color-ember-soft) 30%, var(--color-ember-soft) 93%, transparent 93%);
+}
+
+/* ---- 一組の行: 帯から飛んだときの止まる位置（ステータスバーの下）と、ほのかな光の置き場 ---- */
+.pair-row {
+  position: relative;
+  scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 16px);
+}
+/* 光は紙の後ろに置く（紙片と結びの文字は上に描かれる）。動かすのは opacity だけ */
+.pair-row.pair-glow::before {
+  content: "";
+  position: absolute;
+  inset: -10px -8px;
+  border-radius: 22px;
+  background: var(--color-ember-soft);
+  box-shadow: 0 0 20px 8px var(--color-ember-soft);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- 帯: 押せる所と、押した弧の光（太い淡い線を後ろに敷いて opacity だけで出す） ---- */
+.loom-pickable {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.loom-arc .arc-halo {
+  stroke: var(--color-ember-soft);
+  stroke-width: 9;
+  stroke-dasharray: none;
+  opacity: 0;
+}
+
+/* ---- シートの紙（上がる動きとなぞりは style.css の .sheet-paper と useSheetDrag）。
+   このシートは中身がスクロールするので、紙を下へ伸ばす .sheet-paper::after を使わない（スクロールの範囲が 64px 伸びる）。
+   代わりに、ばねで少し行きすぎても下に地が見えないよう、紙の下に同じ地の色を影で敷く ---- */
+.pair-panel {
+  box-shadow: var(--shadow-card), 0 64px 0 0 var(--color-paper);
+}
+.pair-panel::after {
+  content: none;
+}
+
+@keyframes cx-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes cx-pair-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+@keyframes cx-arc-rise {
+  from {
+    opacity: 0;
+    transform: scaleY(0.12);
+  }
+}
+@keyframes cx-knot-pin {
+  from {
+    transform: scale(0.4);
+  }
+}
+@keyframes cx-basting-out {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes cx-stamp {
+  from {
+    transform: scale(0.88);
+  }
+}
+@keyframes cx-unravel {
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+@keyframes cx-glow {
+  0% {
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 最初の表示（と、戻ったときの新しい組）: 紙が下から少しずつずれて現れ、結び目が留まり、本縫いは上から一針ずつ、しつけ糸はにじみ出る */
+  .pair-row.pair-weave {
+    animation: cx-pair-in var(--duration-slow) var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .pair-weave .knot {
+    animation: cx-knot-pin var(--duration-base) var(--ease-spring) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 140ms);
+  }
+  .pair-weave .knot-bottom {
+    animation-delay: calc(var(--i, 0) * 70ms + 200ms + 8 * 45ms);
+  }
+  .pair-weave .thread .stitch-basting {
+    animation: cx-fade-in var(--duration-slow) var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 180ms);
+  }
+  .pair-weave .thread[data-stitch="sewn"] .stitch-needle {
+    animation: cx-fade-in var(--duration-quick) var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 200ms + var(--k, 0) * 45ms);
+  }
+
+  /* 帯: 弧が古い端の順に、縁から糸を持ち上げるように立ち上がる（少し行きすぎて戻る）。両端の結び目はあとから留まる */
+  .loom-arc.arc-weave {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: cx-arc-rise var(--duration-slow) var(--ease-spring) both;
+    animation-delay: calc(120ms + var(--i, 0) * 70ms);
+  }
+  .loom-end.end-weave {
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    animation: cx-knot-pin var(--duration-base) var(--ease-spring) both;
+    animation-delay: calc(320ms + var(--i, 0) * 70ms);
+  }
+  .loom-arc.arc-glow .arc-halo {
+    animation: cx-glow 1400ms var(--ease-out-soft) both;
+  }
+
+  /* シート: 紙がばねで上がるのに合わせて（.sheet-paper の sheet-up、460ms）、糸を一針ずつ渡し、結び目を留める */
+  .pair-sheet.is-opening .thread .stitch-basting {
+    animation: cx-fade-in var(--duration-slow) var(--ease-out-soft) both;
+    animation-delay: 220ms;
+  }
+  .pair-sheet.is-opening .thread[data-stitch="sewn"] .stitch-needle {
+    animation: cx-fade-in var(--duration-quick) var(--ease-out-soft) both;
+    animation-delay: calc(240ms + var(--k, 0) * 45ms);
+  }
+  .pair-sheet.is-opening .knot {
+    animation: cx-knot-pin var(--duration-base) var(--ease-spring) both;
+    animation-delay: 180ms;
+  }
+  .pair-sheet.is-opening .knot-bottom {
+    animation-delay: calc(240ms + 8 * 45ms);
+  }
+
+  /* 「そうだった」: しつけ糸の上を、上から一針ずつ本縫いで縫い直し、縫い終わりで下の結び目が留まって塗られる。しつけ糸は縫い終わりに消える */
+  .is-tying .thread[data-stitch="sewn"] .stitch-needle {
+    animation: cx-fade-in var(--duration-quick) var(--ease-out-soft) both;
+    animation-delay: calc(var(--k, 0) * 55ms);
+  }
+  .is-tying .thread[data-stitch="sewn"] .stitch-basting {
+    animation: cx-basting-out 560ms linear both;
+  }
+  .is-tying .knot-top {
+    animation: cx-knot-pin var(--duration-base) var(--ease-spring) both;
+  }
+  .is-tying .knot-bottom {
+    animation: cx-knot-pin var(--duration-base) var(--ease-spring) both;
+    animation-delay: 440ms;
+    transition-delay: 400ms;
+  }
+  .choice.is-stamped {
+    animation: cx-stamp var(--duration-base) var(--ease-spring) both;
+  }
+
+  /* 「関係ないかも」のままシートを閉じた組: 糸がほどけるように薄れて上へ抜ける */
+  .pair-row.pair-unravel {
+    animation: cx-unravel var(--duration-base) var(--ease-out-soft) forwards;
+  }
+  /* 帯から飛んだ組: 一瞬ほのかに光って消える */
+  .pair-row.pair-glow::before {
+    animation: cx-glow 1400ms var(--ease-out-soft) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 動かさず、光っている間（1.4 秒）だけ淡い光を置く */
+  .pair-row.pair-glow::before {
+    opacity: 0.7;
+  }
+  .loom-arc.arc-glow .arc-halo {
+    opacity: 0.9;
+  }
+}

@@ -27,6 +27,32 @@ describe("markEvidence", () => {
     ]);
   });
 
+  it("一覧の 56 字: 引用が末尾の 57〜80 字の本文も寄せて「…」を付ける（4 行で切っても印が見える。見直し n=5）", () => {
+    const evidence = "店主は私を覚えていた。";
+    for (const n of [57, 64, 72, 80]) {
+      const body = `${"あ".repeat(n - evidence.length)}${evidence}`;
+      const parts = markEvidence(body, evidence, { limit: 56, context: 24 });
+      expect(parts[0]).toEqual({ text: `…${"あ".repeat(24)}`, hit: false });
+      expect(parts[1]).toEqual({ text: evidence, hit: true });
+      expect(parts).toHaveLength(2);
+    }
+  });
+
+  it("長い引用は、前の文脈を縮めて「…」+ 前 + 引用 が limit に収まるようにする（後ろは行で切れてよい）", () => {
+    const evidence = "う".repeat(40);
+    const body = `${"あ".repeat(50)}${evidence}${"い".repeat(30)}`;
+    const parts = markEvidence(body, evidence, { limit: 56, context: 24 });
+    expect(parts[0]).toEqual({ text: `…${"あ".repeat(15)}`, hit: false });
+    expect(parts[1]).toEqual({ text: evidence, hit: true });
+    expect(parts[2]).toEqual({ text: `${"い".repeat(24)}…`, hit: false });
+    expect([...(parts[0]!.text + parts[1]!.text)].length).toBe(56);
+    // 引用だけで limit を超えるときは、前の文脈を付けない（引用は切らない）
+    const huge = "え".repeat(70);
+    const [first, second] = markEvidence(`${"あ".repeat(30)}${huge}`, huge, { limit: 56, context: 24 });
+    expect(first).toEqual({ text: "…", hit: false });
+    expect(second).toEqual({ text: huge, hit: true });
+  });
+
   it("引用が本文の端にあれば、その側には「…」を付けない", () => {
     const body = `青梅を水に浸けて${"い".repeat(90)}`;
     expect(markEvidence(body, "青梅を水に浸けて", { limit: 80 })).toEqual([

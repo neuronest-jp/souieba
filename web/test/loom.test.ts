@@ -1,7 +1,7 @@
 // 糸の帯（ThreadLoom）の並べ方。数値の期待値は「ふたつの日」の見本を作った gen.py の strip_svg と突き合わせたもの。
 import { describe, expect, it } from "vitest";
 import type { Precision } from "../src/api/types";
-import { layoutLoom, type LoomBead, type LoomItem, type LoomLayout } from "../src/connections/loom";
+import { layoutLoom, pickArc, type LoomBead, type LoomItem, type LoomLayout } from "../src/connections/loom";
 
 const TODAY = "2026-11-07";
 const at = (happened_on: string | null, happened_on_precision: Precision) => ({ happened_on, happened_on_precision });
@@ -228,5 +228,54 @@ describe("layoutLoom（糸の帯）", () => {
     expect(a).toEqual(b);
     expect(beads).toEqual(SEED_BEADS);
     expect(items).toEqual(TEN);
+  });
+});
+
+describe("pickArc（帯を押したときの組の選び方）", () => {
+  // 帯の弧の上の点（3 次ベジェの t の位置）
+  const pointOn = (l: LoomLayout, id: string, t: number) => {
+    const a = l.arcs.find((x) => x.id === id)!;
+    const top = l.baseline - a.height / 0.75;
+    const u = 1 - t;
+    const x = u * u * u * a.x1 + 3 * u * u * t * a.x1 + 3 * u * t * t * a.x2 + t * t * t * a.x2;
+    const y = u * u * u * l.baseline + 3 * u * u * t * top + 3 * u * t * t * top + t * t * t * l.baseline;
+    return { x, y };
+  };
+
+  it("弧の上か近く（22px 以内）を押すと、その組を選ぶ。遠ければ選ばない", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: TEN, today: TODAY });
+    for (const a of l.arcs) {
+      const p = pointOn(l, a.id, 0.5);
+      expect(pickArc(l, p.x, p.y)).toBe(a.id); // 弧の頂きを押せば、その弧
+    }
+    // 1 本だけの帯: 弧から 20px 外れても選び、24px 外れたら選ばない
+    const one = layoutLoom({ beads: SEED_BEADS, items: [TEN[7]!], today: TODAY });
+    const apex = pointOn(one, "x-kenshin", 0.5);
+    expect(pickArc(one, apex.x, apex.y - 20)).toBe("x-kenshin");
+    expect(pickArc(one, apex.x, apex.y - 24)).toBeNull();
+    expect(pickArc(one, 5, 2)).toBeNull(); // 帯の左上の何も無い所
+  });
+
+  it("弧が密なときは、指に一番近い弧を選ぶ（入れ子の内と外を、押した高さで分ける）", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: TEN, today: TODAY });
+    // 2026-11-07 に結び目を分け合う 3 本（x-baaba が外、p-ume が内）
+    const outer = pointOn(l, "x-baaba", 0.5);
+    const inner = pointOn(l, "p-ume", 0.5);
+    expect(outer.y).toBeLessThan(inner.y);
+    expect(pickArc(l, outer.x, outer.y)).toBe("x-baaba");
+    expect(pickArc(l, inner.x, inner.y)).toBe("p-ume");
+  });
+
+  it("両端の結び目を分け合う弧のどれも同じ近さなら、短い弧（小さくて押しにくい方）を選ぶ", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: TEN, today: TODAY });
+    const shared = l.arcs.filter((a) => a.x2 === l.arcs.find((x) => x.id === "x-baaba")!.x2);
+    expect(shared.length).toBeGreaterThan(1);
+    const shortest = [...shared].sort((a, b) => Math.abs(a.x2 - a.x1) - Math.abs(b.x2 - b.x1))[0]!;
+    expect(pickArc(l, shared[0]!.x2, l.baseline)).toBe(shortest.id);
+  });
+
+  it("弧が 1 本も無ければ何も選ばない", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: [], today: TODAY });
+    expect(pickArc(l, 100, 40)).toBeNull();
   });
 });

@@ -3,23 +3,27 @@
 // あいだを一本の糸と「2年5か月まえの、あのとき」、つながった理由で結ぶ。読む順は見た目と同じ（上の日付 → 本文 → 隔たり → 理由 → 下の日付 → 本文 → そうだった → ひらく）。
 // 紙は「便箋と押し葉」（ADR-0010）の言葉: 上は便箋（.card）、下は一筆箋（.note の朱の二重罫。封蝋は一覧では付けない）。
 // どちらも本文は罫の上の明朝。思い出された側（上下どちらでも）は、思い出した一文（evidence）に蛍光ペンの印（mark）を引く。
-// 「ひらく ›」の ::after を組いっぱいに広げ、組のどこを押してもシート（PairSheet）が開く（RecallCard と同じ作り）
+// 引用の印は色の地だけに頼らず、点線の下線（connections.css の .quote-mark）と、読み上げ用の「」（mark の外の sr-only）でも示す（見直し n=7）。
+// 「ひらく ›」の ::after を組いっぱいに広げ、組のどこを押してもシート（PairSheet）が開く（RecallCard と同じ作り）。押すと組ごと少し沈む（press）。
+// notice: シートを閉じたあとに記録が失敗した組の知らせ（足の左、判の場所に出す）
 import { computed } from "vue";
 import { markEvidence, type ExcerptPart } from "../../connections/excerpt";
 import { dateOf, gapOf, sidesOf, stitchOf, type Pair, type Side } from "../../connections/pair";
 import Stitch from "./Stitch.vue";
 
-const props = defineProps<{ pair: Pair; swing: 0 | 1; sheetId: string }>();
+const props = withDefaults(defineProps<{ pair: Pair; swing: 0 | 1; sheetId: string; notice?: string }>(), { notice: "" });
 const emit = defineEmits<{ open: [id: string] }>();
 
 const sides = computed(() => sidesOf(props.pair));
 const upperDate = computed(() => dateOf(sides.value.upper));
 const lowerDate = computed(() => dateOf(sides.value.lower));
 const gap = computed(() => gapOf(props.pair));
-// 一覧では、80 字を超える思い出された側の本文は引用の前後 24 字だけにする（行で切る前に、印が見える所まで寄せる）。
+// 一覧では、56 字を超える思い出された側の本文は引用の前後（前は 24 字まで）だけにする（4 行で切る前に、印が見える所まで寄せる）。
+// 56 は、いちばん狭い 375pt の一筆箋で 4 行に入る字数（1 行 16 字 × 4 = 64）から禁則の余裕を引いた数（見直し n=5）。
 // 書いた側は本文のまま（印は無い）
+const LIMIT = 56;
 const partsOf = (side: Side): ExcerptPart[] =>
-  side.recalled ? markEvidence(side.memory.body, props.pair.evidence, { limit: 80, context: 24 }) : [{ text: side.memory.body, hit: false }];
+  side.recalled ? markEvidence(side.memory.body, props.pair.evidence, { limit: LIMIT, context: 24 }) : [{ text: side.memory.body, hit: false }];
 const upperParts = computed(() => partsOf(sides.value.upper));
 const lowerParts = computed(() => partsOf(sides.value.lower));
 // 思い出された側は印が見えるよう 4 行まで、書いた側は 2 行まで
@@ -29,7 +33,7 @@ const labelId = computed(() => `pair-${props.pair.id}-upper`);
 
 <template>
   <article
-    class="relative rounded-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[6px] has-[:focus-visible]:outline-ember"
+    class="press relative rounded-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[6px] has-[:focus-visible]:outline-ember"
     :aria-labelledby="labelId"
   >
     <!-- 後の日（便箋） -->
@@ -37,7 +41,7 @@ const labelId = computed(() => `pair-${props.pair.id}-upper`);
       <p :id="labelId" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ upperDate }}のひとこと</p>
       <p class="letter-text mt-1 text-ink" :class="clampOf(sides.upper)">
         <template v-for="(part, i) in upperParts" :key="i">
-          <mark v-if="part.hit">{{ part.text }}</mark>
+          <template v-if="part.hit"><span class="sr-only">「</span><mark class="quote-mark">{{ part.text }}</mark><span class="sr-only">」</span></template>
           <template v-else>{{ part.text }}</template>
         </template>
       </p>
@@ -55,7 +59,7 @@ const labelId = computed(() => `pair-${props.pair.id}-upper`);
       <p class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ lowerDate }}のひとこと</p>
       <p class="letter-text mt-1 text-ink" :class="clampOf(sides.lower)">
         <template v-for="(part, i) in lowerParts" :key="i">
-          <mark v-if="part.hit">{{ part.text }}</mark>
+          <template v-if="part.hit"><span class="sr-only">「</span><mark class="quote-mark">{{ part.text }}</mark><span class="sr-only">」</span></template>
           <template v-else>{{ part.text }}</template>
         </template>
       </p>
@@ -84,6 +88,7 @@ const labelId = computed(() => `pair-${props.pair.id}-upper`);
         </svg>
         <span class="sr-only">✓ </span><span>そうだった</span>
       </span>
+      <p v-else-if="notice" class="text-sm leading-[1.6] text-ink-soft" data-notice>{{ notice }}</p>
       <button
         type="button"
         class="ml-auto flex min-h-11 items-center pr-0.5 pl-3 text-sm tracking-[.06em] text-ink-soft after:absolute after:inset-0 after:z-[3] after:rounded-card focus-visible:outline-none"

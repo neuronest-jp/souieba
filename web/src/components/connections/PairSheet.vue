@@ -4,21 +4,25 @@
 // 前の日の紙片（全文と「ひらく ›」）/「そうだった」「関係ないかも」/「とじる」。上下は起きた日の順（pair.ts の sidesOf）で、
 // 思い出した一文の印と、S3 を札の形（?recall=）で開くリンクは、思い出された側（上下どちらでも）に付ける。
 // シートの地は机と同じ紙（bg-paper）にして、便箋と一筆箋が一覧と同じ紙として見えるようにする（便箋の地 card の上に便箋を置かない）。
-// 開いたら見出しにフォーカスを置く。閉じ方は「とじる」・地を押す・Esc の 3 つで、どれも close を出すだけ（閉じる動きと
-// フォーカスを返すのは ConnectionsScreen）。反応の記録も親が持つ（RecalledByCard と同じ）。
-// 「関係ないかも」にした組は、一筆箋を地の紙に退かせ（.note-quiet）、封蝋を外し、糸をほどく（色だけでなく形で）
+// 手ざわりは useSheetDrag（motion の受け持ち。DateSheet・S3 の「消しますか」と同じ）: 紙はばねで上がり、下へなぞる・地を押す・Esc・「とじる」で
+// 下がってから close を出す。開いている間は後ろの一覧をスクロールさせない（見直し n=11。中身がスクロールするときはパネルだけ動く）。
+// 開いたら見出しにフォーカスを置く。フォーカスを返すのと反応の記録は親（ConnectionsScreen）が持つ（RecalledByCard と同じ）。
+// 「関係ないかも」にした組は、一筆箋を地の紙に退かせ（.note-quiet）、封蝋を外し、糸をほどく（色だけでなく形で）。
+// 「そうだった」にしたら、しつけ糸を上から一針ずつ本縫いに縫い直し、下の結び目が留まる（.is-tying。触覚の stamp は親が押した直後に鳴らす）
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { useSheetDrag } from "../../composables/useSheetDrag";
 import { markEvidence, type ExcerptPart } from "../../connections/excerpt";
 import { dateOf, gapOf, sidesOf, stitchOf, type Pair, type Side } from "../../connections/pair";
 import { hrefFor } from "../../composables/useScreen";
+import { prefersMotion } from "../../motion";
 import Seal from "../motifs/Seal.vue";
 import Stitch from "./Stitch.vue";
 
-const props = withDefaults(
-  defineProps<{ pair: Pair; swing: 0 | 1; sheetId: string; notice?: string; opening?: boolean; closing?: boolean }>(),
-  { notice: "", opening: false, closing: false },
-);
+const props = withDefaults(defineProps<{ pair: Pair; swing: 0 | 1; sheetId: string; notice?: string }>(), { notice: "" });
 const emit = defineEmits<{ react: [feedback: "helpful" | "not_related"]; close: [] }>();
+
+const OPEN_MS = 1100; // 紙が上がり（460ms）、糸が一針ずつ渡され、結び目が留まるまで
+const TIE_MS = 760; // 8 針（55ms ずつ）+ 下の結び目が留まるまで
 
 const titleId = computed(() => `${props.sheetId}-title`);
 const gapId = computed(() => `${props.sheetId}-gap`);
@@ -38,51 +42,65 @@ const hrefOf = (side: Side) =>
 // 文字列の "body" ではなく要素を渡す（テストの最小の DOM は querySelector を持たない）
 const target = document.body;
 
+const { panel, backdrop, close } = useSheetDrag({ onClose: () => emit("close") });
+
 const heading = ref<HTMLElement | null>(null);
-// 「そうだった」にしたとき、しつけ糸を実線で縫い直す（640ms）。動きを減らす設定では style.css が止める
+const timers = new Set<ReturnType<typeof setTimeout>>();
+const later = (fn: () => void, ms: number) => {
+  const t = setTimeout(() => {
+    timers.delete(t);
+    fn();
+  }, ms);
+  timers.add(t);
+};
+// 開いたとき、紙が上がるのに合わせて糸を渡す（動きを減らす設定では付けない）
+const opening = ref(false);
+// 「そうだった」にしたとき、しつけ糸を本縫いに縫い直す
 const tying = ref(false);
-let tyingTimer: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => props.pair.feedback,
   (now, before) => {
-    if (now !== "helpful" || before === "helpful") return;
+    if (now !== "helpful" || before === "helpful" || !prefersMotion()) return;
     tying.value = false;
     void nextTick(() => {
       tying.value = true;
-      if (tyingTimer) clearTimeout(tyingTimer);
-      tyingTimer = setTimeout(() => (tying.value = false), 700);
+      later(() => (tying.value = false), TIE_MS);
     });
   },
 );
 
 const onKey = (e: KeyboardEvent) => {
-  if (e.key === "Escape") emit("close");
+  if (e.key === "Escape") close();
 };
 onMounted(() => {
   window.addEventListener("keydown", onKey);
+  if (prefersMotion()) {
+    opening.value = true;
+    later(() => (opening.value = false), OPEN_MS);
+  }
   void nextTick(() => heading.value?.focus({ preventScroll: true }));
 });
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
-  if (tyingTimer) clearTimeout(tyingTimer);
+  timers.forEach((t) => clearTimeout(t));
+  timers.clear();
 });
 </script>
 
 <template>
   <Teleport :to="target">
-    <div
-      class="sheet-scrim fixed inset-0 z-20 flex items-end justify-center bg-ink/30"
-      :class="{ 'is-opening': opening, 'is-closing': closing }"
-      @click.self="emit('close')"
-    >
+    <div class="pair-sheet fixed inset-0 z-20 flex items-end justify-center" :class="{ 'is-opening': opening }">
+      <div ref="backdrop" class="sheet-backdrop absolute inset-0 bg-ink/30" aria-hidden="true" @click="close"></div>
       <div
         :id="sheetId"
-        class="sheet-panel tex-desk max-h-[calc(100dvh-env(safe-area-inset-top)-24px)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-t-[20px] bg-paper px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card"
+        ref="panel"
+        class="sheet-paper pair-panel tex-desk relative max-h-[calc(100dvh-env(safe-area-inset-top)-24px)] w-full max-w-[560px] overflow-y-auto overscroll-contain rounded-t-[20px] bg-paper px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))]"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="gap ? `${titleId} ${gapId}` : titleId"
+        data-sheet-scroll
       >
-        <div class="mx-auto -mt-2 mb-3 h-1 w-10 rounded-full bg-line" aria-hidden="true"></div>
+        <div class="sheet-grip" aria-hidden="true"></div>
         <div class="flex items-start justify-between gap-3">
           <h2
             :id="titleId"
@@ -100,7 +118,7 @@ onUnmounted(() => {
             <p :id="`${sheetId}-upper`" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ upperDate }}のひとこと</p>
             <p class="letter-text mt-1 whitespace-pre-wrap text-ink">
               <template v-for="(part, i) in upperParts" :key="i">
-                <mark v-if="part.hit">{{ part.text }}</mark>
+                <template v-if="part.hit"><span class="sr-only">「</span><mark class="quote-mark">{{ part.text }}</mark><span class="sr-only">」</span></template>
                 <template v-else>{{ part.text }}</template>
               </template>
             </p>
@@ -109,7 +127,7 @@ onUnmounted(() => {
             </div>
           </section>
           <!-- 大きめの結び: 理由が主役なので 17px -->
-          <div class="relative grid min-h-32 grid-cols-[56px_1fr] pt-[18px] pr-0.5 pb-5" :class="tying ? 'tying' : ''">
+          <div class="relative grid min-h-32 grid-cols-[56px_1fr] pt-[18px] pr-0.5 pb-5" :class="tying ? 'is-tying' : ''">
             <Stitch :stitch="stitchOf(pair.feedback)" :swing="swing" />
             <div class="col-start-2 min-w-0 self-center">
               <p v-if="gap" :id="gapId" class="font-display text-[17px] leading-[1.5] font-bold tracking-[.02em] text-ink [font-feature-settings:'palt']">{{ gap }}</p>
@@ -121,7 +139,7 @@ onUnmounted(() => {
             <p :id="`${sheetId}-lower`" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ lowerDate }}のひとこと</p>
             <p class="letter-text mt-1 whitespace-pre-wrap text-ink">
               <template v-for="(part, i) in lowerParts" :key="i">
-                <mark v-if="part.hit">{{ part.text }}</mark>
+                <template v-if="part.hit"><span class="sr-only">「</span><mark class="quote-mark">{{ part.text }}</mark><span class="sr-only">」</span></template>
                 <template v-else>{{ part.text }}</template>
               </template>
             </p>
@@ -131,12 +149,13 @@ onUnmounted(() => {
           </section>
         </div>
 
-        <!-- 反応（S3 の札と同じ。見た目は 40px、押せる所は ::after で 48px）。同じボタンをもう一度押すと取り消し -->
+        <!-- 反応（S3 の札と同じ。見た目は 40px、押せる所は ::after で 48px）。同じボタンをもう一度押すと取り消し。
+             押すと沈み（style.css の .choice:active）、「そうだった」は判を押したように少し弾んで留まる（.is-stamped） -->
         <div class="mt-5 flex flex-wrap gap-2">
           <button
             type="button"
             class="choice h-10 px-4"
-            :class="pair.feedback === 'helpful' ? 'border-moss-deep bg-moss-soft shadow-stamp' : ''"
+            :class="[pair.feedback === 'helpful' ? 'border-moss-deep bg-moss-soft shadow-stamp' : '', tying ? 'is-stamped' : '']"
             :aria-pressed="pair.feedback === 'helpful'"
             @click="emit('react', 'helpful')"
           >そうだった</button>
@@ -148,9 +167,10 @@ onUnmounted(() => {
             @click="emit('react', 'not_related')"
           >関係ないかも</button>
         </div>
-        <p v-if="notice" class="mt-2 text-sm text-ink-soft" role="status" aria-live="polite">{{ notice }}</p>
+        <!-- 記録に失敗したときの知らせ。読み上げが確実に拾うよう、初めから置いて文字だけ入れ替える -->
+        <p class="text-sm text-ink-soft" :class="notice ? 'mt-2' : ''" role="status" aria-live="polite">{{ notice }}</p>
         <div class="mt-2 flex justify-center">
-          <button type="button" class="min-h-11 px-6 text-ink-soft" @click="emit('close')">とじる</button>
+          <button type="button" class="press min-h-11 px-6 text-ink-soft" @click="close">とじる</button>
         </div>
       </div>
     </div>

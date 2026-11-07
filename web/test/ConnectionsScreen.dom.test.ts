@@ -4,11 +4,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, KeepAlive, nextTick, ref } from "vue";
 import type { Connection, ConnectionsResponse } from "../src/api/types";
+import { layoutLoom } from "../src/connections/loom";
 import { fakeDocument, mount, resetFakeDocument, type FakeElement } from "./fakeDom";
 
-const { connections, recallFeedback } = vi.hoisted(() => ({
+const { connections, recallFeedback, haptic } = vi.hoisted(() => ({
   connections: vi.fn<() => Promise<ConnectionsResponse>>(),
   recallFeedback: vi.fn<(id: string, feedback: string) => Promise<unknown>>(),
+  haptic: { tap: vi.fn(), select: vi.fn(), stamp: vi.fn(), saved: vi.fn(), arrive: vi.fn(), failed: vi.fn() },
 }));
 vi.mock("../src/api", () => ({
   ApiError: class extends Error {},
@@ -17,6 +19,8 @@ vi.mock("../src/api", () => ({
     recallFeedback: (id: string, feedback: string) => recallFeedback(id, feedback),
   },
 }));
+// 触覚は手ざわりの名前で呼ばれたかだけを見る（@capacitor/haptics は読まない）
+vi.mock("../src/haptics", () => haptic);
 
 const ConnectionsScreen = (await import("../src/screens/ConnectionsScreen.vue")).default;
 const BottomNav = (await import("../src/components/BottomNav.vue")).default;
@@ -87,10 +91,35 @@ beforeEach(() => {
   });
   connections.mockReset();
   recallFeedback.mockReset();
+  Object.values(haptic).forEach((fn) => fn.mockReset());
 });
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+// KeepAlive で残した画面を、ほかの画面と行き来させる（App.vue の代わり。shown を other にするとシートの「ひらく ›」で S3 へ行ったのと同じ）
+const host = () => {
+  const shown = ref<"connections" | "other">("connections");
+  const Other = defineComponent({ name: "OtherScreen", render: () => h("main", [h("h1", "これまで")]) });
+  const App = defineComponent({
+    setup: () => () => h(KeepAlive, { include: "ConnectionsScreen" }, [shown.value === "connections" ? h(ConnectionsScreen) : h(Other)]),
+  });
+  return { App, shown };
+};
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// 動きを減らす設定ではない端末にする（既定は matchMedia が無く、待たずに切り替える）
+const motionOn = () => {
+  (window as unknown as { matchMedia: (q: string) => { matches: boolean } }).matchMedia = () => ({ matches: false });
+};
+// 最小の DOM の要素に、書き込むだけの style を持たせる（シートの紙と地）
+const withStyle = (panel: FakeElement) => {
+  const targets = [panel, ...(panel.parentNode as FakeElement).children];
+  for (const el of targets) (el as unknown as { style: Record<string, string> }).style ??= {};
+};
+const stamps = (root: FakeElement) => root.findAll((el) => el.hasAttribute("data-stamp")).length;
+// 画面に常に置く知らせ（シートの外。読み上げ用）と、組の下の見える知らせ
+const liveNotice = (root: FakeElement) => root.findAll((el) => el.getAttribute("role") === "status" && el.hasAttribute("data-live"))[0];
+const rowNotice = (root: FakeElement, id: string) => rowOf(root, id)?.findAll((el) => el.hasAttribute("data-notice"))[0];
 
 const open = async (items: Connection[]) => {
   connections.mockResolvedValue({ items, beads });
@@ -239,8 +268,10 @@ describe("ひらいたとき（シート）", () => {
     const { container, errors } = await open([pair("r1")]);
     openButtonOf(container, "r1").click();
     await settle();
-    const scrim = dialog()!.parentNode as FakeElement;
-    scrim.click();
+    // 地は、シートの置き場の中のパネルの後ろの層（useSheetDrag の .sheet-backdrop）
+    const backdrop = (dialog()!.parentNode as FakeElement).findAll((el) => el.hasClass("sheet-backdrop"))[0]!;
+    expect(backdrop.getAttribute("aria-hidden")).toBe("true");
+    backdrop.click();
     await settle();
     expect(dialog()).toBeUndefined();
     openButtonOf(container, "r1").click();
@@ -349,37 +380,344 @@ describe("ひらいたとき（シート）", () => {
   });
 });
 
-describe("動き", () => {
-  // KeepAlive で残した画面を、ほかの画面と行き来させる（App.vue の代わり）
-  const host = () => {
-    const shown = ref<"connections" | "other">("connections");
-    const Other = defineComponent({ name: "OtherScreen", render: () => h("main", [h("h1", "これまで")]) });
-    const App = defineComponent({
-      setup: () => () => h(KeepAlive, { include: "ConnectionsScreen" }, [shown.value === "connections" ? h(ConnectionsScreen) : h(Other)]),
-    });
-    return { App, shown };
-  };
+describe("記録と取り直しが重なったとき（利用者の反応を黙って取り消さない）", () => {
+  it("取り直しの GET が返る前に「関係ないかも」で閉じても、先に読まれた古い結果で組を戻さない。静かになってから取り直す", async () => {
+    recallFeedback.mockResolvedValue({});
+    connections.mockResolvedValue({ items: [pair("r1"), pair("r2")], beads });
+    const { App, shown } = host();
+    const { container, errors } = mount(App);
+    await settle();
+    shown.value = "other";
+    await settle();
+    const stale = deferred<ConnectionsResponse>();
+    connections.mockReturnValueOnce(stale.promise);
+    shown.value = "connections"; // 戻ったときの取り直し（遅い回線で返っていない）
+    await settle();
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    connections.mockResolvedValue({ items: [pair("r2")], beads }); // 記録のあとのサーバ
+    button(dialog()!, "とじる")!.click();
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    stale.resolve({ items: [pair("r1"), pair("r2")], beads }); // 記録より前に読まれた結果
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    expect(arcs(container.querySelector("figure")!).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    expect(connections).toHaveBeenCalledTimes(3); // 最初・戻ったとき・閉じたあとの取り直し
+    expect(errors).toEqual([]);
+  });
 
-  it("最初の表示だけ組が順に現れて糸が描かれる。戻ったときは裏で取り直して入れ替えるだけで動かさない", async () => {
-    // 動きを減らす設定ではない端末
-    (window as unknown as { matchMedia: (q: string) => { matches: boolean } }).matchMedia = () => ({ matches: false });
+  it("取り直しの GET が返る前に「そうだった」で閉じても、古い結果で判と本縫いを消さない", async () => {
+    recallFeedback.mockResolvedValue({});
+    connections.mockResolvedValue({ items: [pair("r1"), pair("r2")], beads });
+    const { App, shown } = host();
+    const { container, errors } = mount(App);
+    await settle();
+    shown.value = "other";
+    await settle();
+    const stale = deferred<ConnectionsResponse>();
+    connections.mockReturnValueOnce(stale.promise);
+    shown.value = "connections";
+    await settle();
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "そうだった")!.click();
+    await settle();
+    connections.mockResolvedValue({ items: [pair("r1", { feedback: "helpful" }), pair("r2")], beads });
+    button(dialog()!, "とじる")!.click();
+    await settle();
+    stale.resolve({ items: [pair("r1"), pair("r2")], beads });
+    await settle();
+    expect(stitchOf(rowOf(container, "r1")!)).toBe("sewn");
+    expect(stamps(rowOf(container, "r1")!)).toBe(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("記録の最中に戻ったときの取り直しが返っても、外した組を一覧に戻さない（記録が済んでから取り直す）", async () => {
+    const write = deferred<unknown>();
+    recallFeedback.mockReturnValue(write.promise);
+    connections.mockResolvedValue({ items: [pair("r1"), pair("r2")], beads });
+    const { App, shown } = host();
+    const { container, errors } = mount(App);
+    await settle();
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    shown.value = "other"; // シートの「ひらく ›」で S3 へ（シートは閉じ、組は外れる）
+    await settle();
+    shown.value = "connections"; // 記録より前に読まれた [r1, r2] が返る
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    connections.mockResolvedValue({ items: [pair("r2")], beads });
+    write.resolve({});
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    expect(connections).toHaveBeenCalledTimes(3);
+    expect(errors).toEqual([]);
+  });
+
+  it("「そうだった」の記録中に S3 へ行って戻り、そのあと記録が失敗したら、一覧・帯・シートとも確かめる前に戻す", async () => {
+    const write = deferred<unknown>();
+    recallFeedback.mockReturnValue(write.promise);
     connections.mockResolvedValue({ items: [pair("r1")], beads });
     const { App, shown } = host();
     const { container, errors } = mount(App);
     await settle();
-    expect(container.querySelector("ol")!.hasClass("pairs-entering")).toBe(true);
-    expect(container.querySelector("figure")!.hasClass("loom-entering")).toBe(true);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "そうだった")!.click();
+    await settle();
+    shown.value = "other";
+    await settle();
+    shown.value = "connections"; // 取り直しが記録より先に返る
+    await settle();
+    write.reject(new Error("500"));
+    await settle();
+    expect(stitchOf(rowOf(container, "r1")!)).toBe("basting");
+    expect(stamps(container)).toBe(0);
+    expect(arcs(container.querySelector("figure")!).map((el) => el.getAttribute("data-stitch"))).toEqual(["basting"]);
+    expect(rowNotice(container, "r1")?.textContent).toBe("記録できませんでした");
+    expect(haptic.failed).toHaveBeenCalledTimes(1);
+    openButtonOf(container, "r1").click();
+    await settle();
+    expect(pressed(dialog()!)).toEqual([]);
+    expect(stitchOf(dialog()!)).toBe("basting");
+    expect(errors).toEqual([]);
+  });
+
+  it("戻った直後に組を開いて取り直しの結果を見送ったら、シートを閉じたあとで取り直す（S3 で返した反応を映す）", async () => {
+    connections.mockResolvedValue({ items: [pair("r1"), pair("r2")], beads });
+    const { App, shown } = host();
+    const { container, errors } = mount(App);
+    await settle();
+    shown.value = "other"; // S3 で r1 を「そうだった」にした
+    await settle();
+    const late = deferred<ConnectionsResponse>();
+    connections.mockReturnValueOnce(late.promise);
+    shown.value = "connections";
+    await settle();
+    openButtonOf(container, "r2").click();
+    await settle();
+    late.resolve({ items: [pair("r1", { feedback: "helpful" }), pair("r2")], beads }); // シートが開いているので見送る
+    await settle();
+    expect(stitchOf(rowOf(container, "r1")!)).toBe("basting");
+    connections.mockResolvedValue({ items: [pair("r1", { feedback: "helpful" }), pair("r2")], beads });
+    button(dialog()!, "とじる")!.click();
+    await settle();
+    expect(connections).toHaveBeenCalledTimes(3);
+    expect(stitchOf(rowOf(container, "r1")!)).toBe("sewn");
+    expect(stamps(rowOf(container, "r1")!)).toBe(1);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("記録の失敗を知らせる（シートを閉じたあとでも）", () => {
+  it("画面には読み上げ用の知らせ（role=status）を初めから置いておく（後から差し込んだ所は読まれないことがある）", async () => {
+    const { container, errors } = await open([pair("r1")]);
+    const live = liveNotice(container)!;
+    expect(live.getAttribute("aria-live")).toBe("polite");
+    expect(live.hasClass("sr-only")).toBe(true);
+    expect(live.textContent).toBe("");
+    expect(errors).toEqual([]);
+  });
+
+  it("「そうだった」→ とじる → 失敗: 判を外し、組の下と画面の知らせに「記録できませんでした」、触覚は failed。その組をもう一度ひらくと組の下の知らせは消える", async () => {
+    const write = deferred<unknown>();
+    recallFeedback.mockReturnValue(write.promise);
+    const { container, errors } = await open([pair("r1"), pair("r2")]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "そうだった")!.click();
+    await settle();
+    button(dialog()!, "とじる")!.click();
+    await settle();
+    expect(stamps(rowOf(container, "r1")!)).toBe(1);
+    write.reject(new Error("network"));
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(stamps(rowOf(container, "r1")!)).toBe(0);
+    expect(stitchOf(rowOf(container, "r1")!)).toBe("basting");
+    expect(rowNotice(container, "r1")?.textContent).toBe("記録できませんでした");
+    expect(rowNotice(container, "r2")).toBeUndefined();
+    expect(liveNotice(container)!.textContent).toBe("記録できませんでした");
+    expect(haptic.failed).toHaveBeenCalledTimes(1);
+    expect(focused()).toBe("BUTTON:ひらく、2025年11月7日と2024年6月のつながり");
+    expect(fakeDocument.activeElement).toBe(openButtonOf(container, "r1"));
+    // ひらいたら一覧の知らせは外す（シートの中では同じ知らせをボタンの下に出す）
+    openButtonOf(container, "r1").click();
+    await settle();
+    expect(rowNotice(container, "r1")).toBeUndefined();
+    expect(liveNotice(container)!.textContent).toBe("");
+    expect(dialog()!.querySelector('[role="status"]')?.textContent).toBe("記録できませんでした");
+    expect(errors).toEqual([]);
+  });
+
+  it("「関係ないかも」→ とじる → 失敗: 組を元の印で戻し、組の下に「記録できませんでした」。フォーカスは次の組のまま動かさない", async () => {
+    const write = deferred<unknown>();
+    recallFeedback.mockReturnValue(write.promise);
+    const { container, errors } = await open([pair("r1"), pair("r2")]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    button(dialog()!, "とじる")!.click();
+    await settle();
+    expect(fakeDocument.activeElement).toBe(openButtonOf(container, "r2"));
+    write.reject(new Error("network"));
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+    expect(rowNotice(container, "r1")?.textContent).toBe("記録できませんでした");
+    expect(liveNotice(container)!.textContent).toBe("記録できませんでした");
+    expect(fakeDocument.activeElement).toBe(openButtonOf(container, "r2"));
+    expect(errors).toEqual([]);
+  });
+
+  it("動きのある設定で、閉じた組が抜けている途中に失敗したら、組を戻してフォーカスをその組の「ひらく」へ", async () => {
+    motionOn();
+    const write = deferred<unknown>();
+    recallFeedback.mockReturnValue(write.promise);
+    const { container, errors } = await open([pair("r1"), pair("r2")]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    withStyle(dialog()!); // 動きのある設定では useSheetDrag が紙と地の style を書く（最小の DOM は style を持たない）
+    button(dialog()!, "とじる")!.click();
+    await wait(320); // シートが下がりきって、組が抜け始める
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(rowOf(container, "r1")!.hasClass("pair-unravel")).toBe(true);
+    write.reject(new Error("network"));
+    await settle();
+    await wait(340);
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+    expect(rowOf(container, "r1")!.hasClass("pair-unravel")).toBe(false);
+    expect(fakeDocument.activeElement).toBe(openButtonOf(container, "r1"));
+    expect(errors).toEqual([]);
+  });
+
+  it("触覚: 「そうだった」で stamp、「関係ないかも」と取り消しで tap（押した直後に 1 回）", async () => {
+    recallFeedback.mockResolvedValue({});
+    const { container, errors } = await open([pair("r1")]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "そうだった")!.click();
+    expect(haptic.stamp).toHaveBeenCalledTimes(1);
+    expect(haptic.tap).toHaveBeenCalledTimes(0);
+    await settle();
+    button(dialog()!, "そうだった")!.click(); // 取り消し
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    expect(haptic.stamp).toHaveBeenCalledTimes(1);
+    expect(haptic.tap).toHaveBeenCalledTimes(2);
+    expect(haptic.failed).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("引用の印（色だけに頼らない・4 行の中に入れる）", () => {
+  it("引用は mark の前後に読み上げ用の「」を置く（一覧とシート。mark の中は引用そのまま）", async () => {
+    const { container, errors } = await open([pair("r1")]);
+    const row = rowOf(container, "r1")!;
+    const evidence = "青梅を水に浸けて、ひとつずつヘタを取るのを手伝った。";
+    expect(row.textContent).toContain(`「${evidence}」`);
+    expect(row.querySelector("mark")?.textContent).toBe(evidence);
+    const quotes = row.findAll((el) => el.hasClass("sr-only") && /^[「」]$/.test(el.textContent));
+    expect(quotes.map((el) => el.textContent)).toEqual(["「", "」"]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    expect(dialog()!.textContent).toContain(`「${evidence}」`);
+    expect(dialog()!.querySelector("mark")?.textContent).toBe(evidence);
+    expect(errors).toEqual([]);
+  });
+
+  it("一覧では 56 字を超える本文を引用の前後に寄せる（引用が末尾の 70 字の本文でも、4 行の中に印が入る）", async () => {
+    const evidence = "店主は私を覚えていた。";
+    const body = `${"昔よく通った駅前の喫茶店に久しぶりに入った。".repeat(2)}窓際の席は変わらずそこにあった。${evidence}`;
+    expect([...body].length).toBeGreaterThan(56);
+    expect([...body].length).toBeLessThanOrEqual(80);
+    const p = pair("r1", { evidence, related_memory: { id: "cafe", body, happened_on: "2024-06-01", happened_on_precision: "month", photo_key: null } });
+    const { container, errors } = await open([p]);
+    const note = rowOf(container, "r1")!.findAll((el) => el.hasClass("note"))[0]!;
+    const text = note.findAll((el) => el.tagName === "P")[1]!.textContent;
+    expect(text.startsWith("…")).toBe(true);
+    expect([...text.replace(/[「」]/g, "")].length).toBeLessThanOrEqual(56 + 1);
+    expect(note.querySelector("mark")?.textContent).toBe(evidence);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("帯を押したとき", () => {
+  // 最小の DOM の click は座標を持たないので、帯の svg の受け手を座標付きで直に呼ぶ
+  const pressAt = (svg: FakeElement, x: number, y: number) => {
+    const listeners = (svg as unknown as { listeners: Map<string, Array<{ fn: (e: unknown) => void }>> }).listeners.get("click") ?? [];
+    listeners.forEach((l) => l.fn({ clientX: x, clientY: y }));
+  };
+  const older = pair("r2", {
+    evidence: "雪だるまを作った。",
+    related_memory: { id: "snow", body: "雪だるまを作った。にんじんの鼻。", happened_on: "2023-01-10", happened_on_precision: "day", photo_key: null },
+  });
+
+  it("弧を押すと、その組へ一覧を動かし、組と弧がほのかに光る（触覚は select）。何も無い所を押しても何もしない", async () => {
+    const { container, errors } = await open([pair("r1"), older]);
+    const figure = container.querySelector("figure")!;
+    expect(figure.getAttribute("aria-hidden")).toBe("true"); // 押せても読み上げには出さない（同じ組は一覧にある）
+    const svg = figure.querySelector("svg")!;
+    const layout = layoutLoom({ beads, items: [pair("r1"), older], width: 362 });
+    (svg as unknown as { getBoundingClientRect: () => object }).getBoundingClientRect = () => ({ left: 0, top: 0, width: layout.width, height: layout.height });
+    const row = rowOf(container, "r2")!;
+    const scrolled = vi.fn();
+    (row as unknown as { scrollIntoView: typeof scrolled }).scrollIntoView = scrolled;
+    const arc = layout.arcs.find((a) => a.id === "r2")!;
+    pressAt(svg, (arc.x1 + arc.x2) / 2, layout.baseline - arc.height);
+    await settle();
+    expect(scrolled).toHaveBeenCalledWith({ behavior: "auto", block: "start" }); // 動きを減らす設定では、なめらかにせず飛ぶ
+    expect(rowOf(container, "r2")!.hasClass("pair-glow")).toBe(true);
+    expect(rowOf(container, "r1")!.hasClass("pair-glow")).toBe(false);
+    expect(arcs(figure).filter((el) => el.hasClass("arc-glow")).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    expect(haptic.select).toHaveBeenCalledTimes(1);
+    pressAt(svg, 4, 2);
+    await settle();
+    expect(scrolled).toHaveBeenCalledTimes(1);
+    expect(haptic.select).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("動き", () => {
+  it("最初の表示では組が順に現れて糸が渡される。戻ったときは裏で取り直し、新しく結ばれた組だけが現れる（ほかは動かさない）", async () => {
+    motionOn();
+    connections.mockResolvedValue({ items: [pair("r1")], beads });
+    const { App, shown } = host();
+    const { container, errors } = mount(App);
+    await settle();
+    expect(rowOf(container, "r1")!.hasClass("pair-weave")).toBe(true);
+    expect(arcs(container.querySelector("figure")!).every((el) => el.hasClass("arc-weave"))).toBe(true);
     shown.value = "other";
     await settle();
     connections.mockResolvedValue({ items: [pair("r3"), pair("r1", { feedback: "helpful" })], beads });
     shown.value = "connections";
     await settle();
     expect(connections).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('[role="status"]')).toBeNull(); // 「よみこみ中」は出さない
+    expect(container.textContent).not.toContain("よみこみ中"); // 戻ったときは「よみこみ中」を出さない
     expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r3", "r1"]);
     expect(stitchOf(rowOf(container, "r1")!)).toBe("sewn");
-    expect(container.querySelector("ol")!.hasClass("pairs-entering")).toBe(false);
-    expect(container.querySelector("figure")!.hasClass("loom-entering")).toBe(false);
+    expect(rowOf(container, "r3")!.hasClass("pair-weave")).toBe(true);
+    expect(rowOf(container, "r1")!.hasClass("pair-weave")).toBe(false);
+    const woven = arcs(container.querySelector("figure")!).filter((el) => el.hasClass("arc-weave"));
+    expect(woven.map((el) => el.getAttribute("data-pair"))).toEqual(["r3"]);
+    expect(errors).toEqual([]);
+  });
+
+  it("動きを減らす設定（とテストの環境）では、最初の表示でも組と弧に動きの class を付けない", async () => {
+    const { container, errors } = await open([pair("r1")]);
+    expect(rowOf(container, "r1")!.hasClass("pair-weave")).toBe(false);
+    expect(arcs(container.querySelector("figure")!).some((el) => el.hasClass("arc-weave"))).toBe(false);
     expect(errors).toEqual([]);
   });
 
