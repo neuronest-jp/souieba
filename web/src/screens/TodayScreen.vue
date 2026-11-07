@@ -151,6 +151,36 @@ watch(waiting, (on, was) => {
     leavingTimer = setTimeout(() => (waitingLeaving.value = false), DURATION.base + 40);
   }
 });
+// 読み上げの知らせ（role="status"）。後から差し込んだ知らせは VoiceOver が読まないことがあるので、入れ物は <main> の中に初めから 1 つ置き、
+// 文字だけ入れ替える（ConnectionsScreen と同じ形）。保存の間は「残しています」、札を待つ間は「思い出しています」、ほかは空。
+// 見た目が現れるのと同じ間（today.css の .today-saving は 400ms、.waiting-inner は 600ms 待つ）を待ってから入れるので、
+// すぐ終わる保存や、すぐ届く札では読まない。「残しました」の見出しへ置くフォーカスの読み上げとも重ならない（動きを減らす設定では見た目も待たないので、待たない）
+const LIVE_DELAY_MS = { saving: 400, waiting: 600 } as const;
+const liveWant = computed(() => (saving.value ? "saving" : waiting.value ? "waiting" : null));
+const LIVE_TEXT = { saving: "残しています", waiting: "思い出しています" } as const;
+const liveText = ref("");
+let liveTimer: ReturnType<typeof setTimeout> | null = null;
+watch(liveWant, (want) => {
+  if (liveTimer) clearTimeout(liveTimer);
+  liveTimer = null;
+  if (!want) {
+    liveText.value = "";
+    return;
+  }
+  if (!prefersMotion()) {
+    liveText.value = LIVE_TEXT[want];
+    return;
+  }
+  liveText.value = "";
+  liveTimer = setTimeout(() => {
+    liveTimer = null;
+    liveText.value = LIVE_TEXT[want];
+  }, LIVE_DELAY_MS[want]);
+});
+onUnmounted(() => {
+  if (liveTimer) clearTimeout(liveTimer);
+});
+
 let savedAt = 0;
 // S1 が表に出ているか（KeepAlive の onActivated / onDeactivated）。離れている間に保存が終わっても、そこではポーリングを始めない
 let shown = true;
@@ -195,8 +225,11 @@ const save = async () => {
   const hold = prefersMotion() ? wait(DURATION.base) : Promise.resolve();
   error.value = "";
   photoNote.value = "";
+  // POST の前に読めていた「このごろ」と総数。保存の途中で読み直しが入ると（アプリを裏に回して戻る・離れて戻る）、
+  // today はもう新しい記憶を数えているので、そこへ 1 を足すと 1 つ多くなる（見直し 3 回目）。数と押し葉はこの時点のものを基にする
+  const before = today.value;
   // きょう初めて残すか（書く画面に戻ったとき、きょうの押し葉を押す動きにする）
-  const firstToday = today.value ? today.value.week.at(-1)?.wrote === false : false;
+  const firstToday = before ? before.week.at(-1)?.wrote === false : false;
   let memory: Memory;
   try {
     memory = await api.createMemory({
@@ -223,16 +256,18 @@ const save = async () => {
     }
   }
   await hold;
-  // 総数は、読めていればその場で 1 足して出し（✓ と同じ間に）、読み直しで合わせる
-  savedCount.value = today.value ? today.value.total + 1 : null;
-  if (today.value) {
-    const t = today.value;
-    today.value = { ...t, total: t.total + 1, week: t.week.map((d, i) => (i === t.week.length - 1 ? { ...d, wrote: true } : d)) };
+  // 総数は、POST の前に読めていればその場で 1 足して出し（✓ と同じ間に）、読み直しで合わせる
+  savedCount.value = before ? before.total + 1 : null;
+  // 保存の途中で読み直しが入っていれば（today が POST の前のものでない）、その応答をそのまま使う（もう一度 1 を足さない）
+  if (before && today.value === before) {
+    today.value = { ...before, total: before.total + 1, week: before.week.map((d, i) => (i === before.week.length - 1 ? { ...d, wrote: true } : d)) };
   }
   pressToday.value = firstToday;
   // 書く画面は保存後の画面に替わる。もうひとつ書くで戻ったとき、このごろとあの日のひとことは現れる動きをやり直さない（押し葉だけ押す）
   if (today.value) leavesShown.value = true;
   if (today.value?.that_day) thatDayShown.value = today.value.that_day.memory.id;
+  // 書く画面ごと日付のシートも外れる。開いた状態を保存後の画面に持ち越さない（「もうひとつ書く」で勝手に開く）
+  sheetOpen.value = false;
   saved.value = memory;
   body.value = "";
   photo.value = null;
@@ -265,6 +300,7 @@ const another = () => {
   precision.value = "day";
   date.value = todayInTokyo();
   dateTouched.value = false;
+  sheetOpen.value = false; // 書く画面に戻ったとき、押していないのに日付のシートを開かない
   shownIds.value = new Set();
   now.value = new Date();
 };
@@ -356,8 +392,9 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
       <header class="flex flex-col gap-0.5">
         <div class="flex items-baseline justify-between">
           <h1 ref="dateHeading" class="text-[22px] focus:outline-none">{{ headingDate }}</h1>
-          <!-- 押せる高さは 44pt のまま、上下の -6px で見出しの行を押し広げない（最初の画面をひと目に収める） -->
-          <button ref="whenButton" type="button" class="-my-1.5 min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
+          <!-- 押せる高さは 44pt のまま、上下の -6px で見出しの行を押し広げない（最初の画面をひと目に収める）。
+               保存している間は押させない（POST はもう出ているので、選び直した日付は残らない。本文・写真と同じ止め方。見直し 3 回目） -->
+          <button ref="whenButton" type="button" class="-my-1.5 min-h-11 px-2 text-sm text-ink-soft" :disabled="saving" @click="sheetOpen = true">いつ？</button>
         </div>
         <!-- 問いかけのあいさつ（時間帯・季節・日替わり）。見出しの下に小さく -->
         <p class="text-sm leading-[1.6] tracking-[.04em] text-ink-soft" data-greeting>{{ prompt.greeting }}</p>
@@ -384,8 +421,9 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
       <!-- 鍵盤が出ている間は、鍵盤のすぐ上に貼り付く（styles/today.css の .today-save） -->
       <div class="today-save flex flex-col items-center gap-3" :style="{ '--today-shrink': `${keyboardShrink}px` }">
         <button class="btn btn-primary press px-10" type="button" :disabled="!canSave" @click="save">保存する</button>
-        <!-- 保存に時間がかかるときだけ見える一文。下の並びを押し下げないよう、ボタンの下に重ねて置く -->
-        <p v-if="saving" class="today-saving absolute top-full right-0 left-0 mt-0.5 text-center text-sm leading-[1.4] text-ink-soft" role="status">残しています</p>
+        <!-- 保存に時間がかかるときだけ見える一文。下の並びを押し下げないよう、ボタンの下に重ねて置く。
+             読み上げは <main> の終わりの知らせ（初めから置いてある role="status"）が受け持つ -->
+        <p v-if="saving" class="today-saving absolute top-full right-0 left-0 mt-0.5 text-center text-sm leading-[1.4] text-ink-soft">残しています</p>
         <p v-if="error" class="text-sm text-ink-soft" role="alert">{{ error }}</p>
       </div>
 
@@ -447,5 +485,9 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
         <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm tracking-[.04em] text-ink-soft">このひとことをひらく ›</a>
       </div>
     </template>
+
+    <!-- 読み上げの知らせ（「残しています」「思い出しています」）。書く画面と保存後の画面の切り替えの外に初めから置き、文字だけ入れ替える。
+         sr-only は absolute なので、並びの間（gap）を増やさない -->
+    <p class="sr-only" role="status" aria-live="polite" data-live>{{ liveText }}</p>
   </main>
 </template>

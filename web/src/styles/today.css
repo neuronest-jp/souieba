@@ -101,15 +101,15 @@
       transform: translateY(3px) scale(0.985);
     }
   }
-  /* 3. 「残しました」の横に手書きの ✓（2 画。画ごとに左端から scaleX で伸ばす） */
+  /* 3. 「残しました」の横に手書きの ✓（2 画。画ごとに左端から scaleX で伸ばす）。画の名前は Tailwind の stroke-width の utility（「stroke-」と数字）と重ねない */
   .saved-check path {
     transform-box: fill-box;
     transform-origin: left center;
   }
-  .saved-check.is-drawing .stroke-1 {
+  .saved-check.is-drawing .check-stroke-1 {
     animation: today-check-stroke 150ms var(--ease-out-soft) 180ms both;
   }
-  .saved-check.is-drawing .stroke-2 {
+  .saved-check.is-drawing .check-stroke-2 {
     animation: today-check-stroke 230ms var(--ease-out-soft) 330ms both;
   }
   @keyframes today-check-stroke {
@@ -349,6 +349,11 @@
     color: inherit;
     text-decoration: none;
   }
+  /* 現れる動き（style.css の .appear）は終わりの形を持たない。both のままだと終わったあとも transform が当たり続け、
+     .press の押したときの沈みを打ち消す（RecallCard の .note.appear と同じ理由）。fill-mode だけ替え、動きと速さは .appear のまま */
+  .that-day.appear {
+    animation-fill-mode: backwards;
+  }
   .that-day-fold {
     position: relative;
     border-top: 1px solid var(--color-line);
@@ -391,7 +396,8 @@
     .stamp-press,
     .stamp-press::after,
     .leaf-press,
-    .today-fade {
+    .today-fade,
+    .that-day.appear {
       animation: none;
     }
     .waiting-thread {
