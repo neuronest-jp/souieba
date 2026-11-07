@@ -327,15 +327,27 @@ const orderOf = computed(() => {
           aria-hidden="true"
           focusable="false"
         >
+          <!-- leaf の線と bridge の糸。糸は朱の細い実線を薄く（どの年に結ぶかは Worker が本文から数えたことなので、破線にしない。ADR-0014 の 4 節） -->
           <path
             v-for="l in layout.links"
             :key="l.id"
             :d="l.d"
             :class="l.role === 'bridge' ? 'words-thread stroke-ember' : 'words-link stroke-line-strong'"
-            :stroke-width="l.role === 'bridge' ? 1.25 : 1"
-            :stroke-dasharray="l.role === 'bridge' ? '4 3' : undefined"
+            stroke-width="1"
+            :stroke-opacity="l.role === 'bridge' ? 0.5 : undefined"
             stroke-linecap="round"
             :style="{ '--i': orderOf.get(l.word) ?? 0 }"
+          />
+          <!-- 糸の結び目（年の札の縁）。薄さは fill-opacity で（opacity にすると、現れる動きの終わりに濃さが跳ぶ） -->
+          <circle
+            v-for="k in layout.knots"
+            :key="k.id"
+            :cx="k.x"
+            :cy="k.y"
+            r="2"
+            class="words-knot fill-ember"
+            fill-opacity="0.6"
+            :style="{ '--i': orderOf.get(k.word) ?? 0 }"
           />
         </svg>
         <ol role="list" aria-label="年ごとのことば">
