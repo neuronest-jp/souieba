@@ -2,7 +2,7 @@
 // 言葉が画面の内に収まり、重ならず、leaf はその年の行に、bridge はつなぐ年のあいだに置かれること
 import { describe, expect, it } from "vitest";
 import type { KeywordMap, MapKeyword } from "../src/api/types";
-import { estimateWidth, lanePath, layoutWords, sizeFor, WORDS, type PlacedWord } from "../src/words/layout";
+import { bowQuarter, bowX, estimateWidth, lanePath, layoutWords, LINE_STYLES, sizeFor, threadPath, WORDS, type PlacedWord } from "../src/words/layout";
 
 const kw = (label: string, role: MapKeyword["role"], years: Array<[number, number]>, kind: MapKeyword["kind"] = "thing"): MapKeyword => ({
   label,
@@ -105,6 +105,25 @@ describe("layoutWords", () => {
     expect(short.lines).toBe(1);
   });
 
+  // bridge の糸の描き方（a 糸 / b 弧 / c 控えめ / lane 11/7 の形）は開発の間だけ比べる。どれを選んでも、言葉の置き場と線の数は同じ
+  for (const lines of LINE_STYLES) {
+    it(`描き方 ${lines}: 言葉の置き場は描き方で変わらず、bridge の線はつなぐ年の数だけ。線の端の印は背骨と言葉のあいだにある`, () => {
+      for (const width of [362, 335]) {
+        const base = layoutWords(MAP, width);
+        const l = layoutWords(MAP, width, lines);
+        expect(l.lines).toBe(lines);
+        expect(l.words.map((w) => [w.id, w.x, w.y])).toEqual(base.words.map((w) => [w.id, w.x, w.y]));
+        const threads = MAP.keywords.filter((k) => k.role === "bridge").reduce((n, k) => n + k.years.length, 0);
+        expect(l.links.filter((x) => x.role === "bridge")).toHaveLength(threads);
+        for (const k of l.knots) {
+          const off = Math.abs(k.x - l.spineX);
+          expect(off).toBeGreaterThanOrEqual(WORDS.pillW / 2);
+          expect(off).toBeLessThanOrEqual(WORDS.inset + WORDS.stagger);
+        }
+      }
+    });
+  }
+
   it("年が 1 つだけでも描ける（bridge は無い）", () => {
     const l = layoutWords({ years: [{ year: 2026, count: 3 }], keywords: [kw("ハッカソン", "leaf", [[2026, 3]])] }, 362);
     expect(l.words).toHaveLength(1);
@@ -131,5 +150,18 @@ describe("部品", () => {
     expect(d).toContain("V46");
     expect(d.endsWith("H214")).toBe(true);
     expect(lanePath(250, 40, 222, 40, 214)).toBe("M250 40H214");
+  });
+
+  it("a・c の糸は言葉の縁から年の札の縁へのなめらかな曲線。制御点の x は背骨と言葉のあいだ", () => {
+    expect(threadPath(250, 100, 230, 214, 40)).toBe("M250 100C230 100 230 40 214 40");
+  });
+
+  it("b の弧は年の札の縁から頂点までの楕円の 4 分の 1。弧の上の点は頂点の高さでいちばん外", () => {
+    expect(bowQuarter(214, 40, 20, 100, 1)).toBe("M214 40A20 60 0 0 1 234 100");
+    expect(bowQuarter(214, 160, 20, 100, 1)).toBe("M214 160A20 60 0 0 0 234 100");
+    expect(bowQuarter(148, 40, 20, 100, -1)).toBe("M148 40A20 60 0 0 0 128 100");
+    expect(bowX(214, 20, 100, 60, 100, 1)).toBe(234);
+    expect(bowX(214, 20, 100, 60, 40, 1)).toBe(214);
+    expect(bowX(148, 20, 100, 60, 100, -1)).toBe(128);
   });
 });

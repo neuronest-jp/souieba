@@ -16,7 +16,7 @@ import { back as goBack, focusHeading } from "../composables/useScreen";
 import { formatHappenedOn, todayInTokyo } from "../date";
 import { failed, saved } from "../haptics";
 import { prefersMotion } from "../motion";
-import { layoutWords, wordId, type PlacedWord } from "../words/layout";
+import { isLineStyle, layoutWords, wordId, type LineStyle, type MapKnot, type MapLink, type PlacedWord } from "../words/layout";
 
 defineOptions({ name: "WordsScreen" }); // KeepAlive の include で使う
 
@@ -24,6 +24,28 @@ const SHEET_ID = "word-sheet";
 // 待つ時間は styles/words.css の動きと合わせる（背骨 460ms、言葉は 260ms から 35ms ずつ 30 こまで、各 460ms）
 const WEAVE_MS = 1900;
 const STITCHES = [0, 1, 2, 3, 4].map((i) => ({ i, x1: 3 + i * 12, x2: 10 + i * 12, y: i % 2 === 0 ? 6.5 : 5.5 }));
+// bridge の糸の描き方（開発の間だけ比べる。web/src/words/layout.ts の冒頭）。URL の ?lines=a|b|c|lane（#words の前）で切り替える。
+// 選んだら 1 つだけを残し、この切り替えは外す
+const LINES: LineStyle = "a";
+const lines: LineStyle = (() => {
+  const q = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("lines");
+  return isLineStyle(q) ? q : LINES;
+})();
+// 線の見た目（色はトークンの class だけ）
+type Stroke = { class: string; width: number; dash?: string; opacity?: number };
+const strokeOf = (l: MapLink): Stroke => {
+  if (l.role === "leaf") return { class: "words-link stroke-line-strong", width: 1 };
+  if (lines === "a") return { class: "words-thread stroke-ember", width: 1, opacity: 0.5 };
+  if (lines === "b") return { class: "words-thread stroke-ember", width: 1.25, dash: "2.5 4", opacity: 0.8 };
+  if (lines === "c") return { class: "words-thread stroke-ink-faint", width: 1.5, dash: "0 3.5" };
+  return { class: "words-thread stroke-ember", width: 1.25, dash: "4 3" };
+};
+const knotOf = (k: MapKnot): { class: string; r: number } =>
+  lines === "b"
+    ? { class: "words-knot fill-paper stroke-ember", r: 2.5 }
+    : k.at === "word"
+      ? { class: "words-knot fill-ember", r: 2.25 }
+      : { class: "words-knot fill-ember opacity-60", r: 2 };
 
 const data = ref<KeywordsResponse | null>(null);
 const state = ref<"loading" | "ready" | "error">("loading");
@@ -43,7 +65,7 @@ const width = ref(362);
 const map = computed(() => data.value?.map ?? null);
 const few = computed(() => data.value?.reason === "few");
 const hasWords = computed(() => (map.value?.keywords.length ?? 0) > 0);
-const layout = computed(() => (map.value && hasWords.value ? layoutWords(map.value, width.value) : null));
+const layout = computed(() => (map.value && hasWords.value ? layoutWords(map.value, width.value, lines) : null));
 const openKeyword = computed<MapKeyword | null>(() => map.value?.keywords.find((k) => wordId(k) === openLabel.value) ?? null);
 // 集めた日（Asia/Tokyo の日付。起きた日と同じ書き方）
 const generatedOn = computed(() => (map.value ? formatHappenedOn(todayInTokyo(new Date(map.value.generated_at)), "day") : ""));
@@ -331,11 +353,22 @@ const orderOf = computed(() => {
             v-for="l in layout.links"
             :key="l.id"
             :d="l.d"
-            :class="l.role === 'bridge' ? 'words-thread stroke-ember' : 'words-link stroke-line-strong'"
-            :stroke-width="l.role === 'bridge' ? 1.25 : 1"
-            :stroke-dasharray="l.role === 'bridge' ? '4 3' : undefined"
+            :class="strokeOf(l).class"
+            :stroke-width="strokeOf(l).width"
+            :stroke-dasharray="strokeOf(l).dash"
+            :stroke-opacity="strokeOf(l).opacity"
             stroke-linecap="round"
             :style="{ '--i': orderOf.get(l.word) ?? 0 }"
+          />
+          <circle
+            v-for="k in layout.knots"
+            :key="k.id"
+            :cx="k.x"
+            :cy="k.y"
+            :r="knotOf(k).r"
+            :class="knotOf(k).class"
+            stroke-width="1.25"
+            :style="{ '--i': orderOf.get(k.word) ?? 0 }"
           />
         </svg>
         <ol role="list" aria-label="年ごとのことば">

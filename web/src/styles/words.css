@@ -22,7 +22,8 @@
     animation-delay: calc(260ms + var(--i, 0) * 35ms);
   }
   .words-map.is-weaving .words-link,
-  .words-map.is-weaving .words-thread {
+  .words-map.is-weaving .words-thread,
+  .words-map.is-weaving .words-knot {
     animation: words-fade var(--duration-slow) var(--ease-out-soft) both;
     animation-delay: calc(220ms + var(--i, 0) * 35ms);
   }
@@ -62,7 +63,8 @@
     .words-map.is-weaving .words-year,
     .words-map.is-weaving .words-word,
     .words-map.is-weaving .words-link,
-    .words-map.is-weaving .words-thread {
+    .words-map.is-weaving .words-thread,
+    .words-map.is-weaving .words-knot {
       animation: none;
       transition: none;
     }
