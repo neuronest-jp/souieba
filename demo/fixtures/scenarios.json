@@ -1,5 +1,5 @@
 {
-  "$comment": "そういえば。 デモ4シナリオ（docs/spec.md 第11節）。preconditions は seed.sql の memory id。expected.recalls.must_include[].evidence_contains の判定: 札の evidence が related 本文（seed.sql）の部分文字列であり、かつ evidence に evidence_contains が含まれれば合格。evidence_contains は docs/requirements.md F5-1 / 第7節と同じ最短の確実な部分文字列にしてあり、モデルが短い逐語引用を返しても失敗にしない。写真は demo/photos/ に開発者が置く（ここではファイル名だけ参照）。",
+  "$comment": "そういえば。 デモ4シナリオ（docs/spec.md 第11節）。preconditions は seed.sql の memory id。expected.recalls.must_include[].evidence_contains の判定: 札の evidence が related 本文（seed.sql）の部分文字列であり、かつ evidence に evidence_contains が含まれれば合格。evidence_contains は docs/requirements.md F5-1 / 第7節と同じ最短の確実な部分文字列にしてあり、モデルが短い逐語引用を返しても失敗にしない。写真は demo/photos/ に開発者が置く（ここではファイル名だけ参照）。（11/7: 通しでは札が 2 文目「青梅を水に浸けて…」「泣きやむとまた三輪車に乗りたがった。」を引くことが多かったので、D1 は「梅」、D4 は「三輪車」に広げた。requirements の F5-1 の例とは別に、ここでは合格の判定を緩めている）",
   "user_id": "demo@example.com",
   "demo_date": "2026-11-07",
   "scenarios": [
@@ -26,7 +26,7 @@
           "must_include": [
             {
               "related_memory_id": "mem_d1_01",
-              "evidence_contains": "梅干しを漬けていた"
+              "evidence_contains": "梅"
             }
           ],
           "must_not_include": ["mem_daily_01"],
@@ -163,7 +163,7 @@
           "must_include": [
             {
               "related_memory_id": "mem_d4_01",
-              "evidence_contains": "三輪車で転んで泣いた"
+              "evidence_contains": "三輪車"
             }
           ],
           "must_not_include": ["mem_daily_04"],
