@@ -1,20 +1,36 @@
 @import "tailwindcss";
 
-/* デザイン基盤（docs/decisions/0004-design-foundation.md）。コンポーネントは色を直書きしない。 */
+/* デザイン基盤（docs/decisions/0004-design-foundation.md）と、11/7 に選んだ「便箋と押し葉」（docs/decisions/0010-letter-design.md）。
+   コンポーネントは色を直書きしない。手ざわりの data URI の %23 の色は、検査（check:words）の対象外のこのファイルにだけ置く */
 @theme {
+  /* 紙の役割: 地（机に敷いた紙）/ 便箋（自分の言葉）/ 一筆箋（「そういえば。」の札）/ 控え（ミシン目から下の候補）。
+     地はスプラッシュとステータスバーに合わせて #FAF5EC のまま（ADR-0008）。便箋を白に寄せて地との差を付ける */
   --color-paper: #faf5ec;
-  --color-card: #fffdf8;
+  --color-card: #fffefa;
+  --color-letter: #fff8eb;
+  --color-slip: #faf3e6;
   --color-ink: #3a3230;
-  --color-ink-soft: #6f655d;
-  --color-ink-faint: #a69c92;
-  --color-line: #e6dccd;
+  --color-ink-soft: #685d55; /* どの紙の上でも、ember-soft の上でも 4.5:1 以上（ADR-0010 の表） */
+  --color-ink-faint: #a69c92; /* 飾りとプレースホルダだけ。意味のある文字には使わない */
+  --color-line: #e2d5c1;
+  --color-line-strong: #d9cab5; /* 押せるもの（そう / ちがう、副ボタン）の縁 */
+  --color-note-edge: #e6d6bf; /* 一筆箋の縁 */
+  --color-rule: #ebd3c3; /* 朱罫。自分の言葉と「」の引用の下にだけ引く */
   --color-ember: #c9684a;
+  --color-ember-ink: #b65a3d; /* 「そういえば。」の文字（22px 太字だけ）。地に 4.28:1 */
   --color-ember-soft: #f3ded3;
+  --color-seal-light: #dc8a6b; /* 封蝋と栞のつや */
+  --color-seal-deep: #9c4a31; /* 封蝋と栞のふち */
+  --color-seal-emboss: #f6d8c8; /* 封蝋に押した葉 */
   --color-moss: #7e9478;
+  --color-moss-deep: #5f7759; /* 確かめたものの判の輪 */
   --color-moss-soft: #e3eadf;
+  --color-leaf: #dfe6d6; /* 押し葉の面 */
 
   --font-display: "Zen Maru Gothic", "Hiragino Maru Gothic ProN", system-ui, "Hiragino Sans", "Yu Gothic", sans-serif;
   --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, "Yu Gothic", sans-serif;
+  /* 書いた言葉と引用。届くまでは iOS ではヒラギノ明朝で出す（Android には日本語の明朝が無く角ゴシックになる） */
+  --font-letter: "Zen Old Mincho", "Hiragino Mincho ProN", serif;
 
   /* 余白・文字サイズは rem ではなく px で決める（html の 17px に引きずられない。wireframes 0 節） */
   --spacing: 4px;
@@ -26,13 +42,69 @@
 
   /* 本文の行間は 1.8（ADR-0004、N-3）。入力欄・本文・札の引用の leading-relaxed を Tailwind の既定 1.625 にしない */
   --leading-relaxed: 1.8;
+  /* 朱罫の行送り。17px で 31px（17 × 1.8 を罫の間隔に丸めた値）。行送りと罫の間隔を同じ em から出すので、
+     文字が拡大されても（Android の文字の大きさの設定など）罫と行はずれない（ADR-0010） */
+  --leading-letter: calc(31em / 17);
 
-  --radius-card: 20px;
+  --radius-card: 14px; /* 20 → 14。紙の角に寄せる（ADR-0010） */
+  --radius-note: 8px; /* 一筆箋 */
   --radius-pill: 999px;
 
-  --shadow-card: 0 1px 2px rgb(58 50 48 / 0.04), 0 8px 24px rgb(58 50 48 / 0.06);
+  --shadow-card: 0 0.5px 0 rgb(58 50 48 / 0.07), 0 1px 2px rgb(58 50 48 / 0.05), 0 12px 24px -16px rgb(58 50 48 / 0.32);
+  --shadow-note: 0 0.5px 0 rgb(58 50 48 / 0.08), 0 2px 3px rgb(58 50 48 / 0.05), 0 16px 28px -18px rgb(110 60 36 / 0.45);
+  --shadow-press: 0 1px 0 rgb(58 50 48 / 0.06), inset 0 1px 0 rgb(255 255 255 / 0.9); /* 紙のボタンの厚み */
+  --shadow-print: 0 0 0 0.5px rgb(58 50 48 / 0.14), 0 1px 1px rgb(58 50 48 / 0.08), 0 6px 10px -6px rgb(58 50 48 / 0.4); /* 写真の焼き付け */
+  --shadow-stamp: inset 0 0 0 2px rgb(227 234 223), inset 0 0 0 2.75px rgb(95 119 89 / 0.55); /* 判の内側の二重の輪（moss-soft と moss-deep） */
+  --shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.55); /* 選択中の地のつや */
+  --drop-shadow-wax: 0 1.5px 1px rgb(100 40 20 / 0.28); /* 封蝋と栞の落ち影 */
 
   --ease-gentle: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* 手ざわり（その場で書いた SVG。画像素材なし）。粒は feTurbulence を 220px、繊維は二次曲線 18 本を 360px で繰り返す */
+:root {
+  --tex-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32  0 0 0 0 .25  0 0 0 0 .19  0.24 0 0 0 -0.085'/%3E%3C/filter%3E%3Cfilter id='m' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012' numOctaves='3' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45  0 0 0 0 .34  0 0 0 0 .24  0.16 0 0 0 -0.06'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23m)'/%3E%3Crect width='220' height='220' filter='url(%23g)'/%3E%3C/svg%3E");
+  --tex-grain-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32  0 0 0 0 .25  0 0 0 0 .19  0.14 0 0 0 -0.05'/%3E%3C/filter%3E%3Cfilter id='m' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012' numOctaves='3' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45  0 0 0 0 .34  0 0 0 0 .24  0.08 0 0 0 -0.03'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23m)'/%3E%3Crect width='220' height='220' filter='url(%23g)'/%3E%3C/svg%3E");
+  --tex-fiber: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='360'%3E%3Cpath d='M0.0 160.9Q10.8 162.1 14.3 165.0' stroke='%23fffaf0' stroke-opacity='0.55' stroke-width='0.63' fill='none' stroke-linecap='round'/%3E%3Cpath d='M168.3 170.0Q171.8 173.4 171.1 183.9' stroke='%236b5a4c' stroke-opacity='0.065' stroke-width='0.66' fill='none' stroke-linecap='round'/%3E%3Cpath d='M297.6 137.8Q301.0 143.5 299.6 147.4' stroke='%236b5a4c' stroke-opacity='0.072' stroke-width='0.62' fill='none' stroke-linecap='round'/%3E%3Cpath d='M84.5 110.8Q94.2 112.5 110.0 112.7' stroke='%236b5a4c' stroke-opacity='0.079' stroke-width='0.45' fill='none' stroke-linecap='round'/%3E%3Cpath d='M138.3 319.3Q147.4 329.5 154.3 330.5' stroke='%23fffaf0' stroke-opacity='0.55' stroke-width='0.56' fill='none' stroke-linecap='round'/%3E%3Cpath d='M324.5 6.7Q333.2 -6.5 333.0 -15.5' stroke='%236b5a4c' stroke-opacity='0.057' stroke-width='0.73' fill='none' stroke-linecap='round'/%3E%3Cpath d='M341.3 263.4Q345.3 246.7 350.6 234.9' stroke='%236b5a4c' stroke-opacity='0.075' stroke-width='0.46' fill='none' stroke-linecap='round'/%3E%3Cpath d='M342.7 299.4Q343.2 295.4 353.8 288.2' stroke='%236b5a4c' stroke-opacity='0.088' stroke-width='0.64' fill='none' stroke-linecap='round'/%3E%3Cpath d='M244.5 183.4Q236.6 193.8 220.0 194.2' stroke='%23fffaf0' stroke-opacity='0.55' stroke-width='0.60' fill='none' stroke-linecap='round'/%3E%3Cpath d='M292.0 182.8Q293.8 188.0 304.4 186.6' stroke='%236b5a4c' stroke-opacity='0.054' stroke-width='0.57' fill='none' stroke-linecap='round'/%3E%3Cpath d='M198.3 135.6Q204.4 138.0 212.8 147.0' stroke='%236b5a4c' stroke-opacity='0.073' stroke-width='0.64' fill='none' stroke-linecap='round'/%3E%3Cpath d='M333.0 35.4Q350.5 35.5 362.5 34.3' stroke='%236b5a4c' stroke-opacity='0.065' stroke-width='0.75' fill='none' stroke-linecap='round'/%3E%3Cpath d='M232.6 180.8Q222.9 183.9 218.1 177.8' stroke='%23fffaf0' stroke-opacity='0.55' stroke-width='0.65' fill='none' stroke-linecap='round'/%3E%3Cpath d='M327.7 53.0Q335.2 49.5 338.9 50.2' stroke='%236b5a4c' stroke-opacity='0.083' stroke-width='0.58' fill='none' stroke-linecap='round'/%3E%3Cpath d='M316.4 174.0Q313.6 186.5 318.7 193.0' stroke='%236b5a4c' stroke-opacity='0.085' stroke-width='0.54' fill='none' stroke-linecap='round'/%3E%3Cpath d='M272.7 122.5Q255.3 123.1 248.0 133.2' stroke='%236b5a4c' stroke-opacity='0.051' stroke-width='0.65' fill='none' stroke-linecap='round'/%3E%3Cpath d='M106.4 290.9Q106.5 285.1 96.8 279.4' stroke='%23fffaf0' stroke-opacity='0.55' stroke-width='0.71' fill='none' stroke-linecap='round'/%3E%3Cpath d='M62.2 235.3Q60.2 244.7 62.9 254.2' stroke='%236b5a4c' stroke-opacity='0.075' stroke-width='0.61' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+/* 地と下部ナビ（和紙の繊維 + 粒）。background-attachment: fixed は使わない（iOS で重く、効かないこともある） */
+@utility tex-desk {
+  background-image: var(--tex-fiber), var(--tex-grain);
+  background-size: 360px 360px, 220px 220px;
+}
+/* 便箋・一筆箋・控え（粒を半分の濃さで） */
+@utility tex-sheet {
+  background-image: var(--tex-grain-light);
+  background-size: 220px 220px;
+}
+/* 自分の言葉と「」の引用: 明朝に朱罫。各行の下 1px だけを rule の色にする。行送りと罫の間隔は同じ --leading-letter */
+@utility letter-text {
+  font-family: var(--font-letter);
+  font-weight: 500;
+  font-size: var(--text-base);
+  line-height: var(--leading-letter);
+  letter-spacing: 0.02em;
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(var(--leading-letter) - 1px),
+    var(--color-rule) calc(var(--leading-letter) - 1px)
+  );
+  background-size: 100% var(--leading-letter);
+  background-position: 0 calc(-2em / 17);
+  padding-bottom: calc(2em / 17);
+}
+/* 天の二重罫（1px の線 2 本。下端と、その 3px 上）。S2 の見出し、S3 の「おぼえていること」 */
+@utility rule-double {
+  background-image: linear-gradient(var(--color-rule), var(--color-rule)), linear-gradient(var(--color-rule), var(--color-rule));
+  background-size: 100% 1px, 100% 1px;
+  background-position: 0 100%, 0 calc(100% - 3px);
+  background-repeat: no-repeat;
+}
+/* 主な導線のテキストボタンの下線（ember の 1px。文字の幅だけ） */
+@utility ember-underline {
+  padding-bottom: 3px;
+  background: linear-gradient(var(--color-ember), var(--color-ember)) 0 100% / 100% 1px no-repeat;
 }
 
 @layer base {
@@ -52,6 +124,10 @@
   body {
     margin: 0;
     min-height: 100dvh;
+    /* 地: 机に敷いたきなりの紙。色は html と同じ #FAF5EC で、繊維と粒を平均 3% ほど重ねる */
+    background-color: var(--color-paper);
+    background-image: var(--tex-fiber), var(--tex-grain);
+    background-size: 360px 360px, 220px 220px;
   }
   h1,
   h2,
@@ -84,6 +160,15 @@
   input[type="month"]::-webkit-date-and-time-value {
     text-align: left;
   }
+  /* S3 の本文の引用の範囲: 蛍光ペンを下 7 割に引いた朱の地（文字は ink のまま）。2 行にまたがっても行ごとに角を付ける */
+  mark {
+    color: var(--color-ink);
+    background: linear-gradient(transparent 30%, var(--color-ember-soft) 30%, var(--color-ember-soft) 93%, transparent 93%);
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    padding: 0 1px;
+    border-radius: 2px;
+  }
   :focus-visible {
     outline: 2px solid var(--color-ember);
     outline-offset: 3px;
@@ -98,8 +183,11 @@
     padding-left: max(20px, env(safe-area-inset-left, 0px));
     padding-right: max(20px, env(safe-area-inset-right, 0px));
   }
+  /* 便箋（自分の言葉が書かれる紙）: 入力欄、S1 の記憶カード、S3 の本文 */
   .card {
-    background: var(--color-card);
+    background-color: var(--color-card);
+    background-image: var(--tex-grain-light);
+    background-size: 220px 220px;
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-card);
@@ -107,6 +195,99 @@
   .card:focus-within {
     border-color: var(--color-ember);
     box-shadow: var(--shadow-card), 0 0 0 3px var(--color-ember-soft);
+  }
+  /* ミシン目: 1.5px の点線の上罫と、カードの左右の縁の半円の切り欠き（地の色の円の内側の半分だけを見せる）。
+     カードの横の内側余白 20px の中に置き、円の中心をカードの縁の線に合わせる */
+  .perf {
+    position: relative;
+    height: 0;
+    margin: 0 14px;
+    border-top: 1.5px dashed var(--color-line);
+  }
+  .perf::before,
+  .perf::after {
+    content: "";
+    position: absolute;
+    top: -8.75px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-paper);
+    border: 1px solid var(--color-line);
+  }
+  .perf::before {
+    left: -23px;
+    clip-path: inset(0 0 0 50%);
+  }
+  .perf::after {
+    right: -23px;
+    clip-path: inset(0 50% 0 0);
+  }
+  /* 控え: ミシン目から下の、まだ決まっていない紙（候補の欄） */
+  .slip {
+    background-color: var(--color-slip);
+    background-image: var(--tex-grain-light);
+    background-size: 220px 220px;
+    border-radius: 0 0 calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px);
+  }
+  /* 一筆箋（「そういえば。」の札）。左の朱の二重罫は札の縁の罫（もとの「左縁の ember 3px」を描き直したもの） */
+  .note {
+    position: relative;
+    padding: 20px 20px 6px 34px;
+    background-color: var(--color-letter);
+    background-image: var(--tex-grain-light);
+    background-size: 220px 220px;
+    border: 1px solid var(--color-note-edge);
+    border-radius: var(--radius-note);
+    box-shadow: var(--shadow-note);
+  }
+  .note::before {
+    content: "";
+    position: absolute;
+    top: 12px;
+    bottom: 12px;
+    left: 14px;
+    width: 5px;
+    border-left: 2px solid var(--color-ember);
+    border-right: 1px solid var(--color-ember);
+    border-radius: 1px;
+    opacity: 0.9;
+  }
+  /* 「関係ないかも」と返した札: 地の色に戻し、二重罫を line にして退かせる（封蝋は部品の側で外す）。文字は薄くしない */
+  .note-quiet {
+    background-color: var(--color-paper);
+    border-color: var(--color-line);
+    box-shadow: none;
+  }
+  .note-quiet::before {
+    border-color: var(--color-line);
+    opacity: 1;
+  }
+  /* 小さな選択（そう / ちがう / そうだった / 関係ないかも / いつ？の精度）。見た目は 36px、押せる所は ::after で上下に広げる */
+  .choice {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    height: 36px;
+    padding: 0 15px;
+    border-radius: var(--radius-pill);
+    background: var(--color-card);
+    border: 1px solid var(--color-line-strong);
+    box-shadow: var(--shadow-press);
+    font-size: 16px;
+    line-height: 1.4;
+    letter-spacing: 0.04em;
+    color: var(--color-ink);
+    transition:
+      background-color 200ms var(--ease-gentle),
+      border-color 200ms var(--ease-gentle);
+  }
+  .choice::after {
+    content: "";
+    position: absolute;
+    inset: -4px -2px;
   }
   .btn {
     display: inline-flex;
@@ -119,6 +300,8 @@
     font-family: var(--font-display);
     font-weight: 700;
     font-size: 19px; /* 19px 以上の太字は WCAG の大きい文字（3:1）に入る */
+    font-feature-settings: "palt";
+    letter-spacing: 0.04em;
     transition:
       background-color 200ms var(--ease-gentle),
       transform 200ms var(--ease-gentle),
@@ -130,6 +313,7 @@
   .btn:disabled {
     cursor: default;
   }
+  /* 主ボタンは ember の平らな地のまま（つやのグラデーションは白文字が 3:1 を割る） */
   .btn-primary {
     background: var(--color-ember);
     color: var(--color-card);
@@ -141,12 +325,15 @@
   .btn-primary:not(:disabled):hover {
     background: color-mix(in oklab, var(--color-ember) 88%, black);
   }
+  /* 副ボタン: 紙のボタン（縁は line-strong、上に白いつや、下に薄い厚み） */
   .btn-quiet {
     min-height: 44px;
+    padding: 0 20px;
     background: var(--color-card);
     color: var(--color-ink);
-    border: 1px solid var(--color-line);
-    font-size: 17px;
+    border: 1px solid var(--color-line-strong);
+    box-shadow: var(--shadow-press);
+    font-size: 16px;
   }
   .btn-quiet:disabled {
     color: var(--color-ink-faint);
@@ -154,9 +341,12 @@
   .btn-quiet:not(:disabled):hover {
     background: var(--color-paper);
   }
-  /* 「そういえば。」の札が現れる動き */
+  /* 「そういえば。」の札が現れる動き: 紙がすべり込み、少し遅れて封蝋が押される */
   .appear {
     animation: appear 600ms var(--ease-gentle) both;
+  }
+  .appear .seal {
+    animation: seal-press 420ms 380ms var(--ease-gentle) both;
   }
   @keyframes appear {
     from {
@@ -168,8 +358,19 @@
       transform: translateY(0);
     }
   }
+  @keyframes seal-press {
+    from {
+      opacity: 0;
+      transform: scale(1.25);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .appear {
+    .appear,
+    .appear .seal {
       animation: none;
     }
   }

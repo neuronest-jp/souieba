@@ -9,9 +9,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- 字体の CSS は描画を止めない読み方にする（print で読み、届いたら all に切り替える）。届くまでは端末の字体
-         （iOS ではヒラギノ丸ゴ / 角ゴ）で出し、通信が無くても画面が白いまま待たない -->
+         （iOS ではヒラギノ丸ゴ / 角ゴ / 明朝）で出し、通信が無くても画面が白いまま待たない。
+         Zen Old Mincho は書いた言葉と引用の明朝（ADR-0010）。unicode-range で分かれているので、使う字の分だけ届く -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&family=Noto+Sans+JP:wght@400;500&family=Zen+Old+Mincho:wght@500;600&display=swap"
       rel="stylesheet"
       media="print"
       onload="this.media='all'"

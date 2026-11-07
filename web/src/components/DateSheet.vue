@@ -59,7 +59,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 
 <template>
   <div class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="emit('close')">
-    <div class="w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
+    <div class="tex-sheet w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
       <div class="mx-auto -mt-2 mb-3 h-1 w-10 rounded-full bg-line" aria-hidden="true"></div>
       <h2 id="date-sheet-title" class="text-xl">いつのこと</h2>
       <div class="mt-4 flex flex-wrap gap-2">
@@ -68,8 +68,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           :key="o.id"
           :ref="(el) => { if (i === 0) firstButton = el as HTMLButtonElement; }"
           type="button"
-          class="min-h-11 rounded-full border px-3.5 text-base transition-colors"
-          :class="precision === o.id ? 'border-ember bg-ember-soft text-ink' : 'border-line bg-card text-ink-soft'"
+          class="choice h-11"
+          :class="precision === o.id ? 'border-ember bg-ember-soft text-ink shadow-highlight' : 'text-ink-soft'"
           :aria-pressed="precision === o.id"
           @click="precision = o.id"
         >

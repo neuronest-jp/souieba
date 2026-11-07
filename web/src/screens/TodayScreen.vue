@@ -226,13 +226,15 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
         <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
       </header>
 
-      <section class="card p-4">
+      <!-- 便箋（ADR-0010）: 空の朱罫が「書く場所」に見えるよう、5 行分の罫を最初から引いておく。
+           罫は文字と一緒に流れる（bg-local）。行送りと罫の間隔は同じ --leading-letter -->
+      <section class="card px-5 pt-[18px] pb-5">
         <label class="sr-only" for="body">きょうのひとこと</label>
         <textarea
           id="body"
           v-model="body"
           rows="5"
-          class="field-sizing-content w-full resize-none bg-transparent leading-relaxed outline-none"
+          class="letter-text field-sizing-content block min-h-[calc(var(--leading-letter)_*_5_+_2em_/_17)] w-full resize-none bg-local text-ink outline-none"
           placeholder="きょうのひとこと"
         ></textarea>
         <p v-if="remaining < 100" class="text-right text-sm text-ink-soft" aria-live="polite">あと {{ remaining }} 文字</p>
@@ -258,14 +260,21 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
     <template v-else>
       <!-- 保存後の画面の h1（wireframes 6 節「画面ごとに h1 は 1 つ」）。保存したらここへフォーカスを置いて読ませるので role="status" は付けない。
            見た目はこれまでの 14px の添え書きのまま（h1 の字体・太さ・字間を本文に戻す。行間は text-sm が決める） -->
-      <h1 ref="savedHeading" class="font-body text-sm font-normal tracking-normal text-ink-soft focus:outline-none">残しました</h1>
-      <article class="card overflow-hidden" :class="shownIds.has(saved.id) ? '' : 'appear'">
-        <PhotoImg v-if="saved.photo_key" :photo-key="saved.photo_key" class="h-[200px] w-full object-cover" />
-        <div class="p-4">
-          <p class="text-sm text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
-          <p class="mt-1 whitespace-pre-wrap leading-relaxed">{{ saved.body }}</p>
-          <FactChips v-if="facts.length > 0" class="mt-4" :facts="facts" />
+      <h1 ref="savedHeading" class="font-body text-sm leading-[1.6] font-normal tracking-[.08em] text-ink-soft focus:outline-none">残しました</h1>
+      <!-- 便箋（ADR-0010）: 残したひとことは罫の上の明朝。候補はミシン目から下の控えに鉛筆書きで並ぶ。
+           ミシン目の切り欠きがカードの縁にかかるので overflow-hidden は付けず、写真の角は写真の側で丸める -->
+      <article class="card -mt-3" :class="shownIds.has(saved.id) ? '' : 'appear'">
+        <PhotoImg v-if="saved.photo_key" :photo-key="saved.photo_key" class="h-[200px] w-full rounded-t-[13px] object-cover" />
+        <div class="px-5 pt-[18px] pb-5">
+          <p class="text-sm leading-[1.6] tracking-[.04em] text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
+          <p class="letter-text mt-2.5 whitespace-pre-wrap text-ink">{{ saved.body }}</p>
         </div>
+        <template v-if="facts.length > 0">
+          <div class="perf" aria-hidden="true"></div>
+          <div class="slip px-5 pt-4 pb-3">
+            <FactChips :facts="facts" />
+          </div>
+        </template>
       </article>
       <!-- 写真だけ失敗したとき: 案内のすぐ下に、いま書いた記憶の S3（「写真を添える」がある）へのリンクを置く。
            札の「ひらく ›」（昔の記憶へ）と取り違えないよう、行き先を文言で言う。読み上げが文だけで済むよう alert の外に置く -->
@@ -274,10 +283,10 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
         <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">写真を添え直す ›</a>
       </div>
       <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" :animate="!shownIds.has(r.id)" />
-      <div class="flex items-baseline gap-6">
-        <button type="button" class="min-h-11 border-b border-ember text-ink" @click="writeAnother">もうひとつ書く</button>
+      <div class="-mt-1 flex flex-wrap items-baseline gap-x-6">
+        <button type="button" class="inline-flex min-h-11 items-center tracking-[.04em] text-ink" @click="writeAnother"><span class="ember-underline">もうひとつ書く</span></button>
         <!-- いま書いた記憶へ。札の「ひらく ›」は昔の記憶へ行くので、同じ文言にしない -->
-        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">このひとことをひらく ›</a>
+        <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm tracking-[.04em] text-ink-soft">このひとことをひらく ›</a>
       </div>
     </template>
   </main>

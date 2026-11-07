@@ -34,7 +34,8 @@ const start = async () => {
 <template>
   <main class="flex flex-1 flex-col justify-center gap-8 py-16">
     <div class="space-y-3 text-center">
-      <h1 class="text-4xl">そういえば。</h1>
+      <!-- 句点だけ ember（起動画面の「そういえば。」と同じ。ADR-0008）。38px の太字なので地との 3:1 で足りる -->
+      <h1 class="text-4xl tracking-[.04em]">そういえば<span class="text-ember">。</span></h1>
       <p class="text-ink-soft">
         きょうのひとことを残しておくと、<br />
         いつか、ふと思い出すきっかけになります。

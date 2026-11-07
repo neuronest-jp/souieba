@@ -11,6 +11,7 @@ import type { MemoryDetail, RecalledBy } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
 import RecalledByCard from "../components/RecalledByCard.vue";
+import Ribbon from "../components/motifs/Ribbon.vue";
 import { formatHappenedOn } from "../date";
 import { useNotice } from "../composables/useNotice";
 import { usePolling } from "../composables/usePolling";
@@ -185,7 +186,7 @@ watch(() => props.id, load);
 
 <template>
   <main class="flex flex-1 flex-col gap-4 py-4">
-    <button type="button" class="self-start min-h-11 text-ink-soft" @click="back">‹ {{ from === "today" ? "きょう" : "これまで" }}</button>
+    <button type="button" class="self-start min-h-11 tracking-[.04em] text-ink-soft" @click="back">‹ {{ from === "today" ? "きょう" : "これまで" }}</button>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
     <!-- 見つからない・読み込めないときの一文は、見出しの位置に出すこの画面の h1（wireframes 4 節、6 節「画面ごとに h1 は 1 つ」）。
@@ -197,19 +198,24 @@ watch(() => props.id, load);
     </section>
 
     <template v-else-if="detail">
-      <h1 ref="heading" class="text-[22px] focus:outline-none">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
+      <h1 ref="heading" class="text-[24px] tracking-[.04em] [font-feature-settings:'palt'] focus:outline-none">{{ formatHappenedOn(detail.memory.happened_on, detail.memory.happened_on_precision) }}</h1>
       <!-- 写真は比率のまま出し、縦長でも上下を切らない（S3 は写真全体を見られる唯一の場所。wireframes 4.1）。
            横長は幅いっぱい、縦長は高さ 360px まで縮めて中央に置く。img を main（flex）の子にすると伸び縮みで比率が崩れうるので、
            ふつうの div に入れる。読み込み中と読めなかったときの枠は、これまでどおり幅いっぱい・高さ 120px -->
       <div v-if="detail.memory.photo_key">
         <PhotoImg :photo-key="detail.memory.photo_key" class="mx-auto block max-h-[360px] max-w-full rounded-card" box-class="h-[120px] w-full rounded-card" />
       </div>
-      <p class="whitespace-pre-wrap leading-relaxed">
-        <template v-for="(p, i) in bodyParts" :key="i">
-          <mark v-if="p.hit" class="rounded bg-ember-soft text-ink">{{ p.text }}</mark>
-          <template v-else>{{ p.text }}</template>
-        </template>
-      </p>
+      <!-- 本文は地にじかに置かず、便箋に罫の上の明朝で（ADR-0010）。思い出されたことのある記憶（recalled_by がある）だけ、
+           便箋の天に朱の栞を垂らす。本文の引用の範囲は蛍光ペンの印（style.css の mark） -->
+      <article class="card relative px-5 pt-[18px] pb-5">
+        <Ribbon v-if="detail.recalled_by.items.length > 0" class="absolute -top-[9px] right-[26px] drop-shadow-wax" />
+        <p class="letter-text whitespace-pre-wrap text-ink">
+          <template v-for="(p, i) in bodyParts" :key="i">
+            <mark v-if="p.hit">{{ p.text }}</mark>
+            <template v-else>{{ p.text }}</template>
+          </template>
+        </p>
+      </article>
 
       <RecalledByCard v-if="pinned" :item="pinned" heading :notice="noticeFor(pinned)" @react="(f) => react(pinned!, f)" />
 
@@ -221,10 +227,10 @@ watch(() => props.id, load);
 
       <!-- 却下は描かない（visibleFacts）が、部品は事実が 1 件でもあれば外さない。見えている最後の候補を「ちがう」にしても、
            読み上げと失敗の知らせを同じ部品に残し、行も見出しも消えたらフォーカスを起きた日の h1 へ置く（wireframes 6 節） -->
-      <FactChips v-if="detail.facts.items.length > 0" class="mt-6" :facts="visibleFacts" :fallback="heading" title="おぼえていること" />
+      <FactChips v-if="detail.facts.items.length > 0" class="mt-6" :facts="visibleFacts" :fallback="heading" title="おぼえていること" variant="page" />
 
-      <section v-if="restRecalledBy.length > 0 || detail.recalls.items.length > 0" class="mt-6 flex flex-col gap-3">
-        <h2 class="font-display text-[22px] font-bold text-ember">そういえば。</h2>
+      <section v-if="restRecalledBy.length > 0 || detail.recalls.items.length > 0" class="mt-6 flex flex-col gap-3.5">
+        <h2 class="font-display text-[22px] font-bold tracking-[.06em] text-ember-ink [font-feature-settings:'palt']">そういえば。</h2>
         <!-- この記憶が思い出された側（相手 = 新しい記憶）。反応はここで返す。本文の下に出した札はここに重ねない -->
         <RecalledByCard v-for="r in restRecalledBy" :key="r.id" :item="r" :notice="noticeFor(r)" @react="(f) => react(r, f)" />
         <!-- この記憶を書いたとき浮かんだ札（相手 = 昔の記憶） -->
@@ -233,11 +239,11 @@ watch(() => props.id, load);
 
       <div class="mt-auto flex flex-col items-end gap-3 pt-6">
         <p v-if="deleteError" class="text-sm text-ink-soft" role="alert">{{ deleteError }}</p>
-        <button ref="deleteButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="openConfirm">消す</button>
+        <button ref="deleteButton" type="button" class="min-h-11 px-2 text-sm tracking-[.06em] text-ink-soft" @click="openConfirm">消す</button>
       </div>
 
       <div v-if="confirming" class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="closeConfirm">
-        <div class="w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+        <div class="tex-sheet w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
           <h2 id="delete-title" class="text-[22px]">この記憶を消しますか</h2>
           <p class="mt-2 text-sm text-ink-soft">写真も、この記憶から浮かんだ「そういえば。」も一緒に消えます。</p>
           <div class="mt-5 flex flex-col items-center gap-3">

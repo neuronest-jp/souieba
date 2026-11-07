@@ -52,7 +52,7 @@ onUnmounted(() => {
       <img :src="preview" alt="添えた写真" class="h-[200px] w-full object-cover" />
     </div>
     <div class="flex items-center gap-4">
-      <button type="button" class="btn btn-quiet px-4 text-sm" @click="choose">{{ preview ? "写真を変える" : "写真を添える" }}</button>
+      <button type="button" class="btn btn-quiet" @click="choose">{{ preview ? "写真を変える" : "写真を添える" }}</button>
       <button v-if="preview" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="clear">はずす</button>
     </div>
     <p v-if="message" class="text-sm text-ink-soft" role="alert">{{ message }}</p>

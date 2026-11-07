@@ -6,6 +6,7 @@ import { onActivated, onMounted, ref } from "vue";
 import { api } from "../api";
 import type { Memory } from "../api/types";
 import MemoryCard from "../components/MemoryCard.vue";
+import Leaf from "../components/motifs/Leaf.vue";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
 import { useMemoryPhoto } from "../composables/useMemoryPhoto";
 
@@ -90,8 +91,10 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 
 <template>
   <main class="flex flex-1 flex-col gap-6 py-6">
-    <header>
-      <h1 class="text-[22px] focus:outline-none">これまで</h1>
+    <!-- 便箋の天（ADR-0010）: 見出しの下に朱の二重罫、右端に押し葉（綴じた帳面） -->
+    <header class="rule-double flex items-end gap-3 pb-3">
+      <h1 class="text-[24px] tracking-[.04em] [font-feature-settings:'palt'] focus:outline-none">これまで</h1>
+      <Leaf class="mb-0.5 ml-auto shrink-0" />
     </header>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
@@ -103,11 +106,11 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 
     <section v-else-if="items.length === 0" class="flex flex-1 flex-col items-center justify-center gap-1 py-16 text-center text-ink-soft">
       <p>まだ何もありません。</p>
-      <a href="#today" class="min-h-11 border-b border-ember text-ink">きょうのひとことから</a>
+      <a href="#today" class="inline-flex min-h-11 items-center tracking-[.04em] text-ink"><span class="ember-underline">きょうのひとことから</span></a>
     </section>
 
     <template v-else>
-      <ul class="-mt-3">
+      <ul class="-mt-[18px]">
         <li v-for="m in items" :key="m.id">
           <MemoryCard :memory="m" />
         </li>
