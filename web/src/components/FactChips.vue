@@ -8,6 +8,9 @@
 // 「ちがう」は打ち消し線が左から引かれ（strike-draw）、tap() の触覚。動きはこの操作で決めた行だけに付け、動き終わったら印を外す
 // （読み込んだときから確定・却下の行や、KeepAlive で戻ってきた行は動かさない）。記録に失敗したら failed() で知らせ、印も外す。
 // stagger: S1 の控えで、届いた候補を少しずつずらして出す（chip-in。遅れは style の --i）。動きは styles/today.css
+// 写真からの気づき候補（F7、ADR-0012）: evidence が photo: で始まる行。根拠は本文の引用ではなく写真そのものなので「」を付けず、
+// 根拠の段に「写真から」と添える。候補のあいだは値に「でしょうか」を付けて尋ねる形にし（spec C3）、確かめた値は言い切りにする。
+// 読み上げは「写真から、桜でしょうか」の順（見える「写真から」は値の下の段なので aria-hidden にし、値の前に読み上げ用の文字を置く）
 import { nextTick, onUnmounted, ref } from "vue";
 import { api } from "../api";
 import { useNotice } from "../composables/useNotice";
@@ -47,8 +50,14 @@ const setMotion = (id: string, kind: "stamp" | "strike" | null) => {
 };
 onUnmounted(() => motionTimers.forEach((t) => clearTimeout(t)));
 
-const display = (f: Fact) => (f.kind === "date" ? formatFactDate(f.value) : f.value);
-const showEvidence = (f: Fact) => f.evidence && f.evidence !== f.value && !f.evidence.startsWith("photo:");
+const isPhoto = (f: Fact) => f.evidence?.startsWith("photo:") === true;
+const display = (f: Fact) => {
+  if (f.kind === "date") return formatFactDate(f.value);
+  return isPhoto(f) && f.status === "candidate" ? `${f.value}でしょうか` : f.value;
+};
+// 決めたあとの読み上げの名前。写真候補は尋ねた形のまま（「写真から、桜でしょうか、そう」）
+const spoken = (f: Fact) => (isPhoto(f) ? `写真から、${f.value}でしょうか` : display(f));
+const showEvidence = (f: Fact) => f.evidence && f.evidence !== f.value && !isPhoto(f);
 
 const root = ref<HTMLElement | null>(null);
 const heading = ref<HTMLElement | null>(null);
@@ -95,7 +104,7 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
   try {
     await api.decideFact(f.id, status);
     emit("decided", f);
-    announce.value = `${display(f)}、${status === "confirmed" ? "そう" : "ちがう"}`;
+    announce.value = `${spoken(f)}、${status === "confirmed" ? "そう" : "ちがう"}`;
   } catch {
     f.status = prev; // 表示を戻し、その行の下にそっと知らせる（F4 エラー時）
     setMotion(f.id, null);
@@ -160,9 +169,11 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
           <span class="flex min-w-0 flex-auto items-baseline gap-x-3">
             <span class="w-8 shrink-0 text-sm tracking-[.04em] text-ink-soft [font-feature-settings:'palt']">{{ KIND_LABEL[f.kind] }}</span>
             <span class="min-w-0 flex-1 leading-[1.6] text-ink">
+              <!-- 写真候補は、読み上げで値より先に出どころを言う（見える「写真から」は下の段で aria-hidden） -->
+              <span v-if="isPhoto(f)" class="sr-only">写真から、</span>
               <!-- 候補の値は鉛筆でなぞったような点線の下線（色だけでなく線の形で「決まっていない」を示す） -->
               <span
-                v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date'"
+                v-if="f.status === 'candidate' && !showEvidence(f) && f.kind !== 'date' && !isPhoto(f)"
                 class="underline decoration-ink-faint decoration-dotted decoration-[1.5px] underline-offset-[5px]"
               >「{{ display(f) }}」</span>
               <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない。
@@ -178,6 +189,12 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
                 v-if="showEvidence(f)"
                 class="mt-0.5 block -indent-[1em] pl-[1em] font-letter text-[15px] leading-[1.6] font-semibold text-ink-soft"
               >「{{ f.evidence }}」</span>
+              <!-- 写真候補の根拠は写真そのもの。引用の「」は付けず、根拠の段に出どころだけを添える -->
+              <span
+                v-if="isPhoto(f)"
+                class="mt-0.5 block text-sm leading-[1.6] tracking-[.04em] text-ink-soft [font-feature-settings:'palt']"
+                aria-hidden="true"
+              >写真から</span>
             </span>
           </span>
           <!-- 確定の印もボタンと同じ右端に置く（押した瞬間に左へ跳ねない） -->

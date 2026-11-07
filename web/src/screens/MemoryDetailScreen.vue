@@ -192,6 +192,8 @@ watch(addingPhoto, async (file) => {
     notifyMemoryPhoto(id, r.photo_key, r.photo_content_type);
     if (detail.value && detail.value.memory.id === id) {
       detail.value.memory = { ...detail.value.memory, photo_key: r.photo_key, photo_content_type: r.photo_content_type };
+      // 写真からの気づき候補（F7）は PUT の 200 の前に走り始めている（facts の pending が true）。届くまで静かに取り直す
+      if (alive) polling.start();
     }
     photoStatus.value = "写真を添えました";
     saved();

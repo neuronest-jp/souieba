@@ -459,3 +459,53 @@ describe("読み上げの知らせ（role=status）", () => {
     expect(region.textContent.trim()).toBe("思い出しています");
   });
 });
+
+// F7 写真からの気づき候補。写真の PUT が 200 を返す前に Worker が写真の処理を走らせ始め、GET /facts の pending はその間 true。
+// 画面は 保存 → POST → PUT の順で、候補の取り直しは PUT が返ってから始め、写真候補が届く（pending が false になる）まで続ける
+describe("写真を添えて保存したとき（F7）", () => {
+  const textFact: Fact = { id: "t1", kind: "place", value: "公園", status: "candidate", source: "ai", evidence: "公園", created_at: "", decided_at: null };
+  const photoFact: Fact = { id: "p1", kind: "thing", value: "桜", status: "candidate", source: "ai", evidence: "photo:k", created_at: "", decided_at: null };
+
+  it("POST → PUT のあとに取り直しを始め、本文の候補が先に届いても写真候補が届くまで続ける。届いたら「写真から」「桜でしょうか」で並ぶ", async () => {
+    let putDone!: (v: { photo_key: string; photo_content_type: string }) => void;
+    api.createMemory.mockResolvedValue({ ...memory, body: "公園で花が咲いていた" });
+    api.putPhoto.mockImplementation(() => new Promise((r) => (putDone = r)));
+    api.getFacts.mockResolvedValueOnce({ pending: true, items: [textFact] }).mockResolvedValue({ pending: false, items: [textFact, photoFact] });
+    api.getRecalls.mockResolvedValue({ pending: false, items: [] });
+    pickPhoto.mockResolvedValue({ file: new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" }) });
+    const { container, errors } = mount(Host);
+    await settle();
+    await typeBody(container, "公園で花が咲いていた");
+    button(container, "写真を添える")!.click(1);
+    await settle();
+    button(container, "保存する")!.click(1);
+    await settle();
+    expect(api.createMemory).toHaveBeenCalledTimes(1);
+    expect(api.putPhoto).toHaveBeenCalledTimes(1);
+    expect(api.putPhoto.mock.calls[0]![0]).toBe("mem_new");
+    // 写真を上げている間は、まだ取り直さない（写真の処理の記録ができる前に pending=false を読んで止まらない）
+    expect(api.getFacts).not.toHaveBeenCalled();
+    putDone({ photo_key: "k", photo_content_type: "image/jpeg" });
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(1);
+    expect(api.createMemory.mock.invocationCallOrder[0]!).toBeLessThan(api.putPhoto.mock.invocationCallOrder[0]!);
+    expect(api.putPhoto.mock.invocationCallOrder[0]!).toBeLessThan(api.getFacts.mock.invocationCallOrder[0]!);
+    // 本文の候補は届いた。写真はまだ（pending）なので取り直しを続ける
+    expect(container.querySelector('li[data-fact-id="t1"]')).toBeTruthy();
+    expect(container.querySelector('li[data-fact-id="p1"]')).toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(2);
+    const li = container.querySelector('li[data-fact-id="p1"]')!;
+    expect(li.textContent).toContain("桜でしょうか");
+    expect(li.textContent).toContain("写真から");
+    // 同じ控えの、本文の候補の後ろに並ぶ
+    const ids = container.findAll((el) => el.tagName === "LI" && el.hasAttribute("data-fact-id")).map((el) => el.getAttribute("data-fact-id"));
+    expect(ids).toEqual(["t1", "p1"]);
+    // 届いたら止まる
+    await vi.advanceTimersByTimeAsync(4000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(2);
+    expect(errors).toEqual([]);
+  });
+});

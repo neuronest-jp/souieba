@@ -378,3 +378,49 @@ describe("S3 の札の手ざわり（ブラッシュアップ 11/7）", () => {
     expect(errors).toEqual([]);
   });
 });
+
+// F7: S3 の「写真を添える」も PUT /photo なので、Worker は 200 の前に写真からの気づき候補を走らせ始める（facts の pending が true）。
+// 添えたら静かに取り直しを始め、届いた写真候補を「おぼえていること」に並べる。届いたら止まる
+describe("S3 で写真を添えたあとの写真候補（F7）", () => {
+  it("PUT が返ったら取り直しを始め、pending の間は続け、写真候補（「桜でしょうか」「写真から」）が届いたら止まる", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const tick = async () => {
+        for (let i = 0; i < 6; i += 1) {
+          await vi.advanceTimersByTimeAsync(0);
+          await nextTick();
+        }
+      };
+      const photo: Fact = { ...fact("p1", "桜"), kind: "thing", evidence: "photo:u/mem_1.jpg" };
+      const base = detail([]);
+      getMemory
+        .mockResolvedValueOnce(base)
+        .mockResolvedValueOnce({ ...base, facts: { pending: true, items: [] } })
+        .mockResolvedValue({ ...base, facts: { pending: false, items: [photo] } });
+      putPhoto.mockResolvedValue({ photo_key: "u/mem_1.jpg", photo_content_type: "image/jpeg" });
+      const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+      await tick();
+      expect(getMemory).toHaveBeenCalledTimes(1);
+      button(container, "写真を添える")!.click(1);
+      await tick();
+      expect(putPhoto).toHaveBeenCalledTimes(1);
+      expect(getMemory).toHaveBeenCalledTimes(2);
+      expect(container.querySelector('li[data-fact-id="p1"]')).toBeNull();
+      await vi.advanceTimersByTimeAsync(2000);
+      await tick();
+      expect(getMemory).toHaveBeenCalledTimes(3);
+      const li = container.querySelector('li[data-fact-id="p1"]')!;
+      expect(li.textContent).toContain("桜でしょうか");
+      expect(li.textContent).toContain("写真から");
+      expect(container.textContent).toContain("おぼえていること");
+      // 添えた写真は取り直しで消えない（取り直しは facts と recalls だけを書き換える）
+      expect(byTag(container, "IMG")).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(4000);
+      await tick();
+      expect(getMemory).toHaveBeenCalledTimes(3);
+      expect(errors).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
