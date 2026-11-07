@@ -120,6 +120,14 @@ R = [
  ("sr_06","s25_1224","s24_1224","去年のクリスマスは手袋で、「来年は三人だね」と話していました。","来年は三人だね、と話した。","none"),
 ]
 
+# 11/7 夜に 88 件を古い順に実際のアプリに書いて集めた札から選んだ組（story-recalls.json）。R と同じ組は、アプリが出した文面に替える
+import json as _json, os as _os
+_gen = _json.load(open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "story-recalls.json"), encoding="utf-8"))["pairs"]
+_genmap = {(g["new"], g["old"]): g for g in _gen}
+R = [(i, a, b, _genmap[(a, b)]["reason"], _genmap[(a, b)]["evidence"], fb) if (a, b) in _genmap else (i, a, b, reason, ev, fb) for i, a, b, reason, ev, fb in R]
+_have = {(a, b) for _, a, b, *_ in R}
+R += [(f"sr_g{k + 1:02d}", g["new"], g["old"], g["reason"], g["evidence"], g["feedback"]) for k, g in enumerate(x for x in _gen if (x["new"], x["old"]) not in _have)]
+
 def utc(day, hm):
     y,m,d = map(int, day.split("-")); h,mi = map(int, hm.split(":"))
     t = dt.datetime(y,m,d,h,mi) - dt.timedelta(hours=9)
@@ -173,8 +181,10 @@ out.append(",\n".join(rows) + ";\n")
 out.append("-- memory_id が新しい側、related_memory_id が思い出された側。evidence は思い出された側の本文の逐語引用")
 out.append("INSERT INTO recalls (id, memory_id, related_memory_id, reason, evidence, feedback, created_at) VALUES")
 rows = []
+_seen = {}
 for i,a,b,reason,ev,fb in R:
-    w = written[a].replace(":00.000Z", ":05.000Z")
+    _seen[a] = _seen.get(a, 0) + 1
+    w = written[a].replace(":00.000Z", f":{4 + _seen[a]:02d}.000Z")
     rows.append(f"  ({q(i)}, {q(a)}, {q(b)}, {q(reason)}, {q(ev)}, {q(fb)}, {q(w)})")
 out.append(",\n".join(rows) + ";")
 open(sys.argv[1], "w", encoding="utf-8").write("\n".join(out) + "\n")
