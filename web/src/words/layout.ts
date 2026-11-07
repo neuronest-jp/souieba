@@ -6,7 +6,8 @@
 //     糸の描き方は 4 通り（LineStyle。開発の間だけ比べる。選んだ 1 つを残す）。どれも線は背骨と言葉のあいだ（年の札の縁から言葉の内側の縁まで）
 //     だけを通るので、言葉の文字には重ならない（細い線どうしは交わることがある）:
 //       lane: 言葉から横に出て、背骨の脇の自分の通り道（言葉ごとに 6px ずつ外へ）を縦に通り、年の高さで直角に曲がる（角は丸める）。11/7 の形
-//       a「糸」: 言葉の内側の縁から、つなぐ年の札それぞれへ、なめらかな曲線を 1 本ずつ。ふくらみ（制御点の x）は言葉ごとに少しずつ変える
+//       a「糸」: 言葉の内側の縁から、つなぐ年の札それぞれへ、なめらかな曲線を 1 本ずつ。ふくらみ（制御点の x）は言葉ごとに変え、
+//                長い糸ほど背骨の近くを通す
 //       b「弧」: いちばん古い年と新しい年の札を、背骨の片側の弧（楕円の半分）で結ぶ。弧の頂点は言葉の高さにあり、年をまたぐほど外へふくらむ
 //                （同じ側の弧を長さの順に 8〜25px へ振る。あいだのほかの言葉には 10px より近づけない）。言葉は頂点の結び目から短い糸で吊るす。あいだの年は弧から札へ短い糸を渡す
 //       c「控えめ」: a と同じ曲線を、言葉と年の真ん中でふくらませる（leaf の線と同じ形）。色は画面が決める（墨の点線と、言葉の側の朱の印）
@@ -238,8 +239,8 @@ export function layoutWords(map: Pick<KeywordMap, "years" | "keywords">, width: 
     yearKnots.add(key);
     knots.push({ id: `knot:${key}`, x: r(x), y: r(yr.y), at: "year", word });
   };
-  // b のふくらみ: 側ごとに、つなぐ年の端から端までの長さの順（短い順）に 8〜25px
-  const bowRx = new Map<PlacedWord, number>();
+  // 側ごとに、bridge をつなぐ年の端から端までの長さの順（短い順）に並べた順位（0〜1）。a のふくらみと b の弧の大きさに使う
+  const spanRank = new Map<PlacedWord, number>();
   for (const side of ["left", "right"] as const) {
     const list = [...placed.values()]
       .filter((q) => q.keyword.role === "bridge" && q.side === side)
@@ -248,7 +249,7 @@ export function layoutWords(map: Pick<KeywordMap, "years" | "keywords">, width: 
         return { q, span: ys.length ? Math.max(...ys) - Math.min(...ys) : 0 };
       })
       .sort((a, b) => a.span - b.span);
-    list.forEach(({ q }, i) => bowRx.set(q, list.length === 1 ? 16 : 8 + (17 * i) / (list.length - 1)));
+    list.forEach(({ q }, i) => spanRank.set(q, list.length === 1 ? 0.5 : i / (list.length - 1)));
   }
   // 背骨と言葉のあいだ（年の札の縁から、言葉の内側の縁のいちばん近い所まで）
   const gutterIn = half;
@@ -267,14 +268,13 @@ export function layoutWords(map: Pick<KeywordMap, "years" | "keywords">, width: 
     const linked = p.keyword.years
       .map((yc) => years[yearIndex.get(yc.year) ?? -1])
       .filter((yr): yr is PlacedYear => yr !== undefined);
-    const lane = laneOf.get(p.keyword) ?? 0;
     if (lines === "lane") {
-      const lx = spineX + dir * (half + WORDS.laneStart + WORDS.laneStep * lane);
+      const lx = spineX + dir * (half + WORDS.laneStart + WORDS.laneStep * (laneOf.get(p.keyword) ?? 0));
       for (const yr of linked) links.push({ id: `${p.id}>${yr.year}`, role: "bridge", word: p.id, d: lanePath(inner, cy, lx, yr.y, edge) });
     } else if (lines === "a" || lines === "c") {
-      // a: ふくらみを言葉ごとに 4 段（背骨の脇から言葉の脇まで）。c: 真ん中（leaf の線と同じ形）
-      const step = (gutterOut - gutterIn - 12) / (WORDS.lanes - 1);
-      const bx = lines === "a" ? spineX + dir * (gutterIn + 6 + step * lane) : (edge + inner) / 2;
+      // a: ふくらみは年の札の縁から 6〜21px。長い糸ほど背骨の近くを通す（あいだの年の言葉から離す。言葉の縁には 14px より近づけない）。
+      // c: 札の縁と言葉の縁の真ん中（leaf の線と同じ形）
+      const bx = lines === "a" ? spineX + dir * (gutterIn + 6 + (gutterOut - gutterIn - 20) * (1 - (spanRank.get(p) ?? 0.5))) : (edge + inner) / 2;
       for (const yr of linked) {
         links.push({ id: `${p.id}>${yr.year}`, role: "bridge", word: p.id, d: threadPath(inner, cy, bx, edge, yr.y) });
         if (lines === "a") knotAtYear(yr, p.side, p.id, edge + dir * 2);
@@ -287,7 +287,7 @@ export function layoutWords(map: Pick<KeywordMap, "years" | "keywords">, width: 
       const lo = Math.min(...ys);
       const hi = Math.max(...ys);
       // ふくらみは、同じ側の弧のうち年をまたぐ長さの順に 8〜25px へ等しく振る（長い弧ほど外へ。重なって太い束に見えないように）
-      let rx = Math.min(Math.abs(inner - edge) - 2, bowRx.get(p) ?? 16);
+      let rx = Math.min(Math.abs(inner - edge) - 2, 8 + 17 * (spanRank.get(p) ?? 0.5));
       for (const q of placed.values()) {
         if (q === p || q.side !== p.side || q.y + q.h <= lo || q.y >= hi) continue;
         const qRoom = Math.abs((q.side === "right" ? q.x : q.x + q.w) - edge) - 10;
