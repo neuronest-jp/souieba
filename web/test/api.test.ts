@@ -80,6 +80,36 @@ describe("api.ts の 401", () => {
     expect(getTokenSync()).toBe("tok-1");
   });
 
+  it("api.connections は GET /api/connections に Bearer を付けて送り、応答をそのまま返す。401 なら他と同じくトークンを消して発火する", async () => {
+    const body = {
+      items: [
+        {
+          id: "recall_seed_01",
+          reason: "ゆきと一緒にごはんを食べた記憶",
+          evidence: "ゆきと駅前の喫茶店でパンケーキを食べた",
+          feedback: "helpful",
+          created_at: "2026-04-06T04:00:40.000Z",
+          memory: { id: "mem_daily_08", body: "近所の公園でゆきと弁当を食べた。", happened_on: "2026-04-06", happened_on_precision: "day", photo_key: null },
+          related_memory: { id: "mem_daily_05", body: "ゆきと駅前の喫茶店でパンケーキを食べた。", happened_on: "2025-05-11", happened_on_precision: "day", photo_key: null },
+        },
+      ],
+      beads: [{ happened_on: "2024-06-01", happened_on_precision: "month" }],
+    };
+    const ok = vi.fn(async () => jsonRes(200, body));
+    vi.stubGlobal("fetch", ok);
+    await expect(api.connections()).resolves.toEqual(body);
+    const [url, init] = ok.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("/api/connections");
+    expect(init.method ?? "GET").toBe("GET");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer tok-1");
+    expect(dispatchEvent).not.toHaveBeenCalled();
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonRes(401, { error: { code: "unauthorized", message: "ログインが必要です" } })));
+    await expect(api.connections()).rejects.toMatchObject({ status: 401, code: "unauthorized" });
+    expect(getTokenSync()).toBeNull();
+    expect(dispatchEvent).toHaveBeenCalledTimes(1);
+  });
+
   it("本文の無い 401 でも発火し、code は http_error", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401, statusText: "Unauthorized" })));
     await expect(api.getFacts("m1")).rejects.toMatchObject({ status: 401, code: "http_error" });

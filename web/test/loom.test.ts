@@ -1,0 +1,232 @@
+// 糸の帯（ThreadLoom）の並べ方。数値の期待値は「ふたつの日」の見本を作った gen.py の strip_svg と突き合わせたもの。
+import { describe, expect, it } from "vitest";
+import type { Precision } from "../src/api/types";
+import { layoutLoom, type LoomBead, type LoomItem, type LoomLayout } from "../src/connections/loom";
+
+const TODAY = "2026-11-07";
+const at = (happened_on: string | null, happened_on_precision: Precision) => ({ happened_on, happened_on_precision });
+
+// seed.sql の demo@example.com の記憶（起きた日がわかっている 15 件）と、11/7 に書いたひとこと 1 件 = 16 件
+const SEED_BEADS: LoomBead[] = [
+  at("2024-02-20", "day"),
+  at("2024-03-09", "day"),
+  at("2024-04-14", "day"),
+  at("2024-06-01", "month"),
+  at("2024-08-02", "day"),
+  at("2024-11-18", "day"),
+  at("2025-01-12", "day"),
+  at("2025-02-22", "day"),
+  at("2025-05-11", "day"),
+  at("2025-10-03", "day"),
+  at("2026-01-04", "day"),
+  at("2026-04-06", "day"),
+  at("2026-07-19", "day"),
+  at("2026-09-28", "day"),
+  at("2026-10-01", "month"),
+  at("2026-11-07", "day"),
+];
+
+const item = (id: string, newer: [string | null, Precision], older: [string | null, Precision], feedback: LoomItem["feedback"] = "none"): LoomItem => ({
+  id,
+  feedback,
+  memory: at(...newer),
+  related_memory: at(...older),
+});
+
+// 見本の ?n=10 と同じ 10 本（created_at の新しい順）
+const TEN: LoomItem[] = [
+  item("x-baaba", ["2026-11-07", "day"], ["2024-02-20", "day"]),
+  item("p-haruto", ["2026-11-07", "day"], ["2024-04-14", "day"], "helpful"),
+  item("p-ume", ["2026-11-07", "day"], ["2024-06-01", "month"]),
+  item("x-rain", ["2026-09-28", "day"], ["2024-11-18", "day"]),
+  item("x-park", ["2026-04-06", "day"], ["2024-04-14", "day"]),
+  item("p-yuki", ["2026-04-06", "day"], ["2025-05-11", "day"], "helpful"),
+  item("x-amazake", ["2026-01-04", "day"], ["2025-01-12", "day"], "helpful"),
+  item("x-kenshin", ["2025-10-03", "day"], ["2024-11-18", "day"]),
+  item("x-kotatsu", ["2025-01-12", "day"], ["2024-06-01", "month"], "helpful"),
+  item("x-kotatsu2", ["2025-01-12", "day"], ["2024-02-20", "day"]),
+];
+
+const numbers = (l: LoomLayout): number[] => [
+  l.width,
+  l.height,
+  l.baseline,
+  l.labelY,
+  ...l.rules.flatMap((r) => [r.x1, r.x2]),
+  ...l.labels.map((t) => t.x),
+  ...l.beads,
+  ...l.arcs.flatMap((a) => [a.x1, a.x2, a.height]),
+];
+
+const expectSane = (l: LoomLayout) => {
+  for (const n of numbers(l)) expect(Number.isFinite(n)).toBe(true);
+  for (const x of [...l.beads, ...l.arcs.flatMap((a) => [a.x1, a.x2]), ...l.rules.flatMap((r) => [r.x1, r.x2])]) {
+    expect(x).toBeGreaterThanOrEqual(10);
+    expect(x).toBeLessThanOrEqual(352);
+  }
+  for (const r of l.rules) expect(r.x1).toBeLessThanOrEqual(r.x2);
+  for (const a of l.arcs) {
+    expect(a.height).toBeGreaterThan(0);
+    expect(a.height).toBeLessThanOrEqual(54);
+    expect(a.d).not.toContain("NaN");
+  }
+};
+
+describe("layoutLoom（糸の帯）", () => {
+  it("0 本: 弧は無く、粒と年の縁だけ。年の境目は 6px あけ、年の文字は区間の真ん中", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: [], today: TODAY });
+    expectSane(l);
+    expect(l.arcs).toEqual([]);
+    expect(l).toMatchObject({ width: 362, height: 90, baseline: 60, labelY: 84 });
+    expect(l.rules).toEqual([
+      { year: 2024, x1: 13, x2: 121.2 },
+      { year: 2025, x1: 127.2, x2: 235.1 },
+      { year: 2026, x1: 241.1, x2: 349 },
+    ]);
+    expect(l.labels).toEqual([
+      { text: "2024", x: 67.1 },
+      { text: "2025", x: 181.2 },
+      { text: "2026", x: 295.1 },
+    ]);
+  });
+
+  it("16 件の記憶なら粒は 16 個。unknown は置かず、同じ日は同じ x に重なる（16 件に unknown と 11/7 をもう 1 件足すと 17 個）", () => {
+    const l = layoutLoom({ beads: [...SEED_BEADS, at(null, "unknown"), at("2026-11-07", "day")], items: [], today: TODAY });
+    expectSane(l);
+    expect(l.beads).toHaveLength(17);
+    expect(l.beads.filter((x) => x === l.beads[15])).toHaveLength(2); // 11/7 が 2 件
+    // day はその日、month は 15 日（2024-06-01 month は 2024-06-15 の位置）
+    const t0 = Date.UTC(2024, 0, 1);
+    const xOf = (y: number, m: number, d: number) => Math.round((10 + ((Date.UTC(y, m - 1, d) - t0) / (Date.UTC(2027, 0, 1) - t0)) * 342) * 10) / 10;
+    expect(l.beads[0]).toBe(xOf(2024, 2, 20));
+    expect(l.beads[3]).toBe(xOf(2024, 6, 15));
+    expect(l.beads[14]).toBe(xOf(2026, 10, 15));
+    expect(layoutLoom({ beads: SEED_BEADS, items: [], today: TODAY }).beads).toHaveLength(16);
+  });
+
+  it("year 精度の粒は 7 月 1 日に置く", () => {
+    const l = layoutLoom({ beads: [at("2024-01-01", "year"), at("2024-07-01", "day")], items: [], today: TODAY });
+    expect(l.beads[0]).toBe(l.beads[1]);
+  });
+
+  it("1 本: 弧の両端は昔の側（x1）と書いた側（x2）、高さは 8 + 30√(span/342)", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: [item("recall_seed_01", ["2026-04-06", "day"], ["2025-05-11", "day"], "helpful")], today: TODAY });
+    expectSane(l);
+    expect(l.arcs).toHaveLength(1);
+    const a = l.arcs[0]!;
+    expect(a).toMatchObject({ id: "recall_seed_01", x1: 164.8, x2: 267.7, helpful: true, feedback: "helpful" });
+    expect(a.height).toBeCloseTo(8 + 30 * Math.sqrt((267.7 - 164.8) / 342), 1);
+    // M x1,60 C x1,60−k x2,60−k x2,60（0.75k = 高さ）。k は丸める前の高さから出すので、丸めた高さとは 0.1 ほどずれうる
+    const m = /^M164\.8 60C164\.8 (-?[\d.]+) 267\.7 (-?[\d.]+) 267\.7 60$/.exec(a.d);
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe(m![2]);
+    expect(Math.abs(Number(m![1]) - (60 - a.height / 0.75))).toBeLessThanOrEqual(0.15);
+  });
+
+  it("10 本: items と同じ順に 10 本。端を分け合う糸は入れ子になり、高さは 54 以下", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: TEN, today: TODAY });
+    expectSane(l);
+    expect(l.arcs.map((a) => a.id)).toEqual(TEN.map((t) => t.id));
+    // gen.py の strip_svg と同じ高さ
+    expect(l.arcs.map((a) => [a.id, a.x1, a.x2, a.height])).toEqual([
+      ["x-baaba", 25.6, 334.8, 46.8],
+      ["p-haruto", 42.5, 334.8, 40.8],
+      ["p-ume", 61.8, 334.8, 34.8],
+      ["x-rain", 110.5, 322.4, 31.6],
+      ["x-park", 42.5, 267.7, 32.3],
+      ["p-yuki", 164.8, 267.7, 24.5],
+      ["x-amazake", 127.6, 239, 33.2],
+      ["x-kenshin", 110.5, 210, 24.2],
+      ["x-kotatsu", 61.8, 127.6, 21.2],
+      ["x-kotatsu2", 25.6, 127.6, 27.2],
+    ]);
+    // 11/7 を分け合う 3 本は、短い順に 6px ずつ高くなる
+    const h = Object.fromEntries(l.arcs.map((a) => [a.id, a.height]));
+    expect(h["p-haruto"]! - h["p-ume"]!).toBeCloseTo(6, 1);
+    expect(h["x-baaba"]! - h["p-haruto"]!).toBeCloseTo(6, 1);
+    expect(l.arcs.filter((a) => a.helpful).map((a) => a.id)).toEqual(["p-haruto", "p-yuki", "x-amazake", "x-kotatsu"]);
+  });
+
+  it("入れ子: 端を分け合う糸は、長さだけで決まる高さより高くなる。離れた糸は長さだけで決まる", () => {
+    const short = item("s", ["2026-03-01", "day"], ["2026-02-01", "day"]);
+    const shared = item("t", ["2026-03-05", "day"], ["2026-02-01", "day"]); // 昔の端を分け合う、少しだけ長い糸
+    const apart = item("u", ["2026-09-05", "day"], ["2026-08-01", "day"]); // 端が離れている
+    const l = layoutLoom({ beads: [], items: [short, shared, apart], today: TODAY });
+    expectSane(l);
+    const [s, t, u] = l.arcs;
+    const natural = (a: { x1: number; x2: number }) => 8 + 30 * Math.sqrt(Math.abs(a.x2 - a.x1) / 342);
+    expect(t!.height).toBeGreaterThan(natural(t!) + 1);
+    expect(t!.height).toBeCloseTo(s!.height + 6, 0);
+    expect(u!.height).toBeCloseTo(natural(u!), 0);
+  });
+
+  it("入れ子がいくら重なっても 54 で止まる", () => {
+    const many = Array.from({ length: 15 }, (_, i) => item(`n${i}`, ["2026-11-07", "day"], [`2026-${String(10 - (i % 9)).padStart(2, "0")}-0${1 + Math.floor(i / 9)}`, "day"]));
+    const l = layoutLoom({ beads: [], items: many, today: TODAY });
+    expectSane(l);
+    expect(Math.max(...l.arcs.map((a) => a.height))).toBe(54);
+  });
+
+  it("「いつだったか」を含む組は帯に置かない（一覧には出る）", () => {
+    const l = layoutLoom({
+      beads: SEED_BEADS,
+      items: [item("a", ["2026-11-07", "day"], [null, "unknown"]), item("b", [null, "unknown"], ["2024-06-01", "month"]), TEN[2]!],
+      today: TODAY,
+    });
+    expectSane(l);
+    expect(l.arcs.map((a) => a.id)).toEqual(["p-ume"]);
+  });
+
+  it("今年しか無いときは、年の代わりに 1月・4月・7月・10月（その月の真ん中）を出す", () => {
+    const l = layoutLoom({ beads: [at("2026-04-06", "day"), at("2026-11-07", "day")], items: [], today: TODAY });
+    expectSane(l);
+    expect(l.rules).toEqual([{ year: 2026, x1: 13, x2: 349 }]);
+    expect(l.labels.map((t) => t.text)).toEqual(["1月", "4月", "7月", "10月"]);
+    const mid = (m: number) => Math.round((10 + ((Date.UTC(2026, m - 1, 1) + Date.UTC(2026, m, 1)) / 2 - Date.UTC(2026, 0, 1)) / (365 * 86_400_000) * 342) * 10) / 10;
+    expect(l.labels.map((t) => t.x)).toEqual([mid(1), mid(4), mid(7), mid(10)]);
+  });
+
+  it("記憶が 1 件も無くても、今年の縁と月の文字を返す（NaN にならない）", () => {
+    const l = layoutLoom({ beads: [], items: [], today: TODAY });
+    expectSane(l);
+    expect(l.beads).toEqual([]);
+    expect(l.labels.map((t) => t.text)).toEqual(["1月", "4月", "7月", "10月"]);
+  });
+
+  it("「今年」は渡した today（Asia/Tokyo）の年で決まる。年が明ければ去年の粒も年の縁になる", () => {
+    const l = layoutLoom({ beads: [at("2026-12-31", "day")], items: [], today: "2027-01-01" });
+    expect(l.labels.map((t) => t.text)).toEqual(["2026", "2027"]);
+  });
+
+  it("組の端が粒より古くても（粒は新しい 500 件で切れる）、端を帯の内側に置く", () => {
+    const l = layoutLoom({ beads: SEED_BEADS, items: [item("old", ["2026-11-07", "day"], ["2019-05-01", "month"])], today: TODAY });
+    expectSane(l);
+    expect(l.rules[0]!.year).toBe(2019);
+    expect(l.arcs[0]!.x1).toBeGreaterThan(10);
+  });
+
+  it("先の日付（validate は 2100 年まで受け付ける）は、その年まで帯を伸ばして置く", () => {
+    const l = layoutLoom({ beads: [...SEED_BEADS, at("2028-03-01", "day")], items: [], today: TODAY });
+    expectSane(l);
+    expect(l.rules.map((r) => r.year)).toEqual([2024, 2025, 2026, 2027, 2028]);
+    expect(l.beads[16]).toBeLessThan(352);
+  });
+
+  it("ずっと昔の記憶があっても縁は潰れず、年の文字は重ならないよう新しい年から間引く", () => {
+    const l = layoutLoom({ beads: [at("1950-01-01", "year"), ...SEED_BEADS], items: [], today: TODAY });
+    expectSane(l);
+    expect(l.rules).toHaveLength(77);
+    expect(l.labels[l.labels.length - 1]!.text).toBe("2026");
+    for (let i = 1; i < l.labels.length; i++) expect(l.labels[i]!.x - l.labels[i - 1]!.x).toBeGreaterThanOrEqual(40);
+  });
+
+  it("同じ入力なら同じ出力。入力は書き換えない", () => {
+    const beads = structuredClone(SEED_BEADS);
+    const items = structuredClone(TEN);
+    const a = layoutLoom({ beads, items, today: TODAY });
+    const b = layoutLoom({ beads, items, today: TODAY });
+    expect(a).toEqual(b);
+    expect(beads).toEqual(SEED_BEADS);
+    expect(items).toEqual(TEN);
+  });
+});

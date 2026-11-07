@@ -8,6 +8,7 @@ import { memoriesRoutes, type MemoriesDeps } from "./routes/memories";
 import { getPhotoRoute, putPhotoRoute } from "./routes/photos";
 import { factsRoute, memoryFactsRoute } from "./routes/facts";
 import { memoryRecallsRoute, recallsRoute } from "./routes/recalls";
+import { connectionsRoute } from "./routes/connections";
 import { aiAfterSave } from "./ai/after-save";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
@@ -62,6 +63,7 @@ export const createApp = (deps: AppDeps = {}): AppType => {
   authed.route("/memories", memoryRecallsRoute());
   authed.route("/facts", factsRoute());
   authed.route("/recalls", recallsRoute());
+  authed.route("/connections", connectionsRoute());
   authed.route("/memories", putPhotoRoute());
   authed.route("/photos", getPhotoRoute());
 

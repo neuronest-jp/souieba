@@ -38,6 +38,21 @@ export type RecalledBy = Omit<Recall, "related_memory"> & {
   memory: MemorySummary; // 新しい記憶（この記憶を思い出した側）
 };
 
+// つながり（GET /api/connections）。一組 = 一本の糸。memory が書いたひとこと（新しい側）、related_memory が思い出した昔のひとこと。
+// API は not_related を返さないので feedback は none / helpful だけ（画面の中で反応を変えた後の状態は、画面側で別に持つ）
+export type Connection = Recall & {
+  feedback: "none" | "helpful";
+  memory: MemorySummary;
+};
+
+// 糸の帯の粒。起きた日がわかっている自分の記憶の日付だけ（unknown は入らない）
+export type Bead = {
+  happened_on: string;
+  happened_on_precision: Exclude<Precision, "unknown">;
+};
+
+export type ConnectionsResponse = { items: Connection[]; beads: Bead[] };
+
 export type MemoryDetail = {
   memory: Memory;
   facts: { pending: boolean; items: Fact[] };
