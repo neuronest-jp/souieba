@@ -24,7 +24,7 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 > People, places, things and what appears in a photo ("cherry blossoms, maybe?") stay candidates until you tap 「そう」 (yes); nothing guessed is ever stored as a fact.
 > It grew out of everyday life in Akita, where remembering who gave you what, and what they like, is what keeps people close — and out of how much it helps when Claude remembers what you said last time.
 > Souieba brings that "someone remembers" feeling to people who use a phone every day but have never thought of telling an AI about their day: nothing to compose, just one line.
-> Built in one week with Claude Code at the center: multi-agent workflows that compare designs and adversarially verify every review finding, the iOS Simulator MCP for builds and measurements, hooks that guard secrets and signing files, and project Skills for the steps we repeat.
+> Built in six days with Claude Code at the center: multi-agent workflows that compare designs and adversarially verify every review finding, the iOS Simulator MCP for builds and measurements, hooks that guard secrets and signing files, and project Skills for the steps we repeat.
 
 ## どんな困りごとから
 
@@ -45,9 +45,9 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 | **書く** | ひとことと写真 1 枚。日付は「いつ？」で、日・月・年のどれかでざっくり決められる（「2024 年の 6 月ごろ」でもいい） |
 | **そういえば。** | 残すと、関係のある昔の記憶だけが、関係の理由と当時の原文の引用を添えて一筆箋で浮かぶ（最大 3 件、ふだんは保存して 2〜6 秒）。関係が無ければ何も出ない |
 | **候補は候補のまま** | 人・場所・もの・日付と、写真から見えたもの（「桜でしょうか」）は候補として出るだけ。「そう」と頷くまで、記憶にも次の「そういえば。」にも使わない。「ちがう」と言えばそれまで |
-| **つながり** | 浮かんだ昔の記憶と今日のひとことが、ふたつの日として糸で結ばれる。昔の記憶の画面で「そうだった」と返すと本縫いになる。書きためるほど組が増えていく |
+| **つながり** | 浮かんだ昔の記憶と今日のひとことが、ふたつの日として糸で結ばれる。昔の記憶の画面で「そうだった」と返すと本縫いになる。上の帯は年表で、横に送ると昔の組をたどれる。書きためるほど組が増えていく |
 | **年月でたどる** | 「これまで」は起きた日の年月ごとに区切られ、左上に「2025年 11月」の札が浮かぶ。札を押すと年ごとの 12 か月のマスから選んで、その月へ |
-| **ことばの地図** | 書きためた記憶から、その人の暮らしを形づくっている言葉を年ごとに並べた地図。年にだけ出る言葉はその年の周りに、年をまたぐ言葉は橋になる。言葉を押すと、その言葉が出てくる記憶が原文のまま並ぶ |
+| **ことばの地図** | 書きためた記憶から、その人の暮らしを形づくっている言葉を年ごとに並べた地図。その年にだけ出る言葉はその年の周りに置き、年をまたぐ言葉は細い糸で年と結ぶ。言葉を押すと、その言葉が出てくる記憶が原文のまま並ぶ |
 | **開きたくなる工夫** | 時間帯と季節で替わるあいさつと問いかけ、このごろ 7 日の押し葉、去年以前のいまごろの「あの日のひとこと」、季節で替わる押し葉と封蝋。続けた日数は数えない（途切れを責めない） |
 | **iPhone の手ざわり** | 画面の移り変わり、左端からなぞって戻る、シートをなぞって閉じる、押した直後だけの触覚、鍵盤の上に残る「保存する」。「動きを減らす」の設定ではすべての動きを止める |
 
@@ -68,11 +68,11 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 - **Claude の答えをそのまま信じない。** Worker が引用を一字ずつ原文と照らし、本文に無い引用・その人のものでない記憶・自分自身を指す札・4 件目以降を捨てる。候補は値まで本文の言葉かを見る（[worker/src/ai/verify.ts](worker/src/ai/verify.ts)）
 - 関係が無ければ空の配列を返してもらい、それを正しい答えとして何も保存しない。過去の記憶が無ければそもそも呼ばない
 - **ことばの地図**: Claude が全部の記憶を読んで、暮らしを形づくっている言葉と本文に出てくる形を選ぶ。**回数と引用は Worker が本文から数える**（本文に無い形は捨てる。Claude に数えさせない）。選んだ言葉の一覧だけを置き、見るたびにいまの本文で数え直すので、消した記憶の言葉は出ない（[ADR-0014](docs/decisions/0014-keyword-map.md)）
-- 用途ごとに使い分ける: 候補は `effort: low`、想起は `effort: medium`。決まった指示は system に置いてプロンプトキャッシュに乗せる。20 秒で打ち切り、失敗は静かに何も出さない（理由は `ai_runs` に残す）
+- 用途ごとに使い分ける: 候補とことばの地図は `effort: low`、想起は `effort: medium`。決まった指示は system に置いてプロンプトキャッシュに乗せる。20 秒で打ち切り（ことばの地図は全部の記憶を読むので 60 秒）、失敗は静かに何も出さない（理由は `ai_runs` に残す）
 
 ## Claude Code でどう作ったか
 
-7 日間、Claude Code を開発の真ん中に置きました。仕様書の組み直しから、設計の判断、実装、テスト、iPhone 実機への入れ込みまでです。目的ごとに道具を分けています（数字は 11/7 時点。棚卸しの根拠は [docs/submission.md](docs/submission.md)）。
+6 日間、Claude Code を開発の真ん中に置きました。仕様書の組み直しから、設計の判断、実装、テスト、iPhone 実機への入れ込みまでです。目的ごとに道具を分けています（数字は 11/7 時点。棚卸しの根拠は [docs/submission.md](docs/submission.md)）。
 
 | 目的 | 使ったもの | 跡 |
 |---|---|---|
@@ -104,7 +104,7 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 iPhone のアプリは開発者の Mac から直接入れているので、手元の iPhone では動かせません。
 
 1. デモ動画（3 分）を見る
-2. ブラウザで試す: 下の「動かし方」で `pnpm preview`（http://localhost:8787）を開き、招待コード `dev` と `demo@example.com` で入る。デモの過去の記憶は `pnpm db:seed:local` で入る。`.dev.vars` に `ANTHROPIC_API_KEY` が要る（無いと札は出ない）。「スーパーで青梅を見かけた」と書くと、2024 年のおばあちゃんの梅干しの記憶が浮かぶ
+2. ブラウザで試す: 下の「動かし方」で `pnpm preview`（http://localhost:8787）を開き、招待コード `dev` と `demo@example.com` で入る。デモの過去の記憶は `pnpm db:seed:local` で入る（動画と写しに使った架空の物語のデータは `pnpm db:seed:story:local`）。`.dev.vars` に `ANTHROPIC_API_KEY` が要る（無いと札は出ない）。「スーパーで青梅を見かけた」と書くと、2024 年のおばあちゃんの梅干しの記憶が浮かぶ
 3. iPhone で試す: [docs/setup-capacitor.md](docs/setup-capacitor.md)（Mac と Xcode が要る）
 
 ## いまの制約
@@ -125,7 +125,7 @@ iPhone のアプリは開発者の Mac から直接入れているので、手�
 flowchart LR
   A["iPhone アプリ<br/>Capacitor + Vue 3 + Tailwind"] -->|"Bearer JWT"| W["Cloudflare Workers<br/>Hono"]
   W --> D[("D1<br/>記憶・候補・札")]
-  W --> R[("R2<br/>写真")]
+  W --> R[("R2<br/>写真・言葉の一覧")]
   W -->|"Structured Outputs"| C["Claude<br/>Anthropic API"]
   C -->|"引用を原文と照らしてから保存"| W
 ```
@@ -149,7 +149,7 @@ flowchart LR
 | docs/decisions/ | 判断の記録（ADR） |
 | docs/submission.md | 提出物と審査の観点 |
 | docs/demo-video.md | デモ動画の構成 |
-| demo/fixtures/ | デモ 4 シナリオのフィクスチャ |
+| demo/fixtures/ | デモ 4 シナリオのフィクスチャと、撮影用の架空の物語のデータ（story.sql） |
 
 ## 素材とライセンス
 
