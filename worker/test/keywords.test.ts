@@ -109,9 +109,9 @@ describe("verifyKeywords", () => {
 });
 
 describe("一文の切り出し", () => {
-  it("。！？ と改行で区切る。閉じ括弧は前の文に付け、各文は本文の部分文字列のまま", () => {
-    const body = "朝から雨。「行こうか！」と言った\nそらが笑った？ 展望台へ";
-    expect(splitSentences(body)).toEqual(["朝から雨。", "「行こうか！」", "と言った", "そらが笑った？", "展望台へ"]);
+  it("。！？ と改行で区切る。括弧の中では区切らず、閉じ括弧は前の文に付ける。各文は本文の部分文字列のまま", () => {
+    const body = "朝から雨。「行こうか！」と言った\nそらが笑った？ 展望台へ。（よかった。）「立った！」\n「閉じ忘れ。\n次の行";
+    expect(splitSentences(body)).toEqual(["朝から雨。", "「行こうか！」と言った", "そらが笑った？", "展望台へ。", "（よかった。）「立った！」", "「閉じ忘れ。", "次の行"]);
     for (const s of splitSentences(body)) expect(body.includes(s)).toBe(true);
   });
 

@@ -43,19 +43,23 @@ export const yearOf = (m: Pick<MemoryRow, "happened_on" | "happened_on_precision
 };
 
 const TERMINATORS = new Set(["。", "！", "？", "!", "?"]);
-// 終わりの記号のすぐ後ろの閉じ括弧は、その文に付ける（「楽しかった。」と言った → 「楽しかった。」 / と言った）
+// 括弧の中の 。！？ では区切らない（みさきと二人で「立った！」と大声を出した。→ 1 文）。閉じ忘れても改行で区切る
+const OPENERS = new Set(["「", "『", "（", "(", "【", "〈", "《", "“"]);
+// 終わりの記号のすぐ後ろの閉じ括弧は、その文に付ける
 const CLOSERS = new Set(["」", "』", "）", ")", "】", "〉", "》", "”", "’"]);
 
-/** 本文を 。！？ と改行で区切る。各文は本文から切り出したまま（前後の空白だけ除く。本文の部分文字列のまま） */
+/** 本文を 。！？ と改行で区切る（括弧の中では区切らない）。各文は本文から切り出したまま（前後の空白だけ除く。本文の部分文字列のまま） */
 export const splitSentences = (body: string): string[] => {
   const out: string[] = [];
   let cur = "";
   let ended = false;
+  let depth = 0;
   const push = () => {
     const t = cur.trim();
     if (t) out.push(t);
     cur = "";
     ended = false;
+    depth = 0;
   };
   for (const ch of body) {
     if (ch === "\n" || ch === "\r") {
@@ -64,7 +68,9 @@ export const splitSentences = (body: string): string[] => {
     }
     if (ended && !CLOSERS.has(ch) && !TERMINATORS.has(ch)) push();
     cur += ch;
-    if (TERMINATORS.has(ch)) ended = true;
+    if (OPENERS.has(ch)) depth += 1;
+    else if (CLOSERS.has(ch)) depth = Math.max(0, depth - 1);
+    else if (TERMINATORS.has(ch) && depth === 0) ended = true;
   }
   push();
   return out;
