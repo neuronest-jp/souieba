@@ -315,14 +315,64 @@ describe("横に送る年表（scroll。11/8）", () => {
     expect(l.width).toBeLessThanOrEqual(3600);
   });
 
-  it("幅を延ばしても、長くまたぐ弧は帯の高さに収まる（上にはみ出さない）", () => {
+  it("送る帯は高さ 120（縁 90）。弧の高さはまたぐ長さで決まり、頂点は上の端から 6px の内に収まる（長い弧が上の端に積み重ならない）", () => {
     const l = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402, scroll: true });
+    expect(l).toMatchObject({ height: 120, baseline: 90, labelY: 114 });
     for (const a of l.arcs) {
-      expect(a.height).toBeLessThanOrEqual(54);
-      expect(l.baseline - a.height / 0.75).toBeGreaterThanOrEqual(-12); // 光の太い線（9px）の半分ほどまで
+      expect(a.height).toBeLessThanOrEqual(l.baseline - 6);
+      expect(l.baseline - a.height).toBeGreaterThanOrEqual(6); // 曲線の頂点（光の太い線 9px の半分より内）
     }
-    const top = Math.min(...l.arcs.map((a) => l.baseline - a.height / 0.75));
-    expect(top).toBeGreaterThanOrEqual(-12);
+    const long = l.arcs.find((a) => a.id === "long")!;
+    const short = l.arcs.find((a) => a.id === "short")!;
+    // 長さで決まる: 10 + 16·log2(1 + len / 60)
+    expect(short.height).toBeCloseTo(10 + 16 * Math.log2(1 + (short.x2 - short.x1) / 60), 0);
+    expect(long.height).toBeGreaterThan(short.height + 40);
+    // 高さが散らばる（11/8 夜まで: 長い弧が入れ子の +6 でみな 54 に揃い、上の端の横線の束になった）
+    const atTop = l.arcs.filter((a) => a.height >= l.baseline - 6).length;
+    expect(atTop).toBeLessThanOrEqual(1);
+    expect(new Set(l.arcs.map((a) => Math.round(a.height))).size).toBeGreaterThan(l.arcs.length / 2);
+  });
+
+  it("送る帯の弧はなだらかな放物線（制御点は両端から長さの 1/3 内側）。見える幅の帯は今までどおり両端の真上", () => {
+    const l = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402, scroll: true });
+    const a = l.arcs.find((x) => x.id === "long")!;
+    expect(a.c1).toBeCloseTo(a.x1 + (a.x2 - a.x1) / 3, 0);
+    expect(a.c2).toBeCloseTo(a.x2 - (a.x2 - a.x1) / 3, 0);
+    const m = /^M([\d.]+) 90C([\d.]+) (-?[\d.]+) ([\d.]+) (-?[\d.]+) ([\d.]+) 90$/.exec(a.d)!.slice(1).map(Number);
+    expect([m[0], m[1], m[3], m[5]]).toEqual([a.x1, a.c1, a.c2, a.x2]);
+    expect(m[2]).toBeCloseTo(l.baseline - a.height / 0.75, 0); // 頂点の高さが h になる制御点の y
+    expect(m[4]).toBe(m[2]);
+    const fit = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402 });
+    for (const f of fit.arcs) {
+      expect(f.c1).toBe(f.x1);
+      expect(f.c2).toBe(f.x2);
+    }
+  });
+
+  it("送る帯では、端を分け合うだけの糸は高くしない（傾きで分かれる）。両端とも重なる糸だけ 6 高くする", () => {
+    const beads = [at("2020-01-05", "day")];
+    const items = [
+      item("a", ["2026-11-07", "day"], ["2023-03-01", "day"]),
+      item("b", ["2026-11-07", "day"], ["2021-06-01", "day"]),
+      item("c", ["2026-11-07", "day"], ["2023-03-01", "day"]),
+    ];
+    const l = layoutLoom({ beads, items, today: TODAY, width: 402, scroll: true });
+    const h = Object.fromEntries(l.arcs.map((x) => [x.id, x]));
+    const natural = (x: { x1: number; x2: number }) => 10 + 16 * Math.log2(1 + Math.abs(x.x2 - x.x1) / 60);
+    expect(h.b!.height).toBeCloseTo(natural(h.b!), 0); // 新しい端を a と分け合うが、高くならない
+    expect(h.a!.height).toBeCloseTo(natural(h.a!), 0);
+    expect(h.c!.height).toBeCloseTo(h.a!.height + 6, 0); // a と両端とも同じ
+  });
+
+  it("pickArc は放物線の弧の上で当たる（両端の真上を通る形で当てない）", () => {
+    const l = layoutLoom({ beads: storyBeads, items: [STORY.find((x) => x.id === "long")!], today: TODAY, width: 402, scroll: true });
+    const a = l.arcs[0]!;
+    // t = 0.25 の点（放物線では x = x1 + len/4 で、高さは 0.75h）
+    const x = a.x1 + (a.x2 - a.x1) / 4;
+    const y = l.baseline - 0.75 * a.height;
+    expect(pickArc(l, x, y)).toBe("long");
+    // 弧から 22 より遠ければ当たらない
+    expect(pickArc(l, x, y - 23)).toBeNull();
   });
 
   it("pickArc は帯の全体の座標で当たる（見える位置に送った量を足す）。指の大きさ（半径 22）の内なら当たる", () => {

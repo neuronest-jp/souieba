@@ -5,7 +5,13 @@
 //   t0 は一番古い年の 1 月 1 日、t1 は今年の翌年の 1 月 1 日。t は day ならその日、month は 15 日、year は 7 月 1 日。unknown は置かない
 //   弧の高さ（0.75k）= 8 + 30√(span / 342)。短い糸から順に決め、端を 6px 以内で分け合う糸は先に置いた糸より 6px 高くして入れ子にする（最大 54）
 // 横に送る年表（scroll。11/8、ADR-0009 の末尾の追記）: 見える幅に詰めると 1 年が 150px を割るときだけ、1 年 180px で全体の幅を延ばす
-//   （帯の幅は 3600px まで。それより長い年月は 1 年を縮める）。x の式は同じで、right − left が全体の幅になる。弧の高さも全体の幅で決める
+//   （帯の幅は 3600px まで。それより長い年月は 1 年を縮める）。x の式は同じで、right − left が全体の幅になる。
+//   実際に送る帯（全体の幅 > 見える幅）では、弧の形と高さを変える（11/8 夜。見える幅の上の式のままだと、何年もまたぐ弧が両端で真上に立ち、
+//   上で平らになって、入れ子の +6 で 54 に積み重なり、見える 362px の中では上の端の横線の束にしか見えなかった）:
+//     - 帯の高さは 120（縁 90、年の文字 114）。弧の高さはまたぐ長さで決める 10 + 16·log2(1 + len / 60)（1 か月 ≒ 15、半年 ≒ 31、1 年 ≒ 42、
+//       2 年 ≒ 55、4 年 ≒ 69、6 年 ≒ 80）。上限は 縁 − 6（84）
+//     - 形はなだらかな放物線（制御点を両端から長さの 1/3 内側に置く。頂点の高さは同じ式で h）。端を分け合う糸も傾きで分かれるので、
+//       入れ子で高くするのは両端とも 6px 以内で重なる糸だけ
 import type { Precision } from "../api/types";
 import { todayInTokyo } from "../date";
 
@@ -27,7 +33,9 @@ export type LoomArc = {
   x1: number; // 昔のひとこと（related_memory）の位置
   x2: number; // 書いたひとこと（memory）の位置
   height: number; // 弧の頂点の高さ（縁からの px）= 0.75k
-  d: string; // M x1,base C x1,base−k x2,base−k x2,base
+  c1: number; // 制御点の x（見える幅の帯は x1、送る帯は x1 から長さの 1/3 内側）
+  c2: number; // 制御点の x（見える幅の帯は x2、送る帯は x2 から長さの 1/3 内側）
+  d: string; // M x1,base C c1,base−k c2,base−k x2,base
   helpful: boolean; // 確かめた（そうだった）糸か。実線と塗った結び目で描く
   feedback: LoomItem["feedback"];
 };
@@ -49,7 +57,7 @@ export type LoomInput = {
   items: readonly LoomItem[];
   today?: string; // Asia/Tokyo の今日 'YYYY-MM-DD'。省略すると todayInTokyo()
   width?: number; // 見える幅（362）
-  height?: number; // 90
+  height?: number; // 90（送る帯は 120）
   // 横に送る年表にする（ThreadLoom）。省略すると、11/7 までの帯と同じく見える幅に詰める（見本の数値と突き合わせるテストのため）
   scroll?: boolean;
 };
@@ -59,6 +67,7 @@ const YEAR_GAP = 6; // 年の境目のすきま
 const NEAR = 6; // 端を分け合うとみなす距離
 const NEST_STEP = 6; // 入れ子にするとき、先の糸より高くする量
 const MAX_ARC = 54;
+const SCROLL_HEIGHT = 120; // 送る帯の高さ（長さで弧の高さを散らす余地）
 const LABEL_SPACING = 44; // 年の文字（14px の「2024」）が重ならない間隔。狭ければ間引く
 const LABEL_HALF = 16; // 文字の半分の幅。viewBox からはみ出さないよう中心をこの内側に収める
 const QUARTER_MONTHS = [1, 4, 7, 10] as const;
@@ -93,9 +102,6 @@ const jan1 = (y: number): number => Date.UTC(y, 0, 1) / DAY_MS;
 
 export const layoutLoom = (input: LoomInput): LoomLayout => {
   const view = input.width ?? 362;
-  const height = input.height ?? 90;
-  const baseline = height - 30;
-  const labelY = height - 6;
   const thisYear = Number((input.today ?? todayInTokyo()).slice(0, 4));
 
   const beadDays = input.beads.map(dayOf).filter((b): b is NonNullable<typeof b> => b !== null);
@@ -115,6 +121,10 @@ export const layoutLoom = (input: LoomInput): LoomLayout => {
     input.scroll && fitYear < LOOM_MIN_YEAR
       ? Math.max(view, Math.round(2 * PAD + yearCount * Math.min(LOOM_YEAR, (LOOM_MAX_WIDTH - 2 * PAD) / yearCount)))
       : view;
+  const scrolls = width > view;
+  const height = input.height ?? (scrolls ? SCROLL_HEIGHT : 90);
+  const baseline = height - 30;
+  const labelY = height - 6;
   const left = PAD;
   const right = width - PAD;
   const span = right - left;
@@ -158,14 +168,16 @@ export const layoutLoom = (input: LoomInput): LoomLayout => {
   const order = [...placedIn].sort((a, b) => a.len - b.len || a.i - b.i);
   const heightOf = new Map<number, number>();
   const placed: Array<{ x1: number; x2: number; h: number }> = [];
+  const maxArc = scrolls ? baseline - 6 : Math.min(MAX_ARC, baseline - 6);
   for (const a of order) {
-    let h = 8 + 30 * Math.sqrt(a.len / span);
+    let h = scrolls ? 10 + 16 * Math.log2(1 + a.len / 60) : 8 + 30 * Math.sqrt(a.len / span);
     for (const p of placed) {
-      const near =
-        Math.abs(p.x1 - a.x1) < NEAR || Math.abs(p.x2 - a.x2) < NEAR || Math.abs(p.x1 - a.x2) < NEAR || Math.abs(p.x2 - a.x1) < NEAR;
+      const near = scrolls
+        ? Math.abs(p.x1 - a.x1) < NEAR && Math.abs(p.x2 - a.x2) < NEAR
+        : Math.abs(p.x1 - a.x1) < NEAR || Math.abs(p.x2 - a.x2) < NEAR || Math.abs(p.x1 - a.x2) < NEAR || Math.abs(p.x2 - a.x1) < NEAR;
       if (near) h = Math.max(h, p.h + NEST_STEP);
     }
-    h = Math.min(h, Math.min(MAX_ARC, baseline - 6));
+    h = Math.min(h, maxArc);
     heightOf.set(a.i, h);
     placed.push({ x1: a.x1, x2: a.x2, h });
   }
@@ -176,12 +188,16 @@ export const layoutLoom = (input: LoomInput): LoomLayout => {
     const x1 = round1(a.x1);
     const x2 = round1(a.x2);
     const top = round1(baseline - h / 0.75);
+    const c1 = scrolls ? round1(a.x1 + (a.x2 - a.x1) / 3) : x1;
+    const c2 = scrolls ? round1(a.x2 - (a.x2 - a.x1) / 3) : x2;
     return {
       id: it.id,
       x1,
       x2,
       height: round1(h),
-      d: `M${x1} ${baseline}C${x1} ${top} ${x2} ${top} ${x2} ${baseline}`,
+      c1,
+      c2,
+      d: `M${x1} ${baseline}C${c1} ${top} ${c2} ${top} ${x2} ${baseline}`,
       helpful: it.feedback === "helpful",
       feedback: it.feedback,
     };
@@ -206,8 +222,8 @@ export const pickArc = (layout: LoomLayout, x: number, y: number, reach = 22): s
     for (let i = 0; i <= ARC_SAMPLES; i++) {
       const t = i / ARC_SAMPLES;
       const u = 1 - t;
-      // M x1,base C x1,top x2,top x2,base
-      const px = u * u * u * a.x1 + 3 * u * u * t * a.x1 + 3 * u * t * t * a.x2 + t * t * t * a.x2;
+      // M x1,base C c1,top c2,top x2,base
+      const px = u * u * u * a.x1 + 3 * u * u * t * a.c1 + 3 * u * t * t * a.c2 + t * t * t * a.x2;
       const py = u * u * u * layout.baseline + 3 * u * u * t * top + 3 * u * t * t * top + t * t * t * layout.baseline;
       dist = Math.min(dist, Math.hypot(px - x, py - y));
     }
