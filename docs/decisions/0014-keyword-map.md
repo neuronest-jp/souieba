@@ -16,18 +16,19 @@
 - `POST /api/keywords`（同期で Claude を 1 回）: その人の記憶を新しい順（一覧と同じ並び）に 200 件まで、本文と起きた日だけを渡す。本文の合計が 60,000 字を越える前で止める（1 件 2,000 字まであるので、待ち時間と量に上限を置く。依頼の「200 件まで」に足した上限）。
   Claude には「その人の暮らしを形づくっている言葉」を最大 40 個、`{ keywords: [{ label, kind: person|place|thing|event|feeling, surfaces: [本文に出てくる形のまま 1〜3 個] }] }`（`additionalProperties: false`）で選ばせる。
   プロンプト（`KEYWORDS_SYSTEM`）: 一般的すぎる語を除く、本文に無い言葉を作らない（まとめ言葉・言い換えにしない）、人物の年齢・感情・関係を推しはからない、気持ちは本文に言葉として書かれたものだけ。effort は low、待つのはこの呼び出しだけ 60 秒（`AiRequest.timeout_ms`。ほかは 20 秒のまま）。
-- 検証（`verifyKeywords`）: surfaces は渡した本文のどれかに逐語で含まれる形だけ残す（エスケープを戻した形でも照合。1 字のかな・英数字は捨てる。漢字 1 字は残す）。残らなければ言葉ごと捨てる。label が本文に無ければ、残った最初の形に替える（本文に無い言葉を地図に出さない。原則 3）。label の重複を除いて 40 個まで。
+- 検証（`verifyKeywords`）: surfaces は渡した本文のどれかに逐語で含まれる形だけ残す（エスケープを戻した形でも照合。1 字のかな・英数字は捨てる。漢字 1 字は残す）。残らなければ言葉ごと捨てる。label が本文に無いか、残った形のどれにも含まれなければ、残った最初の形に替える（本文に無い言葉を地図に出さない。本文の別の所にある語でも、数える形と結び付かないまとめ言葉を、ほかの形の回数と引用に付けて出さない。原則 1・3。プロンプトで頼むだけにせず、確かめる側で止める）。label の重複を除いて 40 個まで。
 - 数え方（`worker/src/keywords/count.ts` の `buildKeywordMap`。Worker の決め打ち。Claude に数を言わせない）:
   - 記憶に「出てくる」= surfaces のどれかが本文の部分文字列（正規化しない。X-7）。1 つの記憶は何度出てきても 1 回
   - 年 = 起きた日の年。「いつだったか」の記憶は背骨に置けないので、数にも引用にも入れない（Claude には渡す）
   - 合計 2 回未満は捨てる。1 つの年だけに出る言葉は leaf（年ごとに回数の多い順に 4 つまで）、2 つ以上の年に出る言葉は bridge（合計の多い順に 8 つまで。つなぐのは回数の多い年 3 つまで、同じ回数なら新しい年）。同じ数なら Claude が先に挙げた順
   - mentions: 新しい順に 10 件まで。各件は surface を含む本文の一文（。！？ と改行で区切る。括弧の中では区切らない）。原文のまま返し、画面が言葉の所に印を付ける
-- 地図に出す言葉は、いまの本文に出てくる形にする（label が消した記憶にしか無かったら、いちばん多く出てくる形に替える）。
+- 地図に出す言葉は、いまの本文に当たった形に含まれるものにする（label が消した記憶にしか無かったら、または当たった形と結び付かない語なら、いちばん多く出てくる形に替える）。
 
 ### 2. R2 には言葉の一覧だけを置き、見るたびに数え直す（D1 のマイグレーションは足さない）
 
 - 置き場は写真と同じバケットの `maps/<user>/keywords.json`。中身は `{ version: 1, generated_at, memory_count, keywords: [{ label, kind, surfaces }] }` だけ（本文・引用・数は置かない）。`GET /api/photos/*` は `photos/<user>/` の下しか返さないので、画面から直接は読めない。
 - `GET /api/keywords` は R2 の一覧を、いまの D1 の本文（起きた日の年が分かるもの、新しい順に 2,000 件まで）で毎回数え直す。だから消した記憶・直した本文の引用は出ず、2 回を割った言葉は地図から外れる（原則 5「削除は即時」と「記憶はその人のもの」）。自分の記憶だけを読む（X-11）。
+- 記憶を消したら（`DELETE /api/memories/:id`）、その本文にだけ出てきた形を R2 の一覧からも外す（`forgetDeletedBody`）。画面は数え直しで消えるが、置き場に消した本文の断片（label・surfaces）を残さない（写真・候補・札・`ai_runs` と同じく、記憶と一緒に消える）。調べるのは消した本文に出てくる形だけで、残っている本文（「いつだったか」も含む）に 1 回の問い合わせで当てる。失敗しても記憶の削除は `204` のまま。
 - `stale_count` は地図を作ったあとに書いた記憶の数（`created_at > generated_at`）。`generated_at` は Claude を呼ぶ前、記憶を読んだ時刻（待っている間に書いたひとことも「新しいひとこと」として数える）。
 - 記憶が 8 件未満なら `POST` は 400（`few`）で、Claude を呼ばず、`ai_runs` も R2 も作らない。`GET` も `reason: "few"` を付ける。
 
@@ -58,12 +59,13 @@
 
 - 実際の Claude（Opus 5.5、effort low）で、物語のデータ（77 件）が 60 秒に収まるか、どんな言葉が選ばれるかを見ていない。iPhone の WebView の通信が 60 秒を越えたときの振る舞い（URLSession の既定の 60 秒に近い）も見ていない
 - 同時に 2 回集めたら、あとから終わった方が残る（画面はボタンを隠すので、ふつうは起きない）
+- 集めている間（Claude を待つ数十秒）に記憶を消すと、Claude に渡した本文から選んだ形が、消したあとで置き場に書かれることがある。見るたびに数え直すので画面には出ず、次に集めなおせば外れる。Claude の答えのあとで記憶がまだあるかを確かめ直すことはしていない
 - 部分文字列で数えるので、「泣き」が「夜泣き」に、「海」が「海老」に当たる。形を選ぶのは Claude なので、プロンプトで「本文に出てくる形のまま」と頼むだけにした
 - bridge は合計の多い順に 8 つまでなので、物語のデータの「展望台」（2020 と 2023 に 1 回ずつ）のように回数の少ない橋は、ほかの多い言葉に押し出されることがある
 - 地図の中で言葉どうしが重ならないことはテストで確かめたが、実機の文字の幅（見積もりより広い字体）では確かめていない
 
 ## 影響
 
-- worker: `routes/keywords.ts`（新規）、`ai/keywords.ts`（新規）、`keywords/count.ts`・`keywords/store.ts`（新規）、`db/keywords.ts`（新規）、`ai/schemas.ts`（`KEYWORDS_SCHEMA`）、`ai/prompts.ts`（`KEYWORDS_SYSTEM`）、`ai/verify.ts`（`verifyKeywords`）、`ai/client.ts`（`timeout_ms`）、`db/ai_runs.ts`（`memoryId` に null）、`index.ts`
+- worker: `routes/keywords.ts`（新規）、`ai/keywords.ts`（新規）、`keywords/count.ts`・`keywords/store.ts`（新規）、`db/keywords.ts`（新規）、`ai/schemas.ts`（`KEYWORDS_SCHEMA`）、`ai/prompts.ts`（`KEYWORDS_SYSTEM`）、`ai/verify.ts`（`verifyKeywords`）、`ai/client.ts`（`timeout_ms`）、`db/ai_runs.ts`（`memoryId` に null）、`index.ts`、`routes/memories.ts`（DELETE のあとに `forgetDeletedBody`）
 - web: `screens/WordsScreen.vue`・`components/words/WordSheet.vue`・`words/layout.ts`・`styles/words.css`（新規）、`composables/useScreen.ts`（`#words`、`From` に `words`、`tabOfScreen`）、`App.vue`、`screens/TimelineScreen.vue`（入口だけ）、`screens/MemoryDetailScreen.vue`（「‹ ことばの地図」）、`api.ts`・`api/types.ts`
 - D1 のマイグレーションは足していない。R2 は写真と同じバケットに `maps/` を足した

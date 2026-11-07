@@ -2,6 +2,7 @@
 // 置くのは label・kind・surfaces と、作った時刻・そのときの記憶の件数だけ（本文・引用・数は置かない。見るたびに D1 から数え直す）。
 // GET /api/photos/* は photos/<user>/ の下しか返さないので、ここは画面から直接は読めない
 import { KEYWORD_KINDS } from "../ai/schemas";
+import { surfacesStillWritten } from "../db/keywords";
 import type { StoredKeyword } from "./count";
 
 export const mapKey = (userId: string) => `maps/${userId}/keywords.json`;
@@ -35,4 +36,27 @@ export async function readStoredMap(bucket: R2Bucket, userId: string): Promise<S
 
 export async function writeStoredMap(bucket: R2Bucket, userId: string, map: StoredMap): Promise<void> {
   await bucket.put(mapKey(userId), new TextEncoder().encode(JSON.stringify(map)), { httpMetadata: { contentType: "application/json" } });
+}
+
+/**
+ * 記憶を消したとき、その本文にだけ出てきた形を置き場から外す（原則 5「削除は即時」。DELETE /api/memories/:id のあと）。
+ * 地図は見るたびに数え直すので画面には出ないが、置き場に消した本文の断片（label・surfaces）を残さない。
+ * 調べるのは消した本文に出てくる形だけ。残っている本文のどれにも出てこない形を外し、形が 1 つも残らない言葉は外す。
+ * label が残った形のどれにも含まれなくなったら、残った最初の形に替える（verifyKeywords と同じ決め方）。変わらなければ書かない
+ */
+export async function forgetDeletedBody(env: { DB: D1Database; PHOTOS: R2Bucket }, userId: string, body: string): Promise<void> {
+  const stored = await readStoredMap(env.PHOTOS, userId);
+  if (!stored) return;
+  const candidates = [...new Set(stored.keywords.flatMap((k) => k.surfaces))].filter((s) => body.includes(s));
+  if (candidates.length === 0) return;
+  const alive = await surfacesStillWritten(env.DB, userId, candidates);
+  const gone = new Set(candidates.filter((s) => !alive.has(s)));
+  if (gone.size === 0) return;
+  const keywords = stored.keywords.flatMap((k) => {
+    const surfaces = k.surfaces.filter((s) => !gone.has(s));
+    if (surfaces.length === 0) return [];
+    const label = surfaces.some((s) => s.includes(k.label)) ? k.label : surfaces[0]!;
+    return [{ label, kind: k.kind, surfaces }];
+  });
+  await writeStoredMap(env.PHOTOS, userId, { ...stored, keywords });
 }

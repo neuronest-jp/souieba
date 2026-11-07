@@ -1,7 +1,7 @@
 // ことばの地図（ADR-0014、requirements F10）。Claude は呼ばない（fakeCall）。
 // 検証（verifyKeywords）・数え方（buildKeywordMap）の純粋関数と、POST / GET /api/keywords の流れ（R2 の置き場、ai_runs、
 // 8 件未満、消した記憶、ほかの人の記憶、Claude の失敗）
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiCaller, AiRequest } from "../src/ai/client";
 import { KEYWORDS_TIMEOUT_MS, pickForPrompt } from "../src/ai/keywords";
 import { KEYWORDS_SCHEMA } from "../src/ai/schemas";
@@ -10,7 +10,7 @@ import { DEV_USER_HEADER } from "../src/auth";
 import type { Env } from "../src/env";
 import { createApp } from "../src/index";
 import { buildKeywordMap, sentenceWith, splitSentences, type CountMemory, type StoredKeyword } from "../src/keywords/count";
-import { mapKey } from "../src/keywords/store";
+import { mapKey, writeStoredMap } from "../src/keywords/store";
 import type { KeywordsResponse } from "../src/routes/keywords";
 import { createTestD1, fakeExecutionCtx, fakeR2, type TestD1 } from "./sqlite-d1";
 
@@ -60,6 +60,22 @@ describe("verifyKeywords", () => {
       { label: "夕日", kind: "event", surfaces: ["夕日"] },
     ]);
     expect(r.stats.dropped.map((d) => d.reason)).toEqual(["surface_not_in_body"]);
+  });
+
+  it("label が本文の別の所にあっても、残った形のどれにも含まれなければ形に替える（まとめ言葉を、ほかの形の回数と引用に付けて出さない）", () => {
+    const r = verifyKeywords(
+      {
+        keywords: [
+          { label: "家族", kind: "person", surfaces: ["そら"] },
+          { label: "誕生日", kind: "event", surfaces: ["誕生日を祝った"] },
+        ],
+      },
+      ["家族でそらの誕生日を祝った", "そらが歩いた"],
+    );
+    expect(r.items).toEqual([
+      { label: "そら", kind: "person", surfaces: ["そら"] },
+      { label: "誕生日", kind: "event", surfaces: ["誕生日を祝った"] },
+    ]);
   });
 
   it("エスケープした記号のまま返した形は、元の記号に戻して照合する。1 字のかなは捨て、漢字 1 字は残す", () => {
@@ -202,6 +218,14 @@ describe("buildKeywordMap", () => {
   it("label がいまの本文に無ければ（その記憶を消した）、いちばん多く出てくる形を地図に出す", () => {
     const m = buildKeywordMap({ generated_at: STORED_AT, keywords: [kw("そらくん", ["そらくん", "そら"], "person")] }, [mem("a", "そらと公園", "2025-01-01"), mem("b", "そらが寝た", "2025-02-01")]);
     expect(m.keywords[0]!.label).toBe("そら");
+  });
+
+  it("label が当たった形のどれにも含まれなければ（本文の別の所にだけある語）、いちばん多く出てくる形を地図に出す", () => {
+    const m = buildKeywordMap({ generated_at: STORED_AT, keywords: [kw("家族", ["そら"], "person")] }, [
+      mem("a", "家族でそらの誕生日を祝った", "2025-01-01"),
+      mem("b", "そらが歩いた", "2025-02-01"),
+    ]);
+    expect(m.keywords.map((k) => [k.label, k.total, k.mentions.map((x) => x.surface)])).toEqual([["そら", 2, ["そら", "そら"]]]);
   });
 
   it("pickForPrompt は本文の合計が上限を越える前で止める（1 件目は必ず入れる）", () => {
@@ -403,6 +427,32 @@ describe("POST /api/keywords", () => {
   });
 });
 
+describe("ログ", () => {
+  it("言葉を捨てたとき・失敗したときのログにメールアドレスを出さない。エラーは文言だけ", async () => {
+    seed();
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await postKeywords(appWith(fakeCall(() => ANSWER))); // 本文に無い「海」を捨てる
+      (r2 as unknown as { put: () => Promise<never> }).put = async () => {
+        throw new Error("r2 down");
+      };
+      const res = await postKeywords(appWith(fakeCall(() => ANSWER)));
+      expect(((await res.json()) as KeywordsResponse).refreshed).toBe(false);
+      const dropped = log.mock.calls.find((c) => c[0] === "keywords dropped")!;
+      const failedCall = error.mock.calls.find((c) => c[0] === "collectKeywords failed")!;
+      expect(dropped).toBeDefined();
+      expect(failedCall).toBeDefined();
+      expect(failedCall.every((a) => typeof a === "string")).toBe(true);
+      expect(failedCall[2]).toBe("r2 down");
+      for (const call of [...log.mock.calls, ...error.mock.calls]) for (const a of call) expect(String(a)).not.toContain("@example.com");
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+    }
+  });
+});
+
 describe("GET /api/keywords（見るたびに数え直す）", () => {
   it("地図が無ければ map は null（8 件以上なら reason を付けない）", async () => {
     seed();
@@ -449,5 +499,75 @@ describe("GET /api/keywords（見るたびに数え直す）", () => {
     seed();
     r2.store.set(mapKey(ME), { body: new TextEncoder().encode("{oops"), contentType: "application/json" });
     expect((await getKeywords(appWith(fakeCall(() => ANSWER)))).map).toBeNull();
+  });
+});
+
+describe("記憶を消したとき（R2 の言葉の一覧からも外す。原則 5）", () => {
+  const del = async (app: ReturnType<typeof createApp>, id: string) => {
+    const res = await app.request(`/api/memories/${id}`, { method: "DELETE", headers: H() }, env);
+    expect(res.status).toBe(204);
+  };
+  const storedKeywords = () => (stored()!.keywords as StoredKeyword[]).map((k) => [k.label, k.surfaces]);
+
+  it("消した本文にだけ出てきた言葉は、maps/<user>/keywords.json から外す。ほかの人の本文に同じ言葉があっても残さない", async () => {
+    const ids = seed();
+    insert(OTHER, "よその離婚の話を聞いた", "2024-01-01");
+    const app = appWith(fakeCall(() => ANSWER));
+    await postKeywords(app);
+    await del(app, ids.a);
+    // b にまだ「離婚」がある
+    expect(storedKeywords()).toContainEqual(["離婚", ["離婚"]]);
+    await del(app, ids.b);
+    expect(JSON.stringify(stored())).not.toContain("離婚");
+    // 展望台は f と h（いつだったか）にもあるので残す。作った時刻と件数はそのまま（集めなおしは勧めない）
+    expect(storedKeywords()).toEqual([
+      ["展望台", ["展望台"]],
+      ["そら", ["そら"]],
+      ["みさき", ["みさき"]],
+    ]);
+    expect(stored()!.generated_at).toBe("2026-11-07T12:00:00.000Z");
+    expect((await getKeywords(app)).stale_count).toBe(0);
+  });
+
+  it("起きた日が「いつだったか」の本文にだけ残る言葉は置き場に残す（地図には出ない）", async () => {
+    const ids = seed();
+    const app = appWith(fakeCall(() => ANSWER));
+    await postKeywords(app);
+    await del(app, ids.a);
+    await del(app, ids.f);
+    expect(storedKeywords()).toContainEqual(["展望台", ["展望台"]]);
+    expect((await getKeywords(app)).map!.keywords.find((k) => k.label === "展望台")).toBeUndefined();
+  });
+
+  it("消した本文にだけあった形を外し、label がその形にだけ含まれていたら残った形に替える", async () => {
+    const x = insert(ME, "そらくんが笑った", "2025-01-01");
+    insert(ME, "そらが寝た", "2025-02-01");
+    await writeStoredMap(r2, ME, { version: 1, generated_at: STORED_AT, memory_count: 2, keywords: [kw("そらくん", ["そらくん", "そら"], "person"), kw("寝た", ["寝た"])] });
+    const app = appWith(fakeCall(() => ANSWER));
+    await del(app, x);
+    expect(storedKeywords()).toEqual([
+      ["そら", ["そら"]],
+      ["寝た", ["寝た"]],
+    ]);
+  });
+
+  it("消した本文に地図の言葉が無ければ置き場に書かない。置き場が読めなくても記憶は消える（204）", async () => {
+    const ids = seed();
+    const app = appWith(fakeCall(() => ANSWER));
+    await postKeywords(app);
+    const put = vi.spyOn(r2, "put");
+    await del(app, ids.g); // 「電気代を払った」
+    expect(put).not.toHaveBeenCalled();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      (r2 as unknown as { get: () => Promise<never> }).get = async () => {
+        throw new Error("r2 down");
+      };
+      await del(app, ids.c);
+      expect(db.raw.prepare("SELECT COUNT(*) AS n FROM memories WHERE id = ?").get(ids.c)).toEqual({ n: 0 });
+      expect(error.mock.calls.find((c) => c[0] === "keywords forget failed")).toEqual(["keywords forget failed", ids.c, "r2 down"]);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

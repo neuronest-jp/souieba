@@ -116,10 +116,12 @@ export function buildKeywordMap(stored: { generated_at: string; keywords: readon
     if (surfaces.length === 0) return;
     const hits = dated.filter((m) => surfaces.some((s) => m.body.includes(s)));
     if (hits.length < KEYWORD_MIN_TOTAL) return;
-    // 地図に出す言葉は、いまの本文に出てくる形にする（label が消した記憶にしか無かったら、いちばん多く出てくる形に替える）
+    // 地図に出す言葉は、いまの本文に出てくる形に含まれるものにする（label が消した記憶にしか無かったら、または当たった形と結び付かない
+    // 語なら、いちばん多く出てくる形に替える。見出しの言葉と、数えた形・印を付ける一文を食い違わせない）
+    const live = surfaces.filter((s) => hits.some((m) => m.body.includes(s)));
     let label = keyword.label;
-    if (!hits.some((m) => m.body.includes(label))) {
-      const byCount = surfaces.map((s) => ({ s, n: hits.filter((m) => m.body.includes(s)).length }));
+    if (!live.some((s) => s.includes(label))) {
+      const byCount = live.map((s) => ({ s, n: hits.filter((m) => m.body.includes(s)).length }));
       label = byCount.reduce((a, b) => (b.n > a.n ? b : a)).s;
     }
     if (labels.has(label)) return;

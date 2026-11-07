@@ -64,7 +64,8 @@ export async function collectKeywords(
       return { ok: false, error: res.error };
     }
     const { items, stats } = verifyKeywords(res.json, memories.map((m) => m.body));
-    if (stats.dropped.length) console.log("keywords dropped", userId, JSON.stringify(stats.dropped.map((d) => d.reason)));
+    // ログに個人の識別子（メールアドレス）は出さない。手がかりは ai_runs の id
+    if (stats.dropped.length) console.log("keywords dropped", runId, JSON.stringify(stats.dropped.map((d) => d.reason)));
     const usage = { input_tokens: res.input_tokens, output_tokens: res.output_tokens, model: res.model };
     if (items.length === 0 && previous) {
       await finishAiRun(env.DB, runId, { status: "empty", ...usage, now: nowIso() });
@@ -75,7 +76,7 @@ export async function collectKeywords(
     await finishAiRun(env.DB, runId, { status: items.length === 0 ? "empty" : "succeeded", ...usage, now: nowIso() });
     return { ok: true, stored };
   } catch (e) {
-    console.error("collectKeywords failed", userId, e);
+    console.error("collectKeywords failed", runId, e instanceof Error ? e.message : String(e));
     try {
       await finishAiRun(env.DB, runId, { status: "failed", error: e instanceof Error ? e.message : String(e), now: nowIso() });
     } catch {

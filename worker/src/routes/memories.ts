@@ -16,6 +16,7 @@ import {
 } from "../db/memories";
 import type { Env, Variables } from "../env";
 import { ApiError } from "../errors";
+import { forgetDeletedBody } from "../keywords/store";
 import { parseMemoryInput, todayInTokyo } from "../validate";
 
 export type MemoryJson = Omit<MemoryRow, "user_id">;
@@ -126,6 +127,12 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
         // D1 の行はもう無く、写真は誰からも参照されない（キーは推測できない）。ログに残して続ける
         console.error("photo delete failed", deleted.photo_key, e);
       }
+    }
+    // ことばの地図の置き場（R2）から、この本文にだけ出てきた言葉を外す（ADR-0014。失敗しても記憶はもう消えているので 204 のまま）
+    try {
+      await forgetDeletedBody(c.env, user.id, memory.body);
+    } catch (e) {
+      console.error("keywords forget failed", memory.id, e instanceof Error ? e.message : String(e));
     }
     return c.body(null, 204);
   });

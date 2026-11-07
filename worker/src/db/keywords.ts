@@ -24,4 +24,15 @@ export function countWrittenAfter(db: D1Database, userId: string, sinceIso: stri
   return db.prepare("SELECT COUNT(*) AS n FROM memories WHERE user_id = ?1 AND created_at > ?2").bind(userId, sinceIso);
 }
 
+// 渡した形のうち、その人の残っている本文（起きた日が「いつだったか」のものも含む）のどれかにまだ出てくるもの。
+// 数え方と同じく部分文字列（instr。正規化しない）。形の一覧は JSON で 1 つの値として渡す（D1 の 1 文あたりの値の数の上限に掛からない）
+export async function surfacesStillWritten(db: D1Database, userId: string, surfaces: readonly string[]): Promise<Set<string>> {
+  if (surfaces.length === 0) return new Set();
+  const { results } = await db
+    .prepare("SELECT j.value AS s FROM json_each(?2) AS j WHERE EXISTS (SELECT 1 FROM memories m WHERE m.user_id = ?1 AND instr(m.body, j.value) > 0)")
+    .bind(userId, JSON.stringify(surfaces))
+    .all<{ s: string }>();
+  return new Set((results ?? []).map((r) => r.s));
+}
+
 export type { CountMemory };

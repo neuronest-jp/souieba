@@ -279,7 +279,8 @@ export function verifyKeywords(out: unknown, bodies: readonly string[]): { items
     }
     const rawLabel = raw.label.trim();
     const labelInBody = rawLabel.length > 0 && !tooShort(rawLabel) && countChars(rawLabel) <= KEYWORD_LABEL_MAX ? inAnyBody(rawLabel, bodies) : null;
-    const label = labelInBody ?? surfaces[0]!;
+    // label は残った形のどれかに含まれるときだけ使う。本文の別の所に出てくる語（まとめ言葉・言い換え）を、ほかの形の回数と引用に付けて出さない（原則 1・3）
+    const label = labelInBody !== null && surfaces.some((s) => s.includes(labelInBody)) ? labelInBody : surfaces[0]!;
     if (seen.has(label)) {
       stats.dropped.push({ reason: "duplicate", item: raw });
       continue;
