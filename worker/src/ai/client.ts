@@ -14,6 +14,8 @@ export type AiRequest = {
   effort: Effort;
   // C3（写真からの気づき候補）だけが使う。あれば画像ブロックを先に、user の文をその後に置く
   image?: AiImage;
+  // 待つ上限（ms）。省くと TIMEOUT_MS。ことばの地図（全記憶を一度に読む。ADR-0014）だけが 60 秒にする
+  timeout_ms?: number;
 };
 
 export type AiResult =
@@ -29,7 +31,7 @@ export const MAX_TOKENS = 16000;
 export const callClaude: AiCaller = async (env, req) => {
   const model = env.ANTHROPIC_MODEL;
   if (!env.ANTHROPIC_API_KEY) return { ok: false, error: "not_configured: ANTHROPIC_API_KEY", model };
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0, timeout: TIMEOUT_MS });
+  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0, timeout: req.timeout_ms ?? TIMEOUT_MS });
   try {
     const res = await client.messages.create({
       model,

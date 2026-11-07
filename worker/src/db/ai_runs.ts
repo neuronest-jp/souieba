@@ -2,7 +2,8 @@
 export type AiRunKind = "recall" | "facts" | "photo" | "retrospect";
 export type AiRunStatus = "running" | "succeeded" | "failed" | "empty";
 
-export async function startAiRun(db: D1Database, args: { userId: string; memoryId: string; kind: AiRunKind; model: string; now: string }): Promise<string> {
+// memoryId は記憶ごとの処理（recall / facts / photo）で入れる。記憶をまたぐ処理（retrospect。ことばの地図、ADR-0014）は null
+export async function startAiRun(db: D1Database, args: { userId: string; memoryId: string | null; kind: AiRunKind; model: string; now: string }): Promise<string> {
   const id = crypto.randomUUID();
   await db
     .prepare("INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'running', ?6)")

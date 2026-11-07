@@ -10,10 +10,12 @@ import { factsRoute, memoryFactsRoute } from "./routes/facts";
 import { memoryRecallsRoute, recallsRoute } from "./routes/recalls";
 import { connectionsRoute } from "./routes/connections";
 import { todayRoute } from "./routes/today";
+import { keywordsRoute } from "./routes/keywords";
+import type { KeywordsDeps } from "./ai/keywords";
 import { aiAfterPhoto, aiAfterSave } from "./ai/after-save";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
-export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps; auth?: AuthDeps; photos?: PhotosDeps };
+export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps; auth?: AuthDeps; photos?: PhotosDeps; keywords?: KeywordsDeps };
 
 // Worker 本体。/api/* だけここに来る（wrangler.toml の run_worker_first）。それ以外は Static Assets が開発用プレビューを返す。
 export const createApp = (deps: AppDeps = {}): AppType => {
@@ -68,6 +70,8 @@ export const createApp = (deps: AppDeps = {}): AppType => {
   authed.route("/today", todayRoute());
   authed.route("/memories", putPhotoRoute({ afterPhoto: aiAfterPhoto(), ...deps.photos }));
   authed.route("/photos", getPhotoRoute());
+  // ことばの地図（ADR-0014）
+  authed.route("/keywords", keywordsRoute(deps.keywords));
 
   app.route("/api", authed);
   return app;
