@@ -275,13 +275,15 @@ onUnmounted(() => setInert(false));
            札（高さ 24px）は前の区切りの最後の行の罫にまたがって置く（罫の 9px 上から 15px 下まで。前の行の下の余白の中）。
            区切りの最初の行は上に 12px 足し（li の pt-3）、行の文字（写真の行は焼き付け）が札の下 9px から始まるようにする（文字は隠さない）。
            区切りの箱は札の上端から最後の行の罫の 9px 上までにし（ul の -mt-[15px] / -mb-[9px]）、次の区切りの札がちょうど前の札を押し出す。
+           section は flow-root にする。普通のブロックだと ul の -mb-[9px] が section の外へ相殺されて箱が罫まで伸び、
+           受け渡しのたびに前の札と次の札が 9px 重なる（11/7 の見直し。headless Chrome の 402×874 で測った）。
            札の行（h2）は横いっぱいで指を通し（pointer-events-none）、札だけ押せる。押せる所は ::after で上下に 44px まで広げる -->
       <div v-else ref="list" class="-mt-5 pb-[9px]" :aria-busy="jumping ? 'true' : undefined">
         <section
           v-for="s in sections"
           :key="s.key"
           :data-section="s.key"
-          class="scroll-mt-[calc(env(safe-area-inset-top,0px)+8px)]"
+          class="flow-root scroll-mt-[calc(env(safe-area-inset-top,0px)+8px)]"
         >
           <h2 class="pointer-events-none sticky top-[calc(env(safe-area-inset-top,0px)+8px)] z-[4] flex h-6 items-center">
             <button

@@ -163,6 +163,22 @@ describe("S2 の区切りと札", () => {
     ]);
   });
 
+  it("区切りの箱は flow-root で、ul の -mb-[9px] を箱の中に留める（相殺で箱が罫まで伸びると、受け渡しで札が 9px 重なる）", async () => {
+    // 普通のブロックだと、下に padding も border も無い section の margin-bottom と ul の -9px が相殺され（CSS2.1 8.3.1）、
+    // section の高さが最後の行の罫まで伸びる。sticky の札は箱の終わりまで下がれるので、罫の 9px 上から始まる次の札と重なる。
+    // flow-root（新しい BFC）なら箱は ul の margin の下端（罫の 9px 上）で終わる。402×874 の headless Chrome で、
+    // 行の位置は変わらず、受け渡しの重なりが 9px から 0 になるのを確かめた（sticky はこの最小の DOM では測れない）
+    const { container } = await open();
+    const secs = container.findAll((el) => el.tagName === "SECTION" && el.hasAttribute("data-section"));
+    expect(secs).toHaveLength(5);
+    for (const s of secs) {
+      expect(s.hasClass("flow-root")).toBe(true);
+      const ul = s.children.find((c) => c.tagName === "UL")!;
+      expect(ul.hasClass("-mt-[15px]")).toBe(true);
+      expect(ul.hasClass("-mb-[9px]")).toBe(true);
+    }
+  });
+
   it("「もっと前を見る」で足した行も同じ区切りに入る（続きは cursor だけで読む）", async () => {
     listMemories.mockResolvedValueOnce(page([mem("a", "2025-11-03", "day"), mem("b", "2025-11-01", "day")], "c1"));
     listMemories.mockResolvedValueOnce(page([mem("c", "2025-11-01", "day"), mem("d", "2025-09-01", "day")]));
