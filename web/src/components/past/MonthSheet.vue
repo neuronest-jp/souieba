@@ -90,7 +90,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         aria-labelledby="month-sheet-title"
       >
         <div class="sheet-grip" aria-hidden="true"></div>
-        <h2 id="month-sheet-title" ref="heading" tabindex="-1" class="px-5 text-xl focus:outline-none">年月で探す</h2>
+        <h2 id="month-sheet-title" ref="heading" tabindex="-1" class="px-5 text-xl focus:outline-none">年月でたどる</h2>
         <div ref="scroller" class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]" data-sheet-scroll>
           <p v-if="state === 'loading'" class="py-10 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
 

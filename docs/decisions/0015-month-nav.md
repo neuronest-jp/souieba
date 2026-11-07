@@ -101,3 +101,8 @@ S2 は起きた日の降順の静かなリスト（F3-1）で、20 件ずつ「�
 - web: `src/api.ts`（`listMemories(cursor, start)`、`memoryMonths`）、`src/api/types.ts`（`MemoryMonths`、`ListStart`）、`src/past/sections.ts`、
   `src/components/past/MonthSheet.vue`、`src/screens/TimelineScreen.vue`（一覧の部分だけ。見出しの行は触っていない）。テストは `web/test/TimelineMonths.dom.test.ts`、`web/test/sections.test.ts`
 - 文書: wireframes・architecture・requirements の末尾に節を足した（既存の節は書き換えていない）
+
+## 追記（2026-11-07）: 呼び方
+
+- 画面と README での呼び方は、開発者が決めるまでの仮の名前として「年月でたどる」にする（「検索を匂わせない」方針。シートの見出しと、区切りの札の読み上げの名前「2025年 11月。年月でたどる」）。
+  本書と wireframes・architecture・requirements の節の名前は「年月で探す」のまま

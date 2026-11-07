@@ -64,7 +64,7 @@ const settle = async () => {
 const byTag = (root: FakeElement, tag: string) => root.findAll((el) => el.tagName === tag);
 const labels = (root: FakeElement) => byTag(root, "H2").map((el) => el.textContent.trim());
 const tag = (root: FakeElement, label: string) =>
-  root.findAll((el) => el.tagName === "BUTTON" && el.getAttribute("aria-label") === `${label}。年月で探す`)[0];
+  root.findAll((el) => el.tagName === "BUTTON" && el.getAttribute("aria-label") === `${label}。年月でたどる`)[0];
 const rowIds = (root: FakeElement) => root.findAll((el) => el.tagName === "A" && (el.getAttribute("href") ?? "").startsWith("#memory/")).map((el) => el.getAttribute("href")!.slice(8));
 const sectionRows = (root: FakeElement) =>
   root.findAll((el) => el.tagName === "SECTION" && el.hasAttribute("data-section")).map((s) => [
@@ -146,7 +146,7 @@ const withStyle = (panel: FakeElement) => {
 };
 
 describe("S2 の区切りと札", () => {
-  it("起きた日の年月ごとに区切り、札（h2）は「2025年 11月」「2023年」「日付なし」。札のボタンの名前は「…。年月で探す」", async () => {
+  it("起きた日の年月ごとに区切り、札（h2）は「2025年 11月」「2023年」「日付なし」。札のボタンの名前は「…。年月でたどる」", async () => {
     const { container, errors } = await open();
     expect(listMemories).toHaveBeenCalledWith(null, null);
     expect(labels(container)).toEqual(["2025年 11月", "2025年 10月", "2024年 6月", "2023年", "日付なし"]);
@@ -160,7 +160,7 @@ describe("S2 の区切りと札", () => {
     // 札は見出しの中のボタン（読み上げは見出し → ボタンの名前）
     for (const h2 of byTag(container, "H2")) {
       const b = h2.querySelector("button")!;
-      expect(b.getAttribute("aria-label")).toBe(`${h2.textContent.trim()}。年月で探す`);
+      expect(b.getAttribute("aria-label")).toBe(`${h2.textContent.trim()}。年月でたどる`);
       expect(b.getAttribute("aria-haspopup")).toBe("dialog");
     }
     // 札を開くまで件数は読まない（一覧の読み込みは 1 回だけ）
@@ -217,13 +217,13 @@ describe("S2 の区切りと札", () => {
   });
 });
 
-describe("年月で探すシート", () => {
+describe("年月でたどるシート", () => {
   it("札を押すと body の直下にシートが開き、見出しにフォーカス、後ろは inert。触覚は鳴らさない", async () => {
     const { container, errors } = await open();
     await openSheet(container, "2025年 10月");
     expect(dialog()).toBeTruthy();
     expect(dialog()!.getAttribute("aria-labelledby")).toBe("month-sheet-title");
-    expect(focused()).toBe("H2:年月で探す");
+    expect(focused()).toBe("H2:年月でたどる");
     expect(container.hasAttribute("inert")).toBe(true);
     expect(memoryMonths).toHaveBeenCalledTimes(1);
     expect(Object.values(haptic).every((fn) => fn.mock.calls.length === 0)).toBe(true);
@@ -263,7 +263,7 @@ describe("年月で探すシート", () => {
     await settle();
     expect(dialog()).toBeUndefined();
     expect(container.hasAttribute("inert")).toBe(false);
-    expect(focused()).toBe("BUTTON:2025年 10月。年月で探す");
+    expect(focused()).toBe("BUTTON:2025年 10月。年月でたどる");
     expect(listMemories).toHaveBeenCalledTimes(1);
   });
 
@@ -294,7 +294,7 @@ describe("月から読み直す", () => {
     expect(rowIds(container)).toEqual(["jun-m", "y2023", "unk"]);
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0 });
     expect(buttonText(container, "いちばん新しいひとことへ")).toBeTruthy();
-    expect(focused()).toBe("BUTTON:2024年 6月。年月で探す");
+    expect(focused()).toBe("BUTTON:2024年 6月。年月でたどる");
     expect(errors).toEqual([]);
   });
 
@@ -312,7 +312,7 @@ describe("月から読み直す", () => {
     expect(rowIds(container)).toEqual(NEWEST.map((m) => m.id));
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0 });
     expect(buttonText(container, "いちばん新しいひとことへ")).toBeUndefined();
-    expect(focused()).toBe("BUTTON:2025年 11月。年月で探す");
+    expect(focused()).toBe("BUTTON:2025年 11月。年月でたどる");
   });
 
   it("年だけ・日付なしもシートから year= / undated=1 で読み直す。先頭の区切りでなければ、その区切りの頭へ送る", async () => {
@@ -333,7 +333,7 @@ describe("月から読み直す", () => {
     // 同じ 1 月 1 日の day の行が先に来るので、年だけの区切りの頭へ送り、フォーカスもその札へ
     expect(labels(container)).toEqual(["2023年 1月", "2023年", "日付なし"]);
     expect(scrolled).toEqual(["2023"]);
-    expect(focused()).toBe("BUTTON:2023年。年月で探す");
+    expect(focused()).toBe("BUTTON:2023年。年月でたどる");
 
     await openSheet(container, "日付なし");
     expect(cellOf("undated")!.getAttribute("aria-current")).toBe("true");
@@ -391,7 +391,7 @@ describe("月から読み直す", () => {
     await settle();
     expect(scrollTo.mock.calls.map((c) => c[0])).toEqual([{ top: 480 }, { top: 0 }]);
     expect(labels(container)[0]).toBe("2024年 6月");
-    expect(focused()).toBe("BUTTON:2024年 6月。年月で探す");
+    expect(focused()).toBe("BUTTON:2024年 6月。年月でたどる");
     expect(listMemories).toHaveBeenLastCalledWith(null, { month: "2024-06" }); // 戻ったときの取り直しも選んだ月から
     expect(errors).toEqual([]);
   });
@@ -416,7 +416,7 @@ describe("月から読み直す", () => {
     await settle();
     expect(labels(container)).toEqual(["2024年 6月", "2023年", "日付なし"]);
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0 });
-    expect(focused()).toBe("BUTTON:2024年 6月。年月で探す");
+    expect(focused()).toBe("BUTTON:2024年 6月。年月でたどる");
     expect(errors).toEqual([]);
   });
 
@@ -449,7 +449,7 @@ describe("月から読み直す", () => {
     read.reject(new Error("network"));
     await settle();
     expect(dialog()).toBeTruthy(); // まだ下がっている途中（後ろは inert なので、ここではフォーカスを置かない）
-    expect(focused()).toBe("H2:年月で探す");
+    expect(focused()).toBe("H2:年月でたどる");
     await wait(DURATION.base + 40);
     await settle();
     expect(dialog()).toBeUndefined();

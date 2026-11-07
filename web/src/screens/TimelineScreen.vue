@@ -332,7 +332,7 @@ onUnmounted(() => setInert(false));
               class="press pointer-events-auto relative inline-flex h-6 items-center gap-1 rounded-pill border border-line bg-card pr-2 pl-2.5 text-sm leading-none tracking-[.04em] text-ink shadow-card [font-feature-settings:'palt'] after:absolute after:-inset-x-1.5 after:-inset-y-2.5"
               :class="s.items[0] && entering.has(s.items[0].id) ? 'rise-in' : ''"
               :style="s.items[0] ? riseOf(s.items[0].id) : undefined"
-              :aria-label="`${s.label}。年月で探す`"
+              :aria-label="`${s.label}。年月でたどる`"
               aria-haspopup="dialog"
               @click="openSheet(s.key)"
             >
