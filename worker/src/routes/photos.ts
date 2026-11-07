@@ -9,6 +9,9 @@ import { ApiError } from "../errors";
 export const PHOTO_MAX_BYTES = 10_485_760;
 export const PHOTO_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png" };
 
+/** ログに出す写真のキー。2 つめの区切り（メールアドレス）を伏せる。photos/<user>/<記憶の ID>/<ファイル名> の形 */
+export const maskPhotoKey = (key: string): string => key.replace(/^photos\/[^/]+\//, "photos/<user>/");
+
 export const photoKeyFor = (userId: string, memoryId: string, ext: string) =>
   `photos/${userId}/${memoryId}/${crypto.randomUUID()}.${ext}`;
 
@@ -80,7 +83,8 @@ export const putPhotoRoute = (deps: PhotosDeps = {}) => {
       try {
         await c.env.PHOTOS.delete(memory.photo_key);
       } catch (e) {
-        console.error("old photo delete failed", memory.photo_key, e);
+        // キーの 2 つめの区切りはメールアドレスなので伏せる（ログに個人の識別子を出さない。ADR-0013）
+        console.error("old photo delete failed", maskPhotoKey(memory.photo_key), e instanceof Error ? e.message : String(e));
       }
     }
     // 200 を返す前に写真候補の記録（running）を作る（afterPhoto 側の責務。waitUntil で続きを走らせる）。

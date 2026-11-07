@@ -16,6 +16,7 @@ import {
 } from "../db/memories";
 import type { Env, Variables } from "../env";
 import { ApiError } from "../errors";
+import { maskPhotoKey } from "./photos";
 import { parseMemoryInput, todayInTokyo } from "../validate";
 
 export type MemoryJson = Omit<MemoryRow, "user_id">;
@@ -124,7 +125,8 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
         await c.env.PHOTOS.delete(deleted.photo_key);
       } catch (e) {
         // D1 の行はもう無く、写真は誰からも参照されない（キーは推測できない）。ログに残して続ける
-        console.error("photo delete failed", deleted.photo_key, e);
+        // 残った写真を探す手がかりにキーを出すが、メールアドレスの区切りは伏せる（記憶の ID とファイル名で探せる。ADR-0013）
+        console.error("photo delete failed", maskPhotoKey(deleted.photo_key), e instanceof Error ? e.message : String(e));
       }
     }
     return c.body(null, 204);
