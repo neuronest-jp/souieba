@@ -1,4 +1,4 @@
-// S2 これまでを年月で探す（ADR-0015、wireframes 10 節）。区切りと札の文言、精度ごとの区切り、札を押すとシート、
+// S2 これまでを年月で探す（ADR-0015、wireframes の「S2 を年月で探す」）。区切りと札の文言、精度ごとの区切り、札を押すとシート、
 // 月を押すと month= で読み直して先頭へ、「いちばん新しいひとことへ」で戻る、無い月は押せない、戻ってきたときと続きの始まり。
 // DOM は web/test/fakeDom.ts の最小のもの。札が上に貼り付いて押し出される見た目（sticky）はブラウザで撮って確かめる
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
