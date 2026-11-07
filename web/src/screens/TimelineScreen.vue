@@ -7,7 +7,9 @@
 // 年月で探す（11/7、ADR-0015、wireframes の「S2 を年月で探す」）: 一覧を起きた日の年月ごとに区切り（past/sections.ts）、区切りの札を左上に浮かべる
 // （position: sticky。次の区切りが来たら押し出されて替わる）。札を押すと「年月で探す」のシート（MonthSheet）。月を選ぶと、その月の
 // いちばん新しい記憶から一覧を読み直して（GET /api/memories?month=）先頭へ移り、先頭に「いちばん新しいひとことへ」を出す。
-// 読み直した一覧も、戻ってきたときの取り直しと「もっと前を見る」は同じ始まりのまま（start）。読み直したときは新しい一覧の最初の表示として .rise-in で出す
+// 読み直した一覧も、戻ってきたときの取り直しと「もっと前を見る」は同じ始まりのまま（start）。読み直したときは新しい一覧の最初の表示として .rise-in で出す。
+// 読み直しを待つ間に画面を離れたら、返ってきても動かさず、戻ったときに先頭へ送る。読み直しを待つ間に戻ったら取り直さない。
+// 読み直しに失敗したら、フォーカスを「読み込めませんでした」へ置く（11/7 の見直し）
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api";
 import type { ListStart, Memory, MemoryMonths } from "../api/types";
@@ -15,6 +17,7 @@ import MemoryCard from "../components/MemoryCard.vue";
 import Leaf from "../components/motifs/Leaf.vue";
 import MonthSheet from "../components/past/MonthSheet.vue";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
+import { focusHeading } from "../composables/useScreen";
 import { useMemoryPhoto } from "../composables/useMemoryPhoto";
 import { select } from "../haptics";
 import { DURATION, prefersMotion } from "../motion";
@@ -107,11 +110,6 @@ const refresh = async () => {
 };
 
 onMounted(load);
-// 初回（onMounted の load が動いている間）は何もしない。読めていれば裏で取り直し、読めていなければ読み直す
-onActivated(() => {
-  if (state.value === "ready") void refresh();
-  else if (state.value === "error") void load();
-});
 
 // S3 で消した記憶の行は、取り直しを待たずに外す（非アクティブの間に届く）
 useMemoryDeleted((id) => {
@@ -168,17 +166,41 @@ const openSheet = (key: string) => {
   void loadMonths();
 };
 
-// 読み直したあとフォーカスを置く区切り（シートが閉じきるまで待つ。inert の中には置けない）
-let landing: string | null = null;
+// 読み直したあとフォーカスを置く所: 行き先の区切りの札か、読み込めなかったときの一文（シートが閉じきるまで待つ。inert の中には置けない）
+type Landing = { tag: string } | "error";
+let landing: Landing | null = null;
 const jumping = ref(false); // 読み直している間（一覧は前のまま出し、aria-busy を付ける）
 let jumpToken = 0;
+const errorText = ref<HTMLElement | null>(null);
 const land = (key: string) => {
   const el = tagOf(key) ?? (sections.value[0] ? tagOf(sections.value[0].key) : null);
   el?.focus({ preventScroll: true });
 };
+// 読み込めなかったときは、一覧ごと外れたフォーカスを「読み込めませんでした」へ置き、読み上げで失敗を伝える（tabindex は置くあいだだけ）
+const place = (to: Landing) => (to === "error" ? focusHeading(errorText.value, { force: true }) : land(to.tag));
+const placeAfterSheet = (to: Landing) => {
+  if (sheetFor.value) landing = to;
+  else place(to);
+};
 
-// その区切り（null ならいちばん新しい記憶）から一覧を読み直し、先頭へ移る。年だけの区切りは同じ日の 1 月の区切りの後ろに来るので、
-// 先頭の区切りでなければその区切りの頭へ送る。失敗したら「読み込めませんでした」と「もう一度」（同じ始まりで読み直す）
+// 読み直した一覧の行き先へ送り、その札へフォーカスを置く。年だけの区切りは同じ日の 1 月の区切りの後ろに来るので、
+// 先頭の区切りでなければその区切りの頭へ送る
+const arrive = (key: string | null) => {
+  const first = sections.value[0]?.key ?? null;
+  const target = key && first !== key ? sectionEl(key) : null;
+  if (target) target.scrollIntoView?.({ block: "start" });
+  else window.scrollTo?.({ top: 0 });
+  const to = key && target ? key : first;
+  if (to) placeAfterSheet({ tag: to });
+};
+
+// KeepAlive で外れている間は false。読み直しがそのあいだに返っても、いま見ている別の画面を動かさない（11/7 の見直し）
+let active = true;
+// 外れている間に読み直しが返ったときの行き先。戻ってきたら、useScreen が位置を戻したあとで先頭へ送る
+let arriveOnReturn: { key: string | null } | null = null;
+
+// その区切り（null ならいちばん新しい記憶）から一覧を読み直し、先頭へ移る。
+// 失敗したら「読み込めませんでした」と「もう一度」（同じ始まりで読み直す）
 const jump = async (key: string | null) => {
   const v = ++version;
   const t = ++jumpToken;
@@ -194,19 +216,15 @@ const jump = async (key: string | null) => {
     state.value = "ready";
     stagger(page.items);
     await nextTick();
-    const first = sections.value[0]?.key ?? null;
-    const target = key && first !== key ? sectionEl(key) : null;
-    if (target) target.scrollIntoView?.({ block: "start" });
-    else window.scrollTo?.({ top: 0 });
-    const to = key && target ? key : first;
-    if (to) {
-      if (sheetFor.value) landing = to;
-      else land(to);
-    }
+    if (active) arrive(key);
+    else arriveOnReturn = { key };
   } catch {
     if (v !== version) return;
     start.value = next;
     state.value = "error";
+    await nextTick();
+    // 離れている間は置かない（戻ってきたら読み直す）
+    if (active && v === version && state.value === "error") placeAfterSheet("error");
   } finally {
     if (t === jumpToken) jumping.value = false;
   }
@@ -227,17 +245,38 @@ const closeSheet = ({ immediate = false } = {}) => {
   if (!from) return;
   sheetFor.value = null;
   setInert(false);
-  if (immediate) return;
+  if (immediate) {
+    landing = null;
+    return;
+  }
   if (landing) {
     const to = landing;
     landing = null;
-    void nextTick(() => land(to));
+    void nextTick(() => place(to));
   } else if (!jumping.value) {
-    // 選ばずに閉じたら、押した札へ返す（読み込めなかったときも一覧は残っている）
+    // 選ばずに閉じたら、押した札へ返す（件数が読み込めなかったときも一覧は残っている）
     void nextTick(() => tagOf(from)?.focus({ preventScroll: true }));
   }
 };
-onDeactivated(() => closeSheet({ immediate: true }));
+
+// 初回（onMounted の load が動いている間）は何もしない。読めていれば裏で取り直し、読めていなければ読み直す
+onActivated(() => {
+  active = true;
+  if (arriveOnReturn) {
+    const { key } = arriveOnReturn;
+    arriveOnReturn = null;
+    // useScreen は離れたときの位置へ戻し、見出しへフォーカスを置く（どちらも同じ描き直しの nextTick）。その後ろで先頭へ送り、札へ置く
+    void nextTick(() => arrive(key));
+  }
+  // 読み直しを待っている間は取り直さない（取り直すと読み直しの結果を捨て、前の始まりのまま読んでしまう）
+  if (jumping.value) return;
+  if (state.value === "ready") void refresh();
+  else if (state.value === "error") void load();
+});
+onDeactivated(() => {
+  active = false;
+  closeSheet({ immediate: true });
+});
 onUnmounted(() => setInert(false));
 </script>
 
@@ -252,7 +291,7 @@ onUnmounted(() => setInert(false));
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
 
     <section v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-16 text-center">
-      <p class="text-ink-soft">読み込めませんでした</p>
+      <p ref="errorText" class="text-ink-soft focus:outline-none">読み込めませんでした</p>
       <button type="button" class="btn btn-quiet press" @click="load">もう一度</button>
       <button v-if="start" type="button" class="press inline-flex min-h-11 items-center text-sm tracking-[.04em] text-ink-soft" @click="toNewest">いちばん新しいひとことへ</button>
     </section>

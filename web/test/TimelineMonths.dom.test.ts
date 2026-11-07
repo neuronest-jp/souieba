@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, KeepAlive, nextTick, ref } from "vue";
 import type { ListStart, Memory, MemoryList, MemoryMonths, Precision } from "../src/api/types";
+import { DURATION } from "../src/motion";
 import { FakeElement, fakeDocument, mount, resetFakeDocument } from "./fakeDom";
 
 const { listMemories, memoryMonths, haptic } = vi.hoisted(() => ({
@@ -117,6 +118,31 @@ const open = async () => {
 const openSheet = async (root: FakeElement, label: string) => {
   tag(root, label)!.click(1);
   await settle();
+};
+// KeepAlive で残した S2 を、ほかの画面と行き来させる（App.vue の代わり）
+const kept = () => {
+  const shown = ref<"past" | "other">("past");
+  const Other = defineComponent({ name: "Other", setup: () => () => h("main", [h("h1", "つながり")]) });
+  const App = defineComponent({ setup: () => () => h(KeepAlive, { include: "TimelineScreen" }, [shown.value === "past" ? h(TimelineScreen) : h(Other)]) });
+  return { App, shown };
+};
+const deferred = <T,>() => {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// 動きを減らす設定ではない端末にする（既定は matchMedia が無く、シートは待たずに閉じる）
+const motionOn = () => {
+  (window as unknown as { matchMedia: (q: string) => { matches: boolean } }).matchMedia = () => ({ matches: false });
+};
+// 最小の DOM の要素に、書き込むだけの style を持たせる（動きのある設定では useSheetDrag が紙と地の style を書く）
+const withStyle = (panel: FakeElement) => {
+  for (const el of [panel, ...(panel.parentNode as FakeElement).children]) (el as unknown as { style: Record<string, string> }).style ??= {};
 };
 
 describe("S2 の区切りと札", () => {
@@ -339,17 +365,96 @@ describe("月から読み直す", () => {
     expect(buttonText(container, "いちばん新しいひとことへ")).toBeTruthy();
   });
 
-  it("読み直しに失敗したら「読み込めませんでした」。「もう一度」は同じ月から、「いちばん新しいひとことへ」も出す", async () => {
-    const { container } = await open();
+  // 11/7 の見直し: 読み直しが画面を離れたあとに返ると、いま見ている別の画面を先頭へスクロールし、S2 に戻ると
+  // useScreen が離れたときの古い位置を、中身が入れ替わった月の一覧に当てていた
+  it("読み直しを待つ間に画面を離れたら、返ってきても動かさない。戻ったら、useScreen が位置を戻したあとで先頭へ送り、新しい最初の札へフォーカス", async () => {
+    const { App, shown } = kept();
+    const { container, errors } = mount(App);
+    await settle();
+    const read = deferred<MemoryList>();
+    listMemories.mockImplementationOnce(() => read.promise);
+    await openSheet(container, "2025年 11月");
+    cell("2024年 6月、1 こ")!.click(1);
+    await settle();
+    expect(dialog()).toBeUndefined(); // シートは閉じ、読み直しを待っている（前の一覧は出したまま）
+    shown.value = "other";
+    await settle();
+    byTag(container, "H1")[0]!.focus();
+    scrollTo.mockClear();
+    read.resolve(page(FROM_JUNE));
+    await settle();
+    expect(scrollTo).not.toHaveBeenCalled(); // 見ている別の画面を動かさない
+    expect(focused()).toBe("H1:つながり");
+    // 戻る。useScreen と同じく、離れたときの位置へ戻すのを同じ描き直しの nextTick に積む
+    shown.value = "past";
+    void nextTick(() => window.scrollTo({ top: 480 }));
+    await settle();
+    expect(scrollTo.mock.calls.map((c) => c[0])).toEqual([{ top: 480 }, { top: 0 }]);
+    expect(labels(container)[0]).toBe("2024年 6月");
+    expect(focused()).toBe("BUTTON:2024年 6月。年月で探す");
+    expect(listMemories).toHaveBeenLastCalledWith(null, { month: "2024-06" }); // 戻ったときの取り直しも選んだ月から
+    expect(errors).toEqual([]);
+  });
+
+  it("読み直しを待つ間に離れて、返る前に戻ったら、取り直さずに読み直しを待つ（取り直しで選んだ月を捨てない）", async () => {
+    const { App, shown } = kept();
+    const { container, errors } = mount(App);
+    await settle();
+    const read = deferred<MemoryList>();
+    listMemories.mockImplementationOnce(() => read.promise);
+    await openSheet(container, "2025年 11月");
+    cell("2024年 6月、1 こ")!.click(1);
+    await settle();
+    shown.value = "other";
+    await settle();
+    shown.value = "past";
+    await settle();
+    expect(listMemories).toHaveBeenCalledTimes(2); // 最初の一覧と読み直しだけ（取り直しは走らない）
+    expect(labels(container)[0]).toBe("2025年 11月");
+    scrollTo.mockClear();
+    read.resolve(page(FROM_JUNE));
+    await settle();
+    expect(labels(container)).toEqual(["2024年 6月", "2023年", "日付なし"]);
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0 });
+    expect(focused()).toBe("BUTTON:2024年 6月。年月で探す");
+    expect(errors).toEqual([]);
+  });
+
+  // 11/7 の見直し: 失敗すると一覧ごとフォーカスが外れて body に落ち、読み上げでは失敗が何も伝わらなかった
+  it("読み直しに失敗したら「読み込めませんでした」へフォーカス。「もう一度」は同じ月から、「いちばん新しいひとことへ」も出す", async () => {
+    const { container, errors } = await open();
     await openSheet(container, "2025年 11月");
     listMemories.mockRejectedValueOnce(new Error("network"));
     cell("2024年 6月、1 こ")!.click(1);
     await settle();
     expect(container.textContent).toContain("読み込めませんでした");
     expect(buttonText(container, "いちばん新しいひとことへ")).toBeTruthy();
+    expect(focused()).toBe("P:読み込めませんでした");
+    expect(fakeDocument.activeElement!.getAttribute("tabindex")).toBe("-1");
     buttonText(container, "もう一度")!.click(1);
     await settle();
     expect(listMemories).toHaveBeenLastCalledWith(null, { month: "2024-06" });
     expect(labels(container)[0]).toBe("2024年 6月");
+    expect(errors).toEqual([]);
+  });
+
+  it("動きのある設定で、シートが下がりきる前に読み直しが失敗したら、閉じきってから「読み込めませんでした」へフォーカス", async () => {
+    motionOn();
+    const { container, errors } = await open();
+    await openSheet(container, "2025年 11月");
+    const read = deferred<MemoryList>();
+    listMemories.mockImplementationOnce(() => read.promise);
+    withStyle(dialog()!);
+    cell("2024年 6月、1 こ")!.click(1);
+    read.reject(new Error("network"));
+    await settle();
+    expect(dialog()).toBeTruthy(); // まだ下がっている途中（後ろは inert なので、ここではフォーカスを置かない）
+    expect(focused()).toBe("H2:年月で探す");
+    await wait(DURATION.base + 40);
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(container.hasAttribute("inert")).toBe(false);
+    expect(focused()).toBe("P:読み込めませんでした");
+    expect(errors).toEqual([]);
   });
 });
