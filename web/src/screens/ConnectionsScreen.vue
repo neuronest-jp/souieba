@@ -48,6 +48,16 @@ watch(openId, (id) => {
 // その間に返った記録の失敗も組の足に残す（下がりきる約 280ms の内か外かで扱いを変えない。見直し 4 回目）
 let closingId: string | null = null;
 const main = ref<HTMLElement | null>(null);
+// 上に貼り付く帯の入れ物。高さを main の --dock-h に入れる（帯は年の数で高さが変わらないが、組が 0 本から増えたときに現れる）
+const dock = ref<HTMLElement | null>(null);
+let dockObserver: ResizeObserver | null = null;
+watch(dock, (el) => {
+  dockObserver?.disconnect();
+  dockObserver = null;
+  if (!el || typeof ResizeObserver === "undefined") return;
+  dockObserver = new ResizeObserver(() => main.value?.style.setProperty("--dock-h", `${el.offsetHeight}px`));
+  dockObserver.observe(el);
+});
 const heading = ref<HTMLElement | null>(null);
 const list = ref<HTMLElement | null>(null);
 
@@ -324,6 +334,7 @@ onDeactivated(() => {
   if (leavingId.value) unravel(leavingId.value, { quiet: true });
 });
 onUnmounted(() => {
+  dockObserver?.disconnect();
   setInert(false);
   timers.forEach((t) => clearTimeout(t));
   timers.clear();
@@ -359,7 +370,11 @@ useMemoryDeleted((id) => {
     </section>
 
     <template v-else>
-      <ThreadLoom class="-mt-1" :beads="beads" :items="visible" :weave="weave" ref="loom" :glow="glowId" @pick="jump" />
+      <!-- 帯は一覧をスクロールしても上（ステータスバーの下）に貼り付ける（11/8）。地の紙を左右の余白まで敷き、組は帯の裏へ抜ける。
+           帯の高さは --dock-h に入れ、帯から飛んだ組が帯の裏で止まらないよう行の scroll-margin に足す（connections.css の .pair-row） -->
+      <div ref="dock" class="loom-dock tex-desk sticky top-[env(safe-area-inset-top,0px)] z-[4] -mx-[20px] -mt-1 bg-paper px-[20px]">
+        <ThreadLoom :beads="beads" :items="visible" :weave="weave" ref="loom" :glow="glowId" @pick="jump" />
+      </div>
       <ol ref="list" role="list" aria-label="つながりの一覧" class="flex flex-col gap-7">
         <li
           v-for="p in visible"

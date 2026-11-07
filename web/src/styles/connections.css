@@ -11,10 +11,21 @@ mark.quote-mark {
     linear-gradient(transparent 30%, var(--color-ember-soft) 30%, var(--color-ember-soft) 93%, transparent 93%);
 }
 
-/* ---- 一組の行: 帯から飛んだときの止まる位置（ステータスバーの下）と、ほのかな光の置き場 ---- */
+/* ---- 一組の行: 帯から飛んだときの止まる位置（ステータスバーと、上に貼り付いた帯の下）と、ほのかな光の置き場 ---- */
 .pair-row {
   position: relative;
-  scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 16px);
+  scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--dock-h, 0px) + 16px);
+}
+
+/* ---- 上に貼り付く帯の入れ物（11/8）: 下の縁から紙の色を薄く抜き、組が帯の裏へすっと消えるように見せる ---- */
+.loom-dock::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  height: 14px;
+  background: linear-gradient(var(--color-paper), transparent);
+  pointer-events: none;
 }
 /* 光は紙の後ろに置く（紙片と結びの文字は上に描かれる）。動かすのは opacity だけ */
 .pair-row.pair-glow::before {
