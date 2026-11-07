@@ -919,3 +919,67 @@ curl -s -H "$H" -X DELETE -o /dev/null -w '%{http_code}\n' localhost:8787/api/me
 | 5 | `ai_runs(kind='recall')` | 過去記憶 0 件なら行を作らない（6.2）。requirements N-5 と同じ | なし |
 | 6 | 認証と配布（ADR-0007） | 招待コード + HS256 JWT、Capacitor。`ACCESS_*` は廃止し `INVITE_CODE` / `JWT_SECRET` に置き換えた（3 章、10 章） | requirements F1、wireframes S0、setup-cloudflare.md、tasks.md（追従済み） |
 | 7 | ネイティブでの写真表示 | `<img src>` では Bearer を付けられない（5.8）。画面側で `fetch` + Bearer → `createObjectURL` にするのを既定案とする | tasks.md T-1107-00b（開発者の確認が要る） |
+
+## 13. ことばの地図（S6。11/7 に足した。ADR-0014）
+
+Claude が「その人の暮らしを形づくっている言葉」を選び、Worker がいまの本文から数えて年ごとの地図にする。D1 のマイグレーションは足さない（R2 に言葉の一覧だけを置く）。画面は wireframes 第10節、受け入れ条件は requirements 第9節（F10）。
+
+### 13.1 POST /api/keywords（集める。同期で Claude を 1 回）
+
+本文なし。返す形は 13.2 と同じに `refreshed` を足したもの。
+
+1. 記憶の総数を数え、8 件未満なら `400 { error: { code: "few" } }`。Claude を呼ばず、`ai_runs` も R2 も作らない
+2. 記憶を一覧と同じ並び（`happened_on DESC, created_at DESC, id DESC`、不明は最後）で 200 件まで読み、本文の合計が 60,000 字を越える前で止める（`pickForPrompt`）
+3. `ai_runs` に `kind='retrospect'`・`memory_id=NULL`・`status='running'` を作る（`generated_at` もこの時刻）
+4. Claude を呼ぶ（`callClaude`。system は `KEYWORDS_SYSTEM`、user は `<memories><memory happened_on="2020-04-10">本文</memory>…</memories>`（id は渡さない。`&<>"` はエスケープ）、スキーマ `KEYWORDS_SCHEMA`、effort `low`、`timeout_ms: 60000`）
+5. 検証（`verifyKeywords`）→ R2 の `maps/<user>/keywords.json` に `{ version: 1, generated_at, memory_count, keywords: [{ label, kind, surfaces }] }` を置く → `ai_runs` を `succeeded`（言葉が 0 なら `empty`）に
+6. 失敗（API・refusal・JSON・タイムアウト・例外）は `ai_runs.status='failed'`、R2 には触らない。前の地図があれば `200`（`refreshed: false`、前の地図を数え直したもの）、無ければ `502 { error: { code: "unavailable" } }`。言葉が 0 で前の地図があれば `empty` にして上書きしない（`refreshed: false`）
+7. 3〜6 は `executionCtx.waitUntil` にも渡す（待っている間に接続が切れても地図は置かれる）
+
+スキーマ `KEYWORDS_SCHEMA`（`additionalProperties: false`。件数は検証で切る）:
+
+```json
+{ "keywords": [ { "label": "展望台", "kind": "place", "surfaces": ["展望台"] } ] }
+```
+
+`kind` は `person | place | thing | event | feeling` の enum。検証（`worker/src/ai/verify.ts`）: 形の崩れ・enum 以外・label が空を捨てる → surfaces は渡した本文のどれかに逐語で含まれる形だけ（`matchEvidence`。エスケープを戻した形でも照合、1 字のかな・英数字と 20 字を越える形は捨てる、重複を除いて 3 個まで）→ 残らなければ捨てる → label が本文に無ければ残った最初の形に替える → label の重複を除いて 40 個まで。
+
+### 13.2 GET /api/keywords（見るたびに数え直す。Claude は呼ばない）
+
+```json
+{
+  "map": {
+    "generated_at": "2026-11-06T12:00:00.000Z",
+    "years": [{ "year": 2020, "count": 17 }, { "year": 2023, "count": 12 }],
+    "keywords": [
+      {
+        "label": "展望台", "kind": "place", "role": "bridge",
+        "years": [{ "year": 2020, "count": 1 }, { "year": 2023, "count": 1 }], "total": 2,
+        "mentions": [
+          { "memory_id": "s23_1122", "happened_on": "2023-11-22", "happened_on_precision": "day",
+            "sentence": "あの山の上の展望台で、みさきにプロポーズした。", "surface": "展望台" }
+        ]
+      }
+    ]
+  },
+  "stale_count": 1,
+  "memory_count": 77
+}
+```
+
+- R2 に地図が無ければ `{ map: null, stale_count: 0, memory_count }`。記憶が 8 件未満なら `reason: "few"` を足す（地図があっても）
+- R2 の一覧を、いまの D1 の本文で数え直す（`worker/src/keywords/count.ts` の `buildKeywordMap`。読むのは起きた日の年が分かる記憶を新しい順に 2,000 件まで。総数・`stale_count`・本文を 1 回の `db.batch` で読む）:
+  - 記憶に出てくる = surfaces のどれかが本文の部分文字列（正規化しない）。1 つの記憶は 1 回
+  - `years`（地図）: 起きた日の年ごとの記憶の数（古い順）。「いつだったか」は入れない
+  - 合計 2 回未満は捨てる。1 つの年だけなら `role: "leaf"`（年ごとに回数の多い順に 4 つまで）、2 つ以上なら `role: "bridge"`（合計の多い順に 8 つまで、`years` は回数の多い年 3 つまで（同じなら新しい年）を古い順に）。同じ数なら Claude が先に挙げた順
+  - `mentions`: 新しい順（一覧と同じ並び）に 10 件まで。`sentence` は本文を 。！？ と改行で区切った一文（括弧の中では区切らない。閉じ括弧は前の文に付ける。前後の空白だけ除いた本文の部分文字列）、`surface` はその文の中で先に出てくる形
+  - `label` がいまの本文のどこにも無ければ（その記憶を消した）、いちばん多く出てくる形に替える
+- `stale_count`: `created_at > generated_at` の記憶の数
+- 全クエリに `user_id` の条件（X-11）。読むのは自分の R2 のキーだけ。`GET /api/photos/*` は `photos/<user>/` の下しか返さないので、`maps/` は画面から直接読めない
+
+### 13.3 画面（web）
+
+- `#words` を useScreen に足した（`{ name: "words" }`。S3 の `from` に `words` を足し、`?from=words` で開いた S3 の戻るは「‹ ことばの地図」）。`motionBetween`: S2 → S6 は push、S6 → S2 は pop、S6 ↔ S3 は push / pop、ほかの行き先へは S2 からの左右。下部ナビの現在地は `tabOfScreen`（S6 と S6 から開いた S3 は `past`）
+- `App.vue` の `KeepAlive` に `WordsScreen` を足した（S1 / S2 / S5 と同じく位置と状態を残し、戻ったら裏で取り直す）
+- 並べ方は `web/src/words/layout.ts` の `layoutWords(map, width)`（純粋関数。幅は実際の幅を測って渡す。測れないときは 362）。線は SVG（`aria-hidden`）、年と言葉はふつうの要素を `position: absolute` で置く
+- `api.keywords()`（GET）と `api.collectKeywords()`（POST）。POST は数十秒かかるので、画面は待つ間の表示を出し、ボタンを隠す（二重に呼ばない）
