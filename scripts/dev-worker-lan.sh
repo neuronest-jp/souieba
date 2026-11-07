@@ -7,13 +7,15 @@
 #   - 招待コードは 1 人 1 つ（ADR-0007 2026-11-06 追記）。LAN_EMAIL（必須）に結びつけた乱数のコードを作り、
 #     INVITE_CODE=<乱数>=<LAN_EMAIL> の形で渡す。ログインはこのコードとこのメールの組だけが通る
 #   - 招待コードと署名鍵はこの端末で乱数から作り、.wrangler/lan-dev.secrets（gitignore 済み、600）に保存して次回も使う
+#   - 秘密は wrangler の引数（--var）に載せず、--env-file でファイルから読ませる（引数はプロセスの一覧から同じホストの他人に読まれる）。
+#     ローカルの設定ファイル（API キーなど）を先に、lan-dev.secrets を後に読ませ、招待コードと署名鍵は後のほうで上書きする
 #   - 待ち受けは Mac の LAN の IP だけ（0.0.0.0 にしない。VPN などの他のインターフェースに出さない）
 # 秘密を作り直すときはファイルを消す（端末のトークンは無効になり、ログイン画面に戻る）。
 # 使い方: LAN_EMAIL=you@example.com pnpm dev:worker:lan
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SECRETS="$ROOT/.wrangler/lan-dev.secrets"
+SECRETS="${LAN_SECRETS:-$ROOT/.wrangler/lan-dev.secrets}"
 
 EMAIL="$(printf '%s' "${LAN_EMAIL:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 if ! printf '%s' "$EMAIL" | grep -Eq '^[^@,=]+@[^@,=]+\.[^@,=]+$'; then
@@ -63,12 +65,15 @@ if [ "$SAVED_EMAIL" != "$EMAIL" ]; then
 fi
 
 PORT="${LAN_PORT:-8787}"
-echo "Worker: http://$IP:$PORT（web/.env.local の VITE_API_BASE をこれに）"
+echo "Worker: http://${IP}:${PORT}（web/.env.local の VITE_API_BASE をこれに）"
 echo "招待コード: ${INVITE_CODE%%=*}（アプリのログイン画面で、メール $EMAIL と一緒に入れる）"
 
 mkdir -p "$ROOT/web/dist"
 cd "$ROOT"
+# 秘密でない値だけを --var に残す。秘密は --env-file（後のファイルが前のファイルを上書きする）
+ENV_FILES=()
+[ -f "$ROOT/.dev.vars" ] && ENV_FILES+=(--env-file "$ROOT/.dev.vars")
+ENV_FILES+=(--env-file "$SECRETS")
 exec wrangler dev --ip "$IP" --port "$PORT" \
   --var ENVIRONMENT:lan \
-  --var "INVITE_CODE:$INVITE_CODE" \
-  --var "JWT_SECRET:$JWT_SECRET"
+  "${ENV_FILES[@]}"

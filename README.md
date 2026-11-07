@@ -4,7 +4,7 @@
 
 Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026-11-03〜11-08）。
 
-- デモ動画（3 分）: 【要記入: デモ動画の URL】
+- デモ動画（2 分 43 秒、YouTube 限定公開）: https://www.youtube.com/watch?v=UZn02oIW9rk
 - 選んだテーマ: テーマ 2（これまで届いていなかった人と、その人を阻んでいた壁。スマートフォンは毎日使っても、AI に暮らしのことを話す習慣がない人へ）
 - 提出物と審査の観点: [docs/submission.md](docs/submission.md)
 
