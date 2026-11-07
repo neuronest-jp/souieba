@@ -600,6 +600,139 @@ describe("記録の失敗を知らせる（シートを閉じたあとでも）"
     expect(errors).toEqual([]);
   });
 
+  it("動きのある設定で、抜けている途中の組をもう一度ひらいて「関係ないかも」を取り消したら、組を一覧に残してフォーカスをその組へ返す", async () => {
+    // 見直し 4 回目: 先に予約された抜ける動きの終わりが、ひらき直した組を一覧から外したまま戻さなかった
+    motionOn();
+    recallFeedback.mockResolvedValue({});
+    const { container, errors } = await open([pair("r1"), pair("r2")]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    withStyle(dialog()!);
+    button(dialog()!, "とじる")!.click();
+    await wait(300); // シートが下がりきって、組が抜け始める
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(rowOf(container, "r1")!.hasClass("pair-unravel")).toBe(true);
+    openButtonOf(container, "r1").click(); // 薄れていく組を押す
+    await settle();
+    expect(dialog()).toBeDefined();
+    expect(rowOf(container, "r1")!.hasClass("pair-unravel")).toBe(false); // 抜ける動きは取り消す
+    await wait(340); // 先に予約した抜ける動きの終わりが過ぎる
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+    button(dialog()!, "関係ないかも")!.click(); // 取り消して none に戻す
+    await settle();
+    expect(recallFeedback).toHaveBeenLastCalledWith("r1", "none");
+    withStyle(dialog()!); // ひらき直したシートは新しい紙
+    button(dialog()!, "とじる")!.click();
+    await wait(340);
+    await settle();
+    expect(dialog()).toBeUndefined();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+    expect(rowOf(container, "r1")!.hasClass("pair-unravel")).toBe(false);
+    expect(fakeDocument.activeElement).toBe(openButtonOf(container, "r1"));
+    expect(arcs(container.querySelector("figure")!).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+    expect(errors).toEqual([]);
+  });
+
+  it("動きのある設定で、抜けている途中の組をひらき直しても「関係ないかも」のまま閉じたら、そのとき改めて外す", async () => {
+    motionOn();
+    recallFeedback.mockResolvedValue({});
+    const { container, errors } = await open([pair("r1"), pair("r2")]);
+    openButtonOf(container, "r1").click();
+    await settle();
+    button(dialog()!, "関係ないかも")!.click();
+    await settle();
+    withStyle(dialog()!);
+    button(dialog()!, "とじる")!.click();
+    await wait(300);
+    await settle();
+    openButtonOf(container, "r1").click();
+    await settle();
+    await wait(340);
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]); // 開いている間は外さない
+    withStyle(dialog()!);
+    button(dialog()!, "とじる")!.click();
+    await wait(300);
+    await settle();
+    expect(rowOf(container, "r1")!.hasClass("pair-unravel")).toBe(true);
+    await wait(340);
+    await settle();
+    expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    expect(fakeDocument.activeElement).toBe(openButtonOf(container, "r2"));
+    expect(recallFeedback).toHaveBeenCalledTimes(1); // 開き直して閉じただけでは記録しない
+    expect(errors).toEqual([]);
+  });
+
+  // 「そうだった」に戻した失敗でも、判と知らせを両方出す（判の分岐が先に当たって知らせが消えていた。見直し 4 回目）
+  for (const [label, act] of [
+    ["「そうだった」の組を「関係ないかも」にして", "関係ないかも"],
+    ["「そうだった」を取り消して", "そうだった"],
+  ] as const) {
+    it(`${label} とじる → 失敗: 判を戻し、組の足に判と「記録できませんでした」を並べる（判 → 知らせ → ひらく の順。「ひらく ›」は押し出さない）`, async () => {
+      const write = deferred<unknown>();
+      recallFeedback.mockReturnValue(write.promise);
+      const { container, errors } = await open([pair("r1", { feedback: "helpful" }), pair("r2")]);
+      openButtonOf(container, "r1").click();
+      await settle();
+      button(dialog()!, act)!.click();
+      await settle();
+      button(dialog()!, "とじる")!.click();
+      await settle();
+      write.reject(new Error("network"));
+      await settle();
+      expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+      const row = rowOf(container, "r1")!;
+      expect(stamps(row)).toBe(1);
+      expect(stitchOf(row)).toBe("sewn");
+      const notice = rowNotice(container, "r1")!;
+      expect(notice?.textContent).toBe("記録できませんでした");
+      const text = row.querySelector("article")!.textContent;
+      const at = ["✓ そうだった", "記録できませんでした", "ひらく ›"].map((s) => text.indexOf(s));
+      expect(at.every((i) => i >= 0)).toBe(true);
+      expect(at).toEqual([...at].sort((a, b) => a - b));
+      // 判と知らせは折り返せる箱に入れ、「ひらく ›」は縮めない（375pt の幅では知らせが判の下の行へ回る）
+      const box = notice.parentNode as FakeElement;
+      expect(box.hasClass("flex-wrap") && box.hasClass("min-w-0")).toBe(true);
+      expect(box.querySelector("[data-stamp]")).not.toBeNull();
+      expect(openButtonOf(container, "r1").hasClass("shrink-0")).toBe(true);
+      expect(errors).toEqual([]);
+    });
+  }
+
+  // シートが下がっていく 280ms の間の失敗は、閉じたシートの分として組の足に出す（見直し 4 回目）
+  for (const act of ["そうだった", "関係ないかも"] as const) {
+    it(`動きのある設定で「${act}」→ とじる → シートが下がる途中に失敗: 閉じたあと組の足に「記録できませんでした」を残す`, async () => {
+      motionOn();
+      const write = deferred<unknown>();
+      recallFeedback.mockReturnValue(write.promise);
+      const { container, errors } = await open([pair("r1"), pair("r2")]);
+      openButtonOf(container, "r1").click();
+      await settle();
+      button(dialog()!, act)!.click();
+      await settle();
+      withStyle(dialog()!);
+      button(dialog()!, "とじる")!.click();
+      write.reject(new Error("network")); // 紙が下がりきる前に返る
+      await settle();
+      expect(dialog()).toBeDefined(); // まだ下がっている途中
+      expect(dialog()!.querySelector('[role="status"]')?.textContent).toBe("記録できませんでした");
+      await wait(320);
+      await settle();
+      expect(dialog()).toBeUndefined();
+      expect(rows(container).map((el) => el.getAttribute("data-pair"))).toEqual(["r1", "r2"]);
+      expect(stamps(rowOf(container, "r1")!)).toBe(0);
+      expect(stitchOf(rowOf(container, "r1")!)).toBe("basting");
+      expect(rowNotice(container, "r1")?.textContent).toBe("記録できませんでした");
+      expect(rowNotice(container, "r2")).toBeUndefined();
+      expect(haptic.failed).toHaveBeenCalledTimes(1);
+      expect(errors).toEqual([]);
+    });
+  }
+
   it("触覚: 「そうだった」で stamp、「関係ないかも」と取り消しで tap（押した直後に 1 回）", async () => {
     recallFeedback.mockResolvedValue({});
     const { container, errors } = await open([pair("r1")]);

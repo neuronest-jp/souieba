@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // つながりの一組（S5。wireframes 9 節）。上に後の日の紙片、下に前の日の紙片を置き（起きた日の順。書いた順ではない。pair.ts の sidesOf）、
-// あいだを一本の糸と「2年5か月まえの、あのとき」、つながった理由で結ぶ。読む順は見た目と同じ（上の日付 → 本文 → 隔たり → 理由 → 下の日付 → 本文 → そうだった → ひらく）。
+// あいだを一本の糸と「2年5か月まえの、あのとき」、つながった理由で結ぶ。読む順は見た目と同じ（上の日付 → 本文 → 隔たり → 理由 → 下の日付 → 本文 → そうだった → 記録できませんでした → ひらく）。
 // 紙は「便箋と押し葉」（ADR-0010）の言葉: 上は便箋（.card）、下は一筆箋（.note の朱の二重罫。封蝋は一覧では付けない）。
 // どちらも本文は罫の上の明朝。思い出された側（上下どちらでも）は、思い出した一文（evidence）に蛍光ペンの印（mark）を引く。
 // 引用の印は色の地だけに頼らず、点線の下線（connections.css の .quote-mark）と、読み上げ用の「」（mark の外の sr-only）でも示す（見直し n=7）。
 // 「ひらく ›」の ::after を組いっぱいに広げ、組のどこを押してもシート（PairSheet）が開く（RecallCard と同じ作り）。押すと組ごと少し沈む（press）。
-// notice: シートを閉じたあとに記録が失敗した組の知らせ（足の左、判の場所に出す）
+// notice: シートを閉じたあとに記録が失敗した組の知らせ（足の左。判があれば判と並べ、狭ければ判の下の行へ折り返す）
 import { computed } from "vue";
 import { markEvidence, type ExcerptPart } from "../../connections/excerpt";
 import { dateOf, gapOf, sidesOf, stitchOf, type Pair, type Side } from "../../connections/pair";
@@ -64,34 +64,38 @@ const labelId = computed(() => `pair-${props.pair.id}-upper`);
         </template>
       </p>
     </div>
-    <!-- 足: 確かめた糸だけ左に判（二重の輪と ✓。S3 の「✓ そう」と同じ形）、右に「ひらく ›」 -->
+    <!-- 足: 左に、確かめた糸だけの判（二重の輪と ✓。S3 の「✓ そう」と同じ形）と、閉じたあとの記録の失敗の知らせ。右に「ひらく ›」。
+         判と知らせは両方出ることがある（「そうだった」に戻した失敗。見直し 4 回目）。左の箱は縮んで折り返し（375pt では知らせが判の下の行へ回る）、
+         「ひらく ›」は縮めない。読む順は 判 → 知らせ → ひらく -->
     <div class="mt-1 flex min-h-11 items-center pl-1">
-      <span
-        v-if="pair.feedback === 'helpful'"
-        class="inline-flex h-8 items-center gap-[3px] rounded-pill border border-moss-deep bg-moss-soft pr-[13px] pl-[11px] text-sm leading-none tracking-[.06em] text-ink shadow-stamp [font-feature-settings:'palt']"
-        data-stamp="helpful"
-      >
-        <svg
-          class="shrink-0"
-          width="13"
-          height="13"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.9"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-          focusable="false"
+      <div v-if="pair.feedback === 'helpful' || notice" class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <span
+          v-if="pair.feedback === 'helpful'"
+          class="inline-flex h-8 items-center gap-[3px] rounded-pill border border-moss-deep bg-moss-soft pr-[13px] pl-[11px] text-sm leading-none tracking-[.06em] text-ink shadow-stamp [font-feature-settings:'palt']"
+          data-stamp="helpful"
         >
-          <path d="M3.2 8.6 6.4 11.6 12.8 4.6" />
-        </svg>
-        <span class="sr-only">✓ </span><span>そうだった</span>
-      </span>
-      <p v-else-if="notice" class="text-sm leading-[1.6] text-ink-soft" data-notice>{{ notice }}</p>
+          <svg
+            class="shrink-0"
+            width="13"
+            height="13"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M3.2 8.6 6.4 11.6 12.8 4.6" />
+          </svg>
+          <span class="sr-only">✓ </span><span>そうだった</span>
+        </span>
+        <p v-if="notice" class="text-sm leading-[1.6] text-ink-soft" data-notice>{{ notice }}</p>
+      </div>
       <button
         type="button"
-        class="ml-auto flex min-h-11 items-center pr-0.5 pl-3 text-sm tracking-[.06em] text-ink-soft after:absolute after:inset-0 after:z-[3] after:rounded-card focus-visible:outline-none"
+        class="ml-auto flex min-h-11 shrink-0 items-center pr-0.5 pl-3 text-sm tracking-[.06em] text-ink-soft after:absolute after:inset-0 after:z-[3] after:rounded-card focus-visible:outline-none"
         aria-haspopup="dialog"
         :aria-controls="sheetId"
         :aria-label="`ひらく、${upperDate}と${lowerDate}のつながり`"

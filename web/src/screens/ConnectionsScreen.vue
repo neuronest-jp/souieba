@@ -39,6 +39,9 @@ const glowId = ref<string | null>(null);
 // シートを閉じたあとに記録が失敗した組。組の足に「記録できませんでした」を出し、その組をひらくまで残す（見直し n=3, n=8）
 const failedIds = ref(new Set<string>());
 const openId = ref<string | null>(null);
+// 紙が下がっていく途中のシートの組（PairSheet の closing から close まで）。閉じたものとして扱い、
+// その間に返った記録の失敗も組の足に残す（下がりきる約 280ms の内か外かで扱いを変えない。見直し 4 回目）
+let closingId: string | null = null;
 const main = ref<HTMLElement | null>(null);
 const heading = ref<HTMLElement | null>(null);
 const list = ref<HTMLElement | null>(null);
@@ -172,7 +175,10 @@ const openButton = (id: string): HTMLElement | null => rowOf(id)?.querySelector<
 const open = (id: string) => {
   if (openId.value) return;
   openId.value = id;
+  closingId = null;
   failedIds.value.delete(id); // シートの中で同じ知らせを出す
+  // 抜けている途中の組をひらき直したら、抜ける動きを取り消して元の見た目に戻す（外すかどうかは、また閉じたときに決め直す。見直し 4 回目）
+  if (leavingId.value === id) leavingId.value = null;
   setInert(true);
 };
 
@@ -204,6 +210,9 @@ const unravel = (id: string, { quiet = false } = {}) => {
   const next = order[order.indexOf(id) + 1] ?? null;
   const remove = () => {
     if (leavingId.value === id) leavingId.value = null;
+    // 抜けている間にその組がひらき直されていたら外さない（シートで取り消すかもしれない。
+    // 「関係ないかも」のまま閉じたら、close がもう一度 unravel を呼んで外す。見直し 4 回目）
+    if (openId.value === id) return;
     const now = items.value.find((p) => p.id === id);
     // 抜けている間に記録が失敗して戻っていたら外さず、フォーカスをその組へ返す（見直し n=3）
     if (now && now.feedback !== "not_related") {
@@ -229,10 +238,16 @@ const unravel = (id: string, { quiet = false } = {}) => {
   } else remove();
 };
 
+// シートの紙が下がり始めたとき（閉じる動きの最初。動きを減らす設定では close の直前）
+const onClosing = () => {
+  closingId = openId.value;
+};
+
 // シートが閉じたとき（下がる動きはシート側の useSheetDrag が済ませてから呼ぶ）。
 // immediate: 画面を離れたとき。フォーカスを動かさず、取り直しは戻ったときに任せる
 const close = ({ immediate = false } = {}) => {
   const id = openId.value;
+  closingId = null;
   if (!id) return;
   openId.value = null;
   setInert(false);
@@ -242,7 +257,8 @@ const close = ({ immediate = false } = {}) => {
 };
 
 // 反応の記録（S3 の札と同じ）。同じボタンをもう一度押すと none に戻す。
-// 失敗したら印を戻して「記録できませんでした」（シートが開いていればシートの中、閉じていれば組の足と読み上げの知らせ）
+// 失敗したら印を戻して「記録できませんでした」（シートが開いていればシートの中、閉じていれば組の足と読み上げの知らせ。
+// 下がっていく途中のシートは閉じたものとして扱い、組の足にも出す）
 const notice = useNotice();
 const liveNotice = computed(() => (notice.key.value && notice.key.value !== openId.value ? notice.message.value : ""));
 const react = async (feedback: "helpful" | "not_related") => {
@@ -265,7 +281,7 @@ const react = async (feedback: "helpful" | "not_related") => {
     now.feedback = prev;
     gone.value.delete(id); // シートを閉じて外した後に失敗していたら、組を戻す
     if (leavingId.value === id) leavingId.value = null; // 抜けている途中なら、すぐ戻す
-    if (openId.value !== id) failedIds.value.add(id);
+    if (openId.value !== id || closingId === id) failedIds.value.add(id);
     notice.show("記録できませんでした", id);
     failed();
   } finally {
@@ -370,6 +386,7 @@ useMemoryDeleted((id) => {
       :sheet-id="SHEET_ID"
       :notice="notice.key.value === openPair.id ? notice.message.value : ''"
       @react="react"
+      @closing="onClosing"
       @close="close()"
     />
   </main>

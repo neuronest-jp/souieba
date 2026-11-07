@@ -5,7 +5,7 @@
 // 思い出した一文の印と、S3 を札の形（?recall=）で開くリンクは、思い出された側（上下どちらでも）に付ける。
 // シートの地は机と同じ紙（bg-paper）にして、便箋と一筆箋が一覧と同じ紙として見えるようにする（便箋の地 card の上に便箋を置かない）。
 // 手ざわりは useSheetDrag（motion の受け持ち。DateSheet・S3 の「消しますか」と同じ）: 紙はばねで上がり、下へなぞる・地を押す・Esc・「とじる」で
-// 下がってから close を出す。開いている間は後ろの一覧をスクロールさせない（見直し n=11。中身がスクロールするときはパネルだけ動く）。
+// 下がり始めに closing、下がってから close を出す。開いている間は後ろの一覧をスクロールさせない（見直し n=11。中身がスクロールするときはパネルだけ動く）。
 // 開いたら見出しにフォーカスを置く。フォーカスを返すのと反応の記録は親（ConnectionsScreen）が持つ（RecalledByCard と同じ）。
 // 「関係ないかも」にした組は、一筆箋を地の紙に退かせ（.note-quiet）、封蝋を外し、糸をほどく（色だけでなく形で）。
 // 「そうだった」にしたら、しつけ糸を上から一針ずつ本縫いに縫い直し、下の結び目が留まる（.is-tying。触覚の stamp は親が押した直後に鳴らす）
@@ -19,7 +19,8 @@ import Seal from "../motifs/Seal.vue";
 import Stitch from "./Stitch.vue";
 
 const props = withDefaults(defineProps<{ pair: Pair; swing: 0 | 1; sheetId: string; notice?: string }>(), { notice: "" });
-const emit = defineEmits<{ react: [feedback: "helpful" | "not_related"]; close: [] }>();
+// closing: 紙が下がり始めたとき（下へなぞって離した・地・Esc・「とじる」のどれでも）。close: 下がりきったとき
+const emit = defineEmits<{ react: [feedback: "helpful" | "not_related"]; closing: []; close: [] }>();
 
 const OPEN_MS = 1100; // 紙が上がり（460ms）、糸が一針ずつ渡され、結び目が留まるまで
 const TIE_MS = 760; // 8 針（55ms ずつ）+ 下の結び目が留まるまで
@@ -42,7 +43,17 @@ const hrefOf = (side: Side) =>
 // 文字列の "body" ではなく要素を渡す（テストの最小の DOM は querySelector を持たない）
 const target = document.body;
 
-const { panel, backdrop, close } = useSheetDrag({ onClose: () => emit("close") });
+const { panel, backdrop, close, closing } = useSheetDrag({ onClose: () => emit("close") });
+// 下がっていく途中のシートは、親が閉じたものとして扱う（その間に返った記録の失敗を組の足に残すため。見直し 4 回目）。
+// なぞって離したときは useSheetDrag の中で閉じ始めるので、close を包まずに closing を見る。
+// sync: 閉じ始めたその場で知らせる（後回しにすると、動きを減らす設定では close のあとに届き、順が入れ替わる）
+watch(
+  closing,
+  (now) => {
+    if (now) emit("closing");
+  },
+  { flush: "sync" },
+);
 
 const heading = ref<HTMLElement | null>(null);
 const timers = new Set<ReturnType<typeof setTimeout>>();
