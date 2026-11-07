@@ -1,5 +1,5 @@
 // 下からのシートの手ざわり（ブラッシュアップ 11/7、motion の受け持ち。DateSheet と S3 の「消しますか」で使い、PairSheet でも使える）。
-//   - 開くとき: 紙がばねで上がる（.sheet-panel の sheet-rise。地は .sheet-backdrop がふわっと暗くなる）
+//   - 開くとき: 紙がばねで上がる（.sheet-paper の sheet-up。地は .sheet-backdrop がふわっと暗くなる）
 //   - 閉じるとき（close）: 紙が下へすっと下がり、地が明るく戻ってから onClose を呼ぶ（動きを減らす設定では待たずに呼ぶ）
 //   - 掴み手かシートを下へなぞると、指に付いて下がる。離した位置と速さで閉じるか戻るかを決める（sheetDecision）
 //   - 開いている間は後ろの画面をスクロールさせない（シートの外の touchmove / wheel を止める。シートの中のスクロールする所は止めない）
@@ -7,7 +7,7 @@
 //   const { panel, backdrop, close } = useSheetDrag({ onClose: () => emit("close") });
 //   <div class="sheet-host fixed inset-0 z-20 flex items-end justify-center">  ← 置き場（色を持たない。touch-action: none）
 //     <div ref="backdrop" class="sheet-backdrop absolute inset-0 bg-ink/30" aria-hidden="true" @click="close"></div>
-//     <div ref="panel" class="sheet-panel relative ..." role="dialog" aria-modal="true"> … <div class="sheet-grip …"></div> …
+//     <div ref="panel" class="sheet-paper relative ..." role="dialog" aria-modal="true"> … <div class="sheet-grip …"></div> …
 //   Esc・「とじる」も close を呼ぶ。中身がスクロールするシートは、スクロールする要素に data-sheet-scroll を付ける
 //   （その要素がいちばん上にあるときだけ、下へなぞるとシートが下がる）
 import { getCurrentInstance, onUnmounted, ref, watch, type Ref } from "vue";
