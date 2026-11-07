@@ -2,16 +2,22 @@
 // 見るたびに数え直すので、消した記憶・直した本文の引用は出ない（原則 5）。数と引用は Worker の決め打ちで、Claude には言わせない。
 //   - 記憶に出てくる: その言葉の surfaces のどれかが本文の部分文字列（正規化しない。X-7）。1 つの記憶は何度出てきても 1 回
 //   - 年: happened_on の年。起きた日が「いつだったか」（unknown）の記憶は背骨に置けないので、数にも引用にも入れない
-//   - 合計 2 回未満は捨てる。1 つの年だけに出る言葉は leaf（その年の周り）、2 つ以上の年に出る言葉は bridge（回数の多い年 3 つまでをつなぐ）
-//   - leaf は年ごとに回数の多い順に 4 つまで、bridge は合計の多い順に 8 つまで。同じ数なら Claude が先に挙げた言葉を先にする
+//   - 1 つの年だけに出る言葉は leaf（その年の周り。1 回でも出す。Claude が暮らしを形づくる言葉として選んだものなので、短い日記では 1 回でもその年の特徴になる）、
+//     2 つ以上の年に出る言葉は bridge（回数の多い年 3 つまでをつなぐ）
+//   - leaf は年ごとに回数の多い順に 4 つまで（同じなら Claude が先に挙げた言葉）。bridge は 8 つまでで、まず合計の多い 2 つ（よく出てくる人など）、
+//     残りはつなぐ年の幅（最初の年から最後の年まで）の大きい順、同じなら合計の多い順、それも同じなら Claude が先に挙げた順。
+//     何年も離れた日をつなぐ言葉を先にする（「そういえば」の形。11/7 夜に回数の順だけで選ぶと、物語のデータで「展望台」（2020 と 2023）が
+//     日々の言葉に押し出され、幅の順だけで選ぶと、隣り合う年に 17 回出る「そら」が落ちた）
 //   - mentions: その言葉が出てくる記憶を新しい順（起きた日の降順、同じ日は書いた順の降順。一覧の並びと同じ）に 10 件まで。
 //     各件はその surface を含む一文（本文を 。！？ と改行で区切った一文。本文から切り出した原文のまま）
 import type { MemoryRow } from "../db/memories";
 import type { KeywordKind } from "../ai/schemas";
 
-export const KEYWORD_MIN_TOTAL = 2;
+export const KEYWORD_MIN_TOTAL = 1;
 export const LEAF_PER_YEAR = 4;
 export const BRIDGE_MAX = 8;
+/** bridge のうち、合計の多い順に先に入れる数（よく出てくる人など、暮らしの真ん中の言葉を幅の順で落とさない） */
+export const BRIDGE_BY_TOTAL = 2;
 export const BRIDGE_YEARS = 3;
 export const MENTIONS_MAX = 10;
 
@@ -160,20 +166,27 @@ export function buildKeywordMap(stored: { generated_at: string; keywords: readon
     mentions: c.mentions,
   });
 
-  // bridge: 2 つ以上の年に出る言葉。合計の多い順（同じなら年の数の多い順、それも同じなら Claude が先に挙げた順）に 8 つまで。
-  // つなぐ年は回数の多い年 3 つまで（同じ回数なら新しい年）を、古い順に並べる
-  const bridges = counted
+  // bridge: 2 つ以上の年に出る言葉。つなぐ年は回数の多い年 3 つまで（同じ回数なら新しい年）を、古い順に並べる。
+  // 選ぶのは 8 つまでで、まず合計の多い 2 つ、残りはつなぐ年の幅（最初から最後まで）の大きい順、同じなら合計の多い順、それも同じなら Claude が先に挙げた順
+  const candidates = counted
     .filter((c) => c.years.length >= 2)
-    .sort((a, b) => b.total - a.total || b.years.length - a.years.length || a.index - b.index)
-    .slice(0, BRIDGE_MAX)
     .map((c) => {
       const top = c.years
         .slice()
         .sort((a, b) => b.count - a.count || b.year - a.year)
         .slice(0, BRIDGE_YEARS)
         .sort((a, b) => a.year - b.year);
-      return toMap(c, "bridge", top);
+      return { c, top, span: top[top.length - 1]!.year - top[0]!.year };
     });
+  const byTotal = candidates
+    .slice()
+    .sort((a, b) => b.c.total - a.c.total || a.c.index - b.c.index)
+    .slice(0, BRIDGE_BY_TOTAL);
+  const bySpan = candidates
+    .filter((x) => !byTotal.includes(x))
+    .sort((a, b) => b.span - a.span || b.c.total - a.c.total || a.c.index - b.c.index)
+    .slice(0, BRIDGE_MAX - byTotal.length);
+  const bridges = [...byTotal, ...bySpan].map(({ c, top }) => toMap(c, "bridge", top));
 
   // leaf: 1 つの年だけに出る言葉。年ごとに回数の多い順（同じなら Claude が先に挙げた順）に 4 つまで。年の古い順に並べる
   const leavesByYear = new Map<number, Counted[]>();

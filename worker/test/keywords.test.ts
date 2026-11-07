@@ -138,12 +138,15 @@ describe("一文の切り出し", () => {
 });
 
 describe("buildKeywordMap", () => {
-  it("本文に出てこない言葉・合計 2 回未満の言葉は捨てる。1 つの記憶に何度出てきても 1 回", () => {
+  it("本文に出てこない言葉は捨てる。1 つの年にだけ出る言葉は 1 回でも leaf（11/7 夜に 2 回未満を捨てるのをやめた）。1 つの記憶に何度出てきても 1 回", () => {
     const m = buildKeywordMap({ generated_at: STORED_AT, keywords: [kw("展望台"), kw("海"), kw("指輪")] }, [
       mem("a", "展望台。展望台。展望台", "2024-05-01"),
       mem("b", "指輪を見た", "2024-06-01"),
     ]);
-    expect(m.keywords).toEqual([]);
+    expect(m.keywords.map((k) => [k.label, k.role, k.total])).toEqual([
+      ["展望台", "leaf", 1],
+      ["指輪", "leaf", 1],
+    ]);
     const two = buildKeywordMap({ generated_at: STORED_AT, keywords: [kw("展望台")] }, [mem("a", "展望台", "2024-05-01"), mem("b", "また展望台", "2024-06-01")]);
     expect(two.keywords.map((k) => [k.label, k.role, k.total])).toEqual([["展望台", "leaf", 2]]);
     expect(two.years).toEqual([{ year: 2024, count: 2 }]);
@@ -200,6 +203,27 @@ describe("buildKeywordMap", () => {
     // 五丁目（5 回）が先頭、残りは 2 回ずつで挙げた順。5 つめの「四丁目」が落ちる
     expect(m.keywords.filter((k) => k.role === "leaf").map((k) => k.label)).toEqual(["五丁目", "一丁目", "二丁目", "三丁目"]);
     expect(m.keywords.filter((k) => k.role === "bridge").map((k) => k.label)).toEqual(["橋9", "橋8", "橋7", "橋6", "橋5", "橋4", "橋3", "橋2"]);
+  });
+
+  it("bridge は合計の多い 2 つを先に入れ、残りはつなぐ年の幅（最初から最後まで）の大きい順に選ぶ。隣り合う年だけの言葉は、離れた年をつなぐ言葉に譲る", () => {
+    const rows: CountMemory[] = [];
+    // 「人」は 2025・2026 に 10 回ずつ（幅 1）、「展望台」は 2020 と 2023 に 1 回ずつ（幅 3）
+    for (let k = 0; k < 10; k += 1) rows.push(mem(`p5-${k}`, "人と歩いた", `2025-0${(k % 9) + 1}-01`), mem(`p6-${k}`, "人と歩いた", `2026-0${(k % 9) + 1}-01`));
+    rows.push(mem("t20", "ひとりで展望台へ", "2020-07-12"), mem("t23", "あの展望台で", "2023-11-22"));
+    const fillers = Array.from({ length: 8 }, (_, i) => `言葉${i}`);
+    fillers.forEach((w, i) => {
+      for (let k = 0; k < 3; k += 1) rows.push(mem(`${w}-${k}`, `${w}を書いた`, `${2025 + (k % 2)}-1${i % 3}-0${k + 1}`));
+    });
+    const m = buildKeywordMap({ generated_at: STORED_AT, keywords: ["人", ...fillers, "展望台"].map((w) => kw(w)) }, rows);
+    const bridges = m.keywords.filter((k) => k.role === "bridge");
+    expect(bridges).toHaveLength(8);
+    // 合計の多い 2 つ（人 20 回、言葉0 3 回）が先、その次に幅 3 の展望台。合計 3 回の言葉 8 つのうち、幅の順で残りは 5 つだけ
+    expect(bridges.slice(0, 3).map((k) => k.label)).toEqual(["人", "言葉0", "展望台"]);
+    expect(bridges[2]!.years).toEqual([
+      { year: 2020, count: 1 },
+      { year: 2023, count: 1 },
+    ]);
+    expect(bridges.map((k) => k.label)).not.toContain("言葉7");
   });
 
   it("mentions は新しい順（起きた日、同じ日は書いた順の降順）に 10 件まで。各件は surface を含む本文の一文", () => {
@@ -459,7 +483,7 @@ describe("GET /api/keywords（見るたびに数え直す）", () => {
     expect(await getKeywords(appWith(fakeCall(() => ANSWER)))).toEqual({ map: null, stale_count: 0, memory_count: 8 });
   });
 
-  it("消した記憶は mentions にも数にも出ない。2 回を割った言葉は地図から外れる", async () => {
+  it("消した記憶は mentions にも数にも出ない。1 つの年だけになった言葉は leaf に変わる", async () => {
     const ids = seed();
     const app = appWith(fakeCall(() => ANSWER));
     await postKeywords(app);
@@ -468,8 +492,13 @@ describe("GET /api/keywords（見るたびに数え直す）", () => {
     const map = (await getKeywords(app)).map!;
     const all = map.keywords.flatMap((k) => k.mentions.map((x) => x.memory_id));
     expect(all).not.toContain(ids.f);
-    // 展望台（2020 の 1 回だけになった）とみさき（2023 の 1 回）は外れる
-    expect(map.keywords.map((k) => k.label)).toEqual(["離婚", "そら"]);
+    // 展望台（2020 の 1 回だけになった）とみさき（2023 の 1 回）は、年をまたがなくなったので leaf になる
+    expect(map.keywords.map((k) => [k.label, k.role, k.total])).toEqual([
+      ["離婚", "leaf", 2],
+      ["展望台", "leaf", 1],
+      ["みさき", "leaf", 1],
+      ["そら", "leaf", 2],
+    ]);
     expect(map.years.find((y) => y.year === 2026)).toEqual({ year: 2026, count: 1 });
   });
 
@@ -479,8 +508,11 @@ describe("GET /api/keywords（見るたびに数え直す）", () => {
     await postKeywords(app);
     db.raw.prepare("UPDATE memories SET body = ? WHERE id = ?").run("そらが笑った", ids.b);
     const map = (await getKeywords(app)).map!;
-    expect(map.keywords.find((k) => k.label === "離婚")).toBeUndefined();
-    expect(map.keywords.find((k) => k.label === "そら")!.total).toBe(3);
+    const rikon = map.keywords.find((k) => k.label === "離婚")!;
+    expect(rikon.total).toBe(1);
+    expect(rikon.mentions.map((x) => x.memory_id)).not.toContain(ids.b);
+    const sora = map.keywords.find((k) => k.label === "そら")!;
+    expect([sora.role, sora.total]).toEqual(["bridge", 3]);
   });
 
   it("stale_count は地図を作ったあとに書いた記憶の数", async () => {
