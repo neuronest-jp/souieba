@@ -138,6 +138,36 @@ const applyPolled = (v: { f: { items: Fact[] }; r: { pending: boolean; items: Re
 };
 watch(() => polling.value.value, (v) => applyPolled(v));
 
+// 保存のあと最初の札が届いたら、一度だけ札まで送る（11/7 の点検）。写真や控えの候補があると、札は下部ナビの裏に届いて
+// 引用と理由が見えなかった。札には下部ナビの高さぶんの scroll-margin を持たせてある（下の RecallCard の class）。
+// 保存してから指で動かしていたら送らない（自分で見ている所を奪わない）。動きを減らす設定では、なめらかに動かさず一度で移る
+const firstCard = ref<HTMLElement | null>(null);
+const setFirstCard = (c: unknown) => {
+  firstCard.value = (c as { $el?: HTMLElement } | null)?.$el ?? null;
+};
+let movedSinceSave = false;
+let broughtFor: string | null = null;
+const onUserMove = () => {
+  movedSinceSave = true;
+};
+onMounted(() => {
+  window.addEventListener("touchmove", onUserMove, { passive: true });
+  window.addEventListener("wheel", onUserMove, { passive: true });
+});
+onUnmounted(() => {
+  window.removeEventListener("touchmove", onUserMove);
+  window.removeEventListener("wheel", onUserMove);
+});
+watch(
+  () => recalls.value.length,
+  (n, was) => {
+    const id = saved.value?.id;
+    if (!n || was || !id || !shown || movedSinceSave || broughtFor === id) return;
+    broughtFor = id;
+    void nextTick(() => firstCard.value?.scrollIntoView?.({ block: "nearest", behavior: prefersMotion() ? "smooth" : "auto" }));
+  },
+);
+
 // 札を待つ間（WaitingThread）。取り直しの最中で、札がまだ 1 枚も無く、札の pending が false と分かっていない間だけ出す。
 // 届いたら札に入れ替わり、届かずに終わったら（pending が false か 30 秒の打ち切り）静かに薄れて消える。「見つかりませんでした」とは言わない
 const waiting = computed(() => !!saved.value && polling.active.value && recalls.value.length === 0 && recallPending.value !== false);
@@ -282,6 +312,7 @@ const save = async () => {
   recallPending.value = null;
   savedAt = Date.now();
   photoAddedAt = 0;
+  movedSinceSave = false;
   hapticSaved();
   const id = memory.id;
   void loadToday().then((t) => {
@@ -491,7 +522,16 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
       </div>
       <!-- 札を待つ間。届いたら札に入れ替わり、届かずに終わったら静かに消える -->
       <WaitingThread v-if="waiting || waitingLeaving" :leaving="!waiting" />
-      <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" :animate="!shownIds.has(r.id)" />
+      <!-- scroll-margin は下部ナビの高さ（pt-1 + 58px + max(env, 6px)）と 12px のすき間。札まで送るとき、ナビの裏に入らない -->
+      <RecallCard
+        v-for="(r, i) in recalls"
+        :key="r.id"
+        :ref="i === 0 ? setFirstCard : undefined"
+        class="scroll-mb-[calc(74px_+_max(env(safe-area-inset-bottom),6px))]"
+        :recall="r"
+        from="today"
+        :animate="!shownIds.has(r.id)"
+      />
       <div class="-mt-1 flex flex-wrap items-baseline gap-x-6">
         <button type="button" class="inline-flex min-h-11 items-center tracking-[.04em] text-ink" @click="writeAnother"><span class="ember-underline">もうひとつ書く</span></button>
         <!-- いま書いた記憶へ。札の「ひらく ›」は昔の記憶へ行くので、同じ文言にしない -->

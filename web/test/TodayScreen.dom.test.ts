@@ -6,7 +6,7 @@ import { KeepAlive, defineComponent, h, nextTick, ref } from "vue";
 import type { Fact, Memory, Recall, TodayResponse } from "../src/api/types";
 import type { PickedPhoto } from "../src/camera";
 import { MEMORY_PHOTO } from "../src/composables/useMemoryPhoto";
-import { fakeDocument, mount, resetFakeDocument, type FakeElement } from "./fakeDom";
+import { FakeElement as FakeEl, fakeDocument, mount, resetFakeDocument, type FakeElement } from "./fakeDom";
 
 const { ApiError, api, haptic, pickPhoto } = vi.hoisted(() => {
   class ApiError extends Error {
@@ -237,6 +237,51 @@ describe("札を待つ間", () => {
     expect(statusTexts(container)).not.toContain("思い出しています");
     expect(container.findAll((el) => el.tagName === "ARTICLE" && el.hasClass("note"))).toHaveLength(1);
     expect(errors).toEqual([]);
+  });
+
+  describe("最初の札まで送る（下部ナビの裏に隠さない。11/7 の点検）", () => {
+    const into = vi.fn();
+    const proto = FakeEl.prototype as unknown as { scrollIntoView?: unknown };
+    beforeEach(() => {
+      into.mockReset();
+      proto.scrollIntoView = into;
+    });
+    afterEach(() => {
+      delete proto.scrollIntoView;
+    });
+
+    it("保存のあと最初の札が届いたら、札まで一度だけ送る（取り直しで同じ札が届いても二度は送らない）", async () => {
+      api.getFacts.mockResolvedValue({ pending: false, items: [] });
+      api.getRecalls.mockResolvedValueOnce({ pending: true, items: [] }).mockResolvedValue({ pending: false, items: [recall] });
+      const { container } = mount(Host);
+      await settle();
+      await saveOnce(container);
+      expect(into).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2000);
+      await settle();
+      expect(into).toHaveBeenCalledTimes(1);
+      expect(into.mock.calls[0]![0]).toMatchObject({ block: "nearest" });
+      expect(into.mock.instances[0]).toBe(container.findAll((el) => el.tagName === "ARTICLE" && el.hasClass("note"))[0]);
+      await vi.advanceTimersByTimeAsync(4000);
+      await settle();
+      expect(into).toHaveBeenCalledTimes(1);
+    });
+
+    it("保存のあと指で動かしていたら送らない（自分で見ている所を奪わない）", async () => {
+      api.getFacts.mockResolvedValue({ pending: false, items: [] });
+      api.getRecalls.mockResolvedValueOnce({ pending: true, items: [] }).mockResolvedValue({ pending: false, items: [recall] });
+      const { container } = mount(Host);
+      await settle();
+      await saveOnce(container);
+      const on = (window as unknown as { addEventListener: Mock }).addEventListener;
+      const move = on.mock.calls.find((c) => c[0] === "touchmove")?.[1] as (() => void) | undefined;
+      expect(move).toBeTypeOf("function");
+      move!();
+      await vi.advanceTimersByTimeAsync(2000);
+      await settle();
+      expect(container.findAll((el) => el.tagName === "ARTICLE" && el.hasClass("note"))).toHaveLength(1);
+      expect(into).not.toHaveBeenCalled();
+    });
   });
 
   it("何も届かずに終わったら、静かに薄れて消える（何も言わない）", async () => {
