@@ -24,14 +24,17 @@ cd "$S"
 - メッセージ: `Claude-Session:` と `Co-Authored-By:` の行を消す（開発者の設定では付けないことになっている。11/4〜11/5 のクラウドのセッションの分に付いていた）
 - 中身: `docs/handoff-2026-11-05.md` の端末の情報（UDID、LAN の IP、VPN の IP、チーム ID、証明書の個人 ID）は、いまの版では伏せ字にしてある。
   過去のコミットにも同じ伏せ字を当てる。元の値は、伏せ字にしたコミットの差分から読む（`git log -p -S'<UDID>' -- docs/handoff-2026-11-05.md`）。値は会話・文書・コミットに写さない
+- 作者: 開発者のメールアドレス（`git config user.email`）を `noreply@neuronest.jp` に替える（11/7 開発者の判断。名前はそのまま。Claude 名義の `noreply@anthropic.com` は変えない）
 
 ```sh
-FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f \
+FILTER_BRANCH_SQUELCH_WARNING=1 OLD_EMAIL="$(git config user.email)" git filter-branch -f \
+  --env-filter 'if [ "$GIT_AUTHOR_EMAIL" = "$OLD_EMAIL" ]; then export GIT_AUTHOR_EMAIL=noreply@neuronest.jp; fi; if [ "$GIT_COMMITTER_EMAIL" = "$OLD_EMAIL" ]; then export GIT_COMMITTER_EMAIL=noreply@neuronest.jp; fi' \
   --msg-filter 'sed -e "/^Claude-Session: /d" -e "/^Co-Authored-By: /d" | awk "{l[NR]=\$0} END {n=NR; while (n>0 && l[n] ~ /^[[:space:]]*$/) n--; for (i=1;i<=n;i++) print l[i]}"' \
   --tree-filter "if [ -f docs/handoff-2026-11-05.md ]; then sed -i '' -f <作業場所の外に置いた置き換えの sed>.sed docs/handoff-2026-11-05.md; fi" \
   -- --all
 git replace -d 32147a9
-# 11/7 の 1 回目: 108 コミット、tree は元の HEAD と同じ、トレーラーと端末の値は 0 件。push 先 neuronest-jp/souieba（非公開）
+# 11/7 の 2 回目: 110 コミット、tree は元の HEAD と同じ、トレーラー・端末の値・元のメールアドレスは 0 件。push 先 neuronest-jp/souieba（非公開、--force）
+# OLD_EMAIL は手元のリポジトリで読んだ値と同じか確かめる（git -C <このリポジトリのパス> config user.email。リポジトリごとの設定があればそちらが効く）
 for r in $(git for-each-ref --format='%(refname)' refs/original refs/replace); do git update-ref -d "$r"; done
 git reflog expire --expire=now --all && git gc -q --prune=now
 ```
