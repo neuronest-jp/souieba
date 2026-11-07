@@ -15,9 +15,13 @@ R2 の写真は消えない（D1 の行が消えるので画面には出なく�
 
 ## 2. 戻す
 
+撮影は物語のデータ（`demo/fixtures/story.sql`、77 件。中身と撮影で書く一文は demo/fixtures/README.md の「物語のデータ」）、
+D1〜D4 の確認は元のシード（`demo/fixtures/seed.sql`、16 件）。どちらも `demo@example.com` の行を消して入れ直すので、入れ替えになる。
+
 ```sh
 pnpm db:migrate:local
-pnpm db:seed:local
+pnpm db:seed:story:local   # 撮影（物語）
+pnpm db:seed:local         # D1〜D4 の確認
 ```
 
 LAN の Worker（`pnpm dev:worker:lan`）も既定の `.wrangler/state` を使うので、動かしたままでよい。
@@ -30,8 +34,8 @@ pnpm exec wrangler d1 execute souieba --local --command \
   "SELECT count(*) AS n FROM memories WHERE user_id='demo@example.com'"
 ```
 
-- 16 件であること。D1 の想起元 `mem_d1_01`（梅干し）と D4 の想起元 `mem_d4_01`（三輪車）があること
-- 撮影の日（11/5〜11/11）の書く画面の「あの日のひとこと」は `mem_daily_06`（1 年まえの 11/8、手編みのマフラー）。このごろの押し葉は 11/4 と 11/6 に押してある
+- 物語なら 77 件、元のシードなら 16 件であること（元のシードなら D1 の想起元 `mem_d1_01`（梅干し）と D4 の想起元 `mem_d4_01`（三輪車）があること）
+- 撮影の日（11/5〜11/11）の書く画面の「あの日のひとこと」は、物語なら `s25_1108`（1 年まえ、つかまり立ち。押し葉は 11/3・11/4・11/6）、元のシードなら `mem_daily_06`（手編みのマフラー。押し葉は 11/4・11/6）
 - 札の引用はモデルが選ぶ。11/7 の通しでは D1 が「青梅を水に浸けて、ひとつずつヘタを取るのを手伝った。」、D4 が「泣きやむとまた三輪車に乗りたがった。」だった。台本は実際の札に合わせて話す
 
 ## 4. 報告する

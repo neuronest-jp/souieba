@@ -19,6 +19,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply souieba --remote",
     "db:seed:local": "wrangler d1 execute souieba --local --file demo/fixtures/seed.sql",
     "db:seed:remote": "wrangler d1 execute souieba --remote --file demo/fixtures/seed.sql",
+    "db:seed:story:local": "wrangler d1 execute souieba --local --file demo/fixtures/story.sql",
+    "db:seed:story:remote": "wrangler d1 execute souieba --remote --file demo/fixtures/story.sql",
     "typecheck": "tsc -p worker/tsconfig.json --noEmit && tsc -p worker/tsconfig.test.json --noEmit && vue-tsc -p web/tsconfig.json --noEmit && vue-tsc -p web/tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
