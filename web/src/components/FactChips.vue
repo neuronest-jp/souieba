@@ -3,24 +3,49 @@
 // 読み上げ用の「ちがう」を添えて残す。
 // 見た目は「便箋と押し葉」（ADR-0010）: 候補は鉛筆書き（値に点線の下線、行の区切りも点線）、根拠は罫の上の言葉と同じ明朝、
 // 確かめたものは二重の輪の判と実線の区切りにする（色だけでなく形で分ける）。
-// variant: slip は S1 の記憶カードのミシン目から下の控え（見出しの前に鉛筆）、page は S3 の地の上（見出しの下に天の二重罫）
-import { nextTick, ref } from "vue";
+// variant: slip は S1 の記憶カードのミシン目から下の控え（見出しの前に鉛筆）、page は S3 の地の上（見出しの下に天の二重罫）。
+// 手ざわり（ブラッシュアップ 11/7）: 「そう」は押した瞬間に判が小さく沈んで輪が広がり（stamp-press）、stamp() の触覚。
+// 「ちがう」は打ち消し線が左から引かれ（strike-draw）、tap() の触覚。動きはこの操作で決めた行だけに付け、動き終わったら印を外す
+// （読み込んだときから確定・却下の行や、KeepAlive で戻ってきた行は動かさない）。記録に失敗したら failed() で知らせ、印も外す。
+// stagger: S1 の控えで、届いた候補を少しずつずらして出す（chip-in。遅れは style の --i）。動きは styles/today.css
+import { nextTick, onUnmounted, ref } from "vue";
 import { api } from "../api";
 import { useNotice } from "../composables/useNotice";
 import type { Fact } from "../api/types";
 import { formatFactDate } from "../date";
+import { failed, stamp, tap } from "../haptics";
 
 // fallback: 行も見出しも無くなったときのフォーカスの置き先（S3 で最後の候補を却下したときの、起きた日の h1）
-const props = withDefaults(defineProps<{ facts: Fact[]; title?: string; fallback?: HTMLElement | null; variant?: "slip" | "page" }>(), {
-  title: undefined,
-  fallback: null,
-  variant: "slip",
-});
+const props = withDefaults(
+  defineProps<{ facts: Fact[]; title?: string; fallback?: HTMLElement | null; variant?: "slip" | "page"; stagger?: boolean }>(),
+  {
+    title: undefined,
+    fallback: null,
+    variant: "slip",
+    stagger: false,
+  },
+);
 const emit = defineEmits<{ decided: [fact: Fact] }>();
 
 const KIND_LABEL = { person: "人", place: "場所", date: "日", thing: "もの" } as const;
 const busy = ref<Set<string>>(new Set());
 const notice = useNotice();
+// いま押して決めた行（判を押す動き / 線を引く動きを付ける）。動きの長さ（判 460ms、線 280ms + 待ち）より少し長く残して外す
+const motion = ref<Map<string, "stamp" | "strike">>(new Map());
+const MOTION_MS = 700;
+const motionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const setMotion = (id: string, kind: "stamp" | "strike" | null) => {
+  const t = motionTimers.get(id);
+  if (t) clearTimeout(t);
+  motionTimers.delete(id);
+  const next = new Map(motion.value);
+  if (kind) {
+    next.set(id, kind);
+    motionTimers.set(id, setTimeout(() => setMotion(id, null), MOTION_MS));
+  } else next.delete(id);
+  motion.value = next;
+};
+onUnmounted(() => motionTimers.forEach((t) => clearTimeout(t)));
 
 const display = (f: Fact) => (f.kind === "date" ? formatFactDate(f.value) : f.value);
 const showEvidence = (f: Fact) => f.evidence && f.evidence !== f.value && !f.evidence.startsWith("photo:");
@@ -61,7 +86,11 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
   const byKeys = e.detail === 0;
   const index = props.facts.findIndex((x) => x.id === f.id); // S3 の却下では、次の描画でこの行が消える
   const prev = f.status;
+  // 押した直後の手ざわり。判を押す / 線を引く（記録の返事は待たない）
+  if (status === "confirmed") stamp();
+  else tap();
   f.status = status; // 楽観更新
+  setMotion(f.id, status === "confirmed" ? "stamp" : "strike");
   const placing = byKeys ? refocus(f.id, index) : Promise.resolve(null);
   try {
     await api.decideFact(f.id, status);
@@ -69,6 +98,8 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
     announce.value = `${display(f)}、${status === "confirmed" ? "そう" : "ちがう"}`;
   } catch {
     f.status = prev; // 表示を戻し、その行の下にそっと知らせる（F4 エラー時）
+    setMotion(f.id, null);
+    failed();
     notice.show("記録できませんでした", f.id);
     // 戻した行にボタンが作り直されるので、置いたフォーカスをその行へ戻す（S3 の却下で消えた行もここで戻る）
     const placed = await placing;
@@ -113,11 +144,12 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
       <ul class="flex flex-col" :class="variant === 'page' ? '' : 'mt-1'">
         <!-- 行の区切り: 候補は点線（鉛筆書き）、確かめた行と却下した行は実線 -->
         <li
-          v-for="f in facts"
+          v-for="(f, i) in facts"
           :key="f.id"
           :data-fact-id="f.id"
           class="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-0.5 border-b border-line last:border-b-0"
-          :class="[f.status === 'candidate' ? 'border-dashed' : 'border-solid', variant === 'page' ? 'py-2' : 'py-2.5']"
+          :class="[f.status === 'candidate' ? 'border-dashed' : 'border-solid', variant === 'page' ? 'py-2' : 'py-2.5', stagger ? 'chip-in' : '']"
+          :style="stagger ? { '--i': i } : undefined"
         >
           <!-- 種別と値はひとまとまりで行を折り返す単位にする。値と根拠が入りきらない幅（375px の S1 など）では、
                値の列を狭めて単語の途中で割らず、ボタンを次の段の右端に回す（wireframes 2.3）。
@@ -135,7 +167,7 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
               >「{{ display(f) }}」</span>
               <!-- 却下した値は打ち消し線と ink-soft で示す。opacity で薄くすると文字が 4.5:1 を割る。根拠の引用には線を引かない。
                    打ち消し線は読み上げでは伝わらないので、確定の「✓ そう」と同じく行を読めば分かるよう、見えない「、ちがう」を添える -->
-              <span v-else-if="f.status === 'rejected'"><span class="text-ink-soft line-through">{{ display(f) }}</span><span class="sr-only">、ちがう</span></span>
+              <span v-else-if="f.status === 'rejected'"><span class="text-ink-soft line-through decoration-[1.5px]" :class="motion.get(f.id) === 'strike' ? 'strike-draw' : ''">{{ display(f) }}</span><span class="sr-only">、ちがう</span></span>
               <span
                 v-else-if="f.status === 'candidate'"
                 class="underline decoration-ink-faint decoration-dotted decoration-[1.5px] underline-offset-[5px]"
@@ -157,6 +189,7 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
           <span
             v-else-if="f.status === 'confirmed'"
             class="ml-auto inline-flex h-8 items-center gap-[3px] rounded-pill border border-moss-deep bg-moss-soft pr-[13px] pl-[11px] text-sm leading-none tracking-[.06em] text-ink shadow-stamp [font-feature-settings:'palt']"
+            :class="motion.get(f.id) === 'stamp' ? 'stamp-press' : ''"
           >
             <svg
               class="shrink-0"

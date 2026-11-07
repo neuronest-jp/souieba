@@ -63,3 +63,12 @@ export type MemoryDetail = {
 export type MemoryList = { items: Memory[]; next_cursor: string | null };
 
 export type NewMemory = { body: string; happened_on?: string; happened_on_precision: Precision };
+
+// きょう（GET /api/today）。S1 の「このごろ」（きょうを右端にした 7 日。古い順）と「あの日のひとこと」と記憶の総数。日付は Asia/Tokyo
+export type TodayDay = { date: string; wrote: boolean };
+
+// あの日のひとこと: 去年以前の同じ日付のあたりの記憶（無い日は null）。
+// match は day = 同じ月日、near = 前後 3 日、month = 同じ月（日の候補が無いとき）。years は何年まえか（1 以上）
+export type ThatDay = { memory: MemorySummary; years: number; match: "day" | "near" | "month" };
+
+export type TodayResponse = { today: string; week: TodayDay[]; that_day: ThatDay | null; total: number };

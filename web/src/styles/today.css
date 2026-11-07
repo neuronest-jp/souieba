@@ -1,1 +1,412 @@
-/* today の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ */
+/* today の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ。
+   S1 きょう（書く画面）を「つい記録したくなる」ものにする: 問いかけ、このごろの押し葉、あの日のひとこと、写真の焼き付け、
+   残した瞬間（封をする沈み → 手書きの ✓ → 控えのすべり出し → 候補の時差）、札を待つ間の糸、候補の判と打ち消し線。
+   動きは transform と opacity だけ。速さと曲線は style.css の約束（--duration-* / --ease-*）。
+   prefers-reduced-motion: reduce ではすべて止め、状態だけを切り替える（いちばん下） */
+
+@layer components {
+  /* ---- 写真（PhotoPicker の letter。便箋の下の段） ---- */
+  /* 下の段: 便箋の罫と分ける点線。段の中にカメラの札と「写真を開いています」 */
+  .photo-band {
+    border-top: 1px dashed var(--color-line);
+  }
+  /* カメラの小さな絵と「写真」の札。見た目は 36px、押せる所は ::after で 44px に広げる（.choice と同じ） */
+  .photo-tag {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 15px 0 12px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-card);
+    box-shadow: var(--shadow-press);
+    font-size: var(--text-sm);
+    line-height: 1;
+    letter-spacing: 0.06em;
+    color: var(--color-ink);
+  }
+  .photo-tag::after {
+    content: "";
+    position: absolute;
+    inset: -4px -2px;
+  }
+  .photo-tag svg {
+    color: var(--color-ember);
+  }
+  .photo-tag:disabled {
+    color: var(--color-ink-faint);
+    box-shadow: none;
+  }
+  .photo-tag:disabled svg {
+    color: currentColor;
+  }
+  /* 添えた写真の焼き付け: 白いふち 4px、角 4px、紙の落ち影。選んだときだけ、上から便箋に置かれる */
+  .photo-print {
+    padding: 4px;
+    background-color: var(--color-card);
+    border-radius: 4px;
+    box-shadow: var(--shadow-print);
+  }
+  .photo-print.is-placed {
+    animation: today-print-place var(--duration-slow) var(--ease-spring) both;
+  }
+  @keyframes today-print-place {
+    from {
+      opacity: 0;
+      transform: translateY(-10px) scale(1.04);
+    }
+  }
+
+  /* ---- 「保存する」の段（鍵盤） ---- */
+  /* 鍵盤が出ている間は、鍵盤のすぐ上に貼り付ける。capacitor.config.ts の Keyboard.resize は native で、枠（100dvh）が鍵盤のぶん縮む。
+     縮んだぶん（--today-shrink。TodayScreen が window.innerHeight の差で測る）を --keyboard-height から引くので、
+     native では 0（縮んだ枠の下端 = 鍵盤の上）、枠が縮まない方式（none / body）では鍵盤の高さだけ持ち上がる。
+     下部ナビは platform.css が隠す。左右は地の端まで紙の色をぼかして敷き、後ろを流れる便箋の文字と重ねない */
+  /* ふだんは並びのまま（「残しています」を重ねる位置の基準だけ作る） */
+  .today-save {
+    position: relative;
+  }
+  html[data-keyboard="open"] .today-save {
+    position: sticky;
+    bottom: max(0px, calc(var(--keyboard-height, 0px) - var(--today-shrink, 0px)));
+    z-index: 4;
+    margin: -12px -20px -8px;
+    padding: 12px 20px 8px;
+    background: linear-gradient(to bottom, transparent, var(--color-paper) 14px);
+  }
+  /* 書いている行を鍵盤の上へ送るとき、貼り付いた「保存する」の下に隠さない */
+  html[data-keyboard="open"]:has(.today-save) {
+    scroll-padding-bottom: 84px;
+  }
+  /* 保存に時間がかかるときだけ見える「残しています」（すぐ終わるときは出る前に消える） */
+  .today-saving {
+    animation: today-fade-in var(--duration-base) var(--ease-out-soft) 400ms both;
+  }
+
+  /* ---- 残した瞬間 ---- */
+  /* 1. 「保存する」を押すと、書いた便箋が封をされるように小さく沈む（返事を待つ間そのまま。最短でも --duration-base） */
+  .letter-sealing {
+    transform: translateY(3px) scale(0.985);
+    transition: transform var(--duration-quick) var(--ease-out-soft);
+  }
+  /* 2. 保存後の便箋は、沈んだ形から静かに浮かんで収まる */
+  .letter-sealed {
+    animation: today-letter-sealed var(--duration-base) var(--ease-out-soft) both;
+  }
+  @keyframes today-letter-sealed {
+    from {
+      opacity: 0;
+      transform: translateY(3px) scale(0.985);
+    }
+  }
+  /* 3. 「残しました」の横に手書きの ✓（2 画。画ごとに左端から scaleX で伸ばす） */
+  .saved-check path {
+    transform-box: fill-box;
+    transform-origin: left center;
+  }
+  .saved-check.is-drawing .stroke-1 {
+    animation: today-check-stroke 150ms var(--ease-out-soft) 180ms both;
+  }
+  .saved-check.is-drawing .stroke-2 {
+    animation: today-check-stroke 230ms var(--ease-out-soft) 330ms both;
+  }
+  @keyframes today-check-stroke {
+    from {
+      transform: scaleX(0);
+    }
+  }
+  /* 4. 「N こめのひとこと」は ✓ を描き終えたあとに */
+  .saved-count.is-fresh {
+    animation: today-fade-in var(--duration-base) var(--ease-out-soft) 560ms both;
+  }
+  /* 5. ミシン目から下の控えが、ミシン目の下からすべり出る（包む箱だけ overflow を隠す。便箋はミシン目の切り欠きが縁にかかるので隠さない） */
+  .slip-reveal {
+    overflow: hidden;
+    border-radius: 0 0 calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px);
+  }
+  .slip-reveal.is-entering > .slip {
+    animation: today-slip-out var(--duration-slow) var(--ease-out-soft) both;
+  }
+  @keyframes today-slip-out {
+    from {
+      transform: translateY(-100%);
+    }
+  }
+  /* 6. 候補が少しずつずれて現れる（FactChips の stagger。--i は行の順番） */
+  .chip-in {
+    animation: today-chip-in var(--duration-base) var(--ease-out-soft) both;
+    animation-delay: calc(220ms + var(--i, 0) * 70ms);
+  }
+  @keyframes today-chip-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  /* ---- 札を待つ間（WaitingThread）---- */
+  /* しつけ糸の目が 1 つずつ縫われ、縫い終わると順にほどけていく（2.8 秒で 1 巡）。すぐ届くときは出る前に消えるよう、600ms 待ってから現れる。
+     何も届かずに終わったら、外側の箱だけを --duration-base で薄くして外す（内側の現れる動きと取り合わない） */
+  .waiting-thread {
+    transition: opacity var(--duration-base) var(--ease-out-soft);
+  }
+  .waiting-thread.is-leaving {
+    opacity: 0;
+  }
+  .waiting-inner {
+    animation: today-fade-in var(--duration-slow) var(--ease-out-soft) 600ms both;
+  }
+  .waiting-stitch {
+    stroke: var(--color-ember);
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    opacity: 0;
+    animation: today-stitch-run 2800ms var(--ease-gentle) infinite;
+    animation-delay: calc(var(--i, 0) * 260ms);
+  }
+  @keyframes today-stitch-run {
+    0% {
+      opacity: 0;
+      transform: translateX(-3px);
+    }
+    18% {
+      opacity: 1;
+      transform: none;
+    }
+    62% {
+      opacity: 1;
+    }
+    86%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  /* ---- 候補の判と打ち消し線（FactChips） ---- */
+  /* 「そう」: 判が少し上から押されて沈み、輪が一度だけ広がって消える */
+  .stamp-press {
+    position: relative;
+    animation: today-stamp-press var(--duration-slow) var(--ease-spring) both;
+  }
+  .stamp-press::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    border: 1.5px solid var(--color-moss-deep);
+    opacity: 0;
+    pointer-events: none;
+    animation: today-stamp-ring 520ms var(--ease-out-soft) 140ms both;
+  }
+  @keyframes today-stamp-press {
+    0% {
+      opacity: 0;
+      transform: scale(1.16);
+    }
+    40% {
+      opacity: 1;
+      transform: scale(0.94);
+    }
+    100% {
+      transform: none;
+    }
+  }
+  @keyframes today-stamp-ring {
+    from {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.32);
+    }
+  }
+  /* 「ちがう」: 打ち消し線が左から引かれる。引いている間だけ本物の線（line-through）を透かし、引き終えたら印ごと外して本物に戻す */
+  .strike-draw {
+    position: relative;
+    text-decoration-color: transparent;
+  }
+  /* 線の位置と長さは本物の線にそろえる（Noto Sans JP で重なることを撮って確かめた）。fill-mode は付けない
+     （inline の疑似要素に both を付けると、Chromium では動き終えたあと線が描かれなくなった。動き終えた形は既定の形と同じ） */
+  .strike-draw::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - 0.75px);
+    height: 1.5px;
+    background: currentColor;
+    transform-origin: left center;
+    pointer-events: none;
+    animation: today-strike var(--duration-base) var(--ease-out-soft);
+  }
+  @keyframes today-strike {
+    from {
+      transform: scaleX(0);
+    }
+  }
+
+  /* ---- このごろ（DayLeaves） ---- */
+  /* 7 日の枠。書いた日は押し葉が押してあり、書いていない日は薄い枠だけ。きょうはまだなら点線の枠で「ここに」と待つ。
+     きょうの枠は少し広い（右端で待つ場所）。押し葉の形は日付で決まり（同じ日はいつも同じ形）、色は季節で替わる */
+  .day-leaves {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .day-slot {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .day-slot.is-today {
+    flex-grow: 1.7;
+  }
+  .day-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 40px;
+    height: 48px;
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+    background-color: var(--color-card);
+    background-image: var(--tex-grain-light);
+    background-size: 220px 220px;
+  }
+  .is-today .day-frame {
+    max-width: 66px;
+  }
+  /* 書いていない日は、地に溶けかけた薄い枠だけ（空いていることを目立たせない） */
+  .day-frame.is-empty {
+    background: transparent;
+    border-color: color-mix(in oklab, var(--color-line) 65%, transparent);
+  }
+  .day-frame.is-waiting {
+    border: 1.5px dashed var(--color-line-strong);
+    background: transparent;
+  }
+  .day-leaf .face {
+    fill: var(--today-leaf-face, var(--color-leaf));
+    stroke: var(--today-leaf-edge, var(--color-moss));
+    stroke-width: 0.8;
+    stroke-opacity: 0.6;
+  }
+  .day-leaf .rib {
+    fill: none;
+    stroke: var(--today-leaf-edge, var(--color-moss));
+    stroke-width: 0.7;
+    stroke-linecap: round;
+    opacity: 0.6;
+  }
+  /* 季節の色（season.css のトークン。無いときは押し葉の leaf と moss） */
+  [data-season="spring"] .day-leaf {
+    --today-leaf-face: var(--color-sakura, var(--color-leaf));
+    --today-leaf-edge: var(--color-sakura-deep, var(--color-moss));
+  }
+  [data-season="summer"] .day-leaf {
+    --today-leaf-face: var(--color-aomomiji, var(--color-leaf));
+  }
+  [data-season="autumn"] .day-leaf {
+    --today-leaf-face: var(--color-momiji, var(--color-leaf));
+    --today-leaf-edge: var(--color-momiji-deep, var(--color-moss));
+  }
+  /* きょう、いま書いたあとに戻ってきたとき: 押し葉が上から押される */
+  .leaf-press {
+    animation: today-leaf-press var(--duration-slow) var(--ease-spring) 240ms both;
+  }
+  @keyframes today-leaf-press {
+    0% {
+      opacity: 0;
+      transform: scale(1.3);
+    }
+    55% {
+      opacity: 1;
+      transform: scale(0.92);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  /* ---- あの日のひとこと（ThatDayLetter）: 折りたたんだ便箋 ---- */
+  /* 上は便箋（ひとことの 1 行目が明朝で見える）、折り目から下は折り返した裏（控えの色）。折り目の下に薄い影 */
+  .that-day {
+    position: relative;
+    display: block;
+    background-color: var(--color-card);
+    background-image: var(--tex-grain-light);
+    background-size: 220px 220px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+    color: inherit;
+    text-decoration: none;
+  }
+  .that-day-fold {
+    position: relative;
+    border-top: 1px solid var(--color-line);
+    background-color: var(--color-slip);
+    border-radius: 0 0 calc(var(--radius-card) - 1px) calc(var(--radius-card) - 1px);
+  }
+  .that-day-fold::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 9px;
+    background: linear-gradient(to bottom, color-mix(in oklab, var(--color-ink) 7%, transparent), transparent);
+    pointer-events: none;
+  }
+
+  /* ---- 共通 ---- */
+  @keyframes today-fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  .today-fade {
+    animation: today-fade-in var(--duration-base) var(--ease-out-soft) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .letter-sealing {
+      transform: none;
+      transition: none;
+    }
+    .photo-print.is-placed,
+    .today-saving,
+    .letter-sealed,
+    .saved-check.is-drawing path,
+    .saved-count.is-fresh,
+    .slip-reveal.is-entering > .slip,
+    .chip-in,
+    .waiting-inner,
+    .waiting-stitch,
+    .stamp-press,
+    .stamp-press::after,
+    .leaf-press,
+    .today-fade {
+      animation: none;
+    }
+    .waiting-thread {
+      transition: none;
+    }
+    /* 糸は縫い終えた形で止める */
+    .waiting-stitch {
+      opacity: 0.8;
+    }
+    /* 打ち消し線は引く動きをやめ、本物の線をそのまま見せる */
+    .strike-draw {
+      text-decoration-color: currentColor;
+    }
+    .strike-draw::after {
+      display: none;
+    }
+  }
+}

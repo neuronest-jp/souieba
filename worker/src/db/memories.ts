@@ -159,3 +159,48 @@ export async function isPending(db: D1Database, memoryId: string, kind: "facts" 
     .first<{ x: number }>();
   return row !== null;
 }
+
+// ---------------------------------------------------------------
+// GET /api/today（書く画面 S1 の「このごろ」「あの日のひとこと」と総数）。どれも束ねた文（D1PreparedStatement）を返し、
+// 呼ぶ側（routes/today.ts）が db.batch([...]) で 1 往復にまとめる。文の頭は SELECT のままにする（テスト用 D1 の batch が見分ける）
+// ---------------------------------------------------------------
+
+export const WRITTEN_LIMIT = 500;
+export const THAT_DAY_LIMIT = 50;
+
+export type ThatDayRow = Pick<MemoryRow, "id" | "body" | "happened_on" | "happened_on_precision" | "photo_key">;
+
+// [fromIso, toIso) に書いた（created_at）記憶の時刻。Asia/Tokyo の日付への読み替えは呼ぶ側がする
+export function listWrittenAt(db: D1Database, userId: string, fromIso: string, toIso: string): D1PreparedStatement {
+  return db
+    .prepare("SELECT created_at FROM memories WHERE user_id = ?1 AND created_at >= ?2 AND created_at < ?3 ORDER BY created_at LIMIT ?4")
+    .bind(userId, fromIso, toIso, WRITTEN_LIMIT);
+}
+
+// あの日のひとこと（日）: 起きた日が day 精度で、月日が monthDays（きょうの前後 3 日の MM-DD）のどれか、起きた日が latest 以前。
+// beforeIso より前に書いたものだけ（きょう書いたものを、その場で「あの日」として返さない）
+export function listThatDayNear(db: D1Database, userId: string, monthDays: string[], latest: string, beforeIso: string): D1PreparedStatement {
+  const marks = monthDays.map((_, i) => `?${i + 4}`).join(",");
+  return db
+    .prepare(
+      `SELECT id, body, happened_on, happened_on_precision, photo_key FROM memories WHERE user_id = ?1 AND happened_on_precision = 'day' ` +
+        `AND happened_on <= ?2 AND created_at < ?3 AND substr(happened_on, 6, 5) IN (${marks}) ` +
+        `ORDER BY happened_on DESC, id LIMIT ${THAT_DAY_LIMIT}`,
+    )
+    .bind(userId, latest, beforeIso, ...monthDays);
+}
+
+// あの日のひとこと（月）: 日の候補が無いときに使う。起きた日の月がきょうと同じで（day 精度と month 精度）、年が去年以前
+export function listThatDayMonth(db: D1Database, userId: string, month: string, year: string, beforeIso: string): D1PreparedStatement {
+  return db
+    .prepare(
+      "SELECT id, body, happened_on, happened_on_precision, photo_key FROM memories WHERE user_id = ?1 " +
+        "AND happened_on_precision IN ('day','month') AND substr(happened_on, 6, 2) = ?2 AND substr(happened_on, 1, 4) < ?3 AND created_at < ?4 " +
+        `ORDER BY happened_on DESC, id LIMIT ${THAT_DAY_LIMIT}`,
+    )
+    .bind(userId, month, year, beforeIso);
+}
+
+export function countMemories(db: D1Database, userId: string): D1PreparedStatement {
+  return db.prepare("SELECT COUNT(*) AS n FROM memories WHERE user_id = ?1").bind(userId);
+}

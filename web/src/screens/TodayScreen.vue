@@ -1,21 +1,40 @@
 <script setup lang="ts">
 // S1 きょう。入力 → 保存 → 「残しました」。候補と札は 11/6 で足す。
 // App.vue の KeepAlive で残すので、ほかの画面へ移っても書きかけ・残しました・候補・札はそのまま（wireframes 0 節）。
-import { computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch } from "vue";
+// ブラッシュアップ 11/7（ADR-0011）: 「つい記録したくなる」書く画面にする。どれも急かさない・比べない・責めない。
+//   - 問いかけ: 日付の見出しの下に時間帯と季節と日替わりのあいさつ、入力欄の placeholder に問い（components/today/prompts.ts）
+//   - このごろ: 7 日分の押し葉（DayLeaves）。あの日のひとこと: 去年以前の同じ日付のあたりの記憶を折りたたんだ便箋で 1 つ（ThatDayLetter）。
+//     どちらも GET /api/today の 1 往復（失敗したら何も出さない。書く画面を邪魔しない）
+//   - 写真: 便箋の下の段にカメラの札、添えた写真は焼き付けのプリント（PhotoPicker の letter）
+//   - 残した瞬間: 押すと便箋が沈み（最短 --duration-base）、返事が来たら saved() の触覚と一緒に保存後の便箋に入れ替わる。
+//     「残しました」の横に手書きの ✓、続いて「N こめのひとこと」。候補が届くとミシン目の下から控えがすべり出て、候補が少しずつずれて現れる
+//   - 札を待つ間: 控えの下でしつけ糸が縫われる動きと「思い出しています」（WaitingThread）。届いたら札に入れ替え、届かずに終わったら静かに消す
+//   - 鍵盤: 出ている間は「保存する」を鍵盤のすぐ上に貼り付ける（styles/today.css。下部ナビは platform が隠す）
+// 動きは KeepAlive で DOM が戻るとやり直されるので、離れる前に見せたものは戻ってきたとき動かさない（shownIds など）
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { api, ApiError } from "../api";
 import PhotoImg from "../components/PhotoImg.vue";
-import type { Fact, Memory, Precision, Recall } from "../api/types";
+import type { Fact, Memory, Precision, Recall, TodayResponse } from "../api/types";
 import FactChips from "../components/FactChips.vue";
 import RecallCard from "../components/RecallCard.vue";
 import { triesLeft, usePolling } from "../composables/usePolling";
 import DateSheet from "../components/DateSheet.vue";
 import PhotoPicker from "../components/PhotoPicker.vue";
+import DayLeaves from "../components/today/DayLeaves.vue";
+import SavedCheck from "../components/today/SavedCheck.vue";
+import ThatDayLetter from "../components/today/ThatDayLetter.vue";
+import WaitingThread from "../components/today/WaitingThread.vue";
+import { promptFor } from "../components/today/prompts";
 import { PHOTO_MAX_BYTES, shrinkPhoto } from "../photo";
 import { formatHappenedOn, isRealYmd, todayInTokyo } from "../date";
 import { focusHeading, hrefFor } from "../composables/useScreen";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
 import { useMemoryPhoto } from "../composables/useMemoryPhoto";
 import { keepDecided } from "../facts";
+import { failed as hapticFailed, saved as hapticSaved } from "../haptics";
+import { useKeyboard } from "../keyboard";
+import { DURATION, prefersMotion } from "../motion";
+import { seasonOf } from "../season";
 
 defineOptions({ name: "TodayScreen" }); // KeepAlive の include で使う
 
@@ -43,12 +62,62 @@ onUnmounted(() => {
 });
 const photo = ref<File | null>(null);
 const photoNote = ref("");
+// 写真を開いている間（PhotoPicker の picking）。届く前に保存すると写真なしで残るので、その間は「保存する」を押させない（見直し n=14）
+const photoPicking = ref(false);
+
+// 問いかけと季節を決める時刻。戻ってきたとき・アプリが表に戻ったとき・もうひとつ書くときだけ取り直す（見ている間に言葉を替えない）
+const now = ref(new Date());
+const prompt = computed(() => promptFor(now.value));
+const season = computed(() => seasonOf(now.value));
+
+// GET /api/today（このごろ・あの日のひとこと・総数）。失敗しても何も出さない。古い応答が新しい応答を上書きしないよう番号を付ける
+const today = ref<TodayResponse | null>(null);
+let todaySeq = 0;
+const loadToday = async (): Promise<TodayResponse | null> => {
+  const seq = ++todaySeq;
+  try {
+    const t = await api.today();
+    if (seq !== todaySeq || !alive) return null;
+    today.value = t;
+    return t;
+  } catch {
+    return null; // 出せないときは何も出さない
+  }
+};
+// 残したひとことが何こめか（「N こめのひとこと」）。残した時点の数で、その便箋の間は替えない
+const savedCount = ref<number | null>(null);
+// きょう初めて残したとき、書く画面に戻ったら、きょうの押し葉が押される動きを付ける
+const pressToday = ref(false);
+// 一度見せた「このごろ」と「あの日のひとこと」は、戻ってきたとき現れる動きをやり直さない
+const leavesShown = ref(false);
+const thatDayShown = ref<string | null>(null);
+
+// 残した瞬間。sealing: 押してから入れ替わるまで便箋を沈めておく
+const sealing = ref(false);
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+// 控え（候補）のすべり出しは一度だけ。離れる前に見せていたら、戻ってきたとき動かさない
+const slipShown = ref(false);
+
+// 鍵盤（keyboard.ts）。resize が native だと枠が鍵盤のぶん縮むので、縮んだぶんを測って --keyboard-height から引く（styles/today.css）。
+// 鍵盤が閉じている間の高さを基準にし、開いている間の高さとの差を「縮み」とする
+const keyboard = useKeyboard();
+const baseHeight = ref(typeof window !== "undefined" ? (window.innerHeight ?? 0) : 0);
+const viewHeight = ref(baseHeight.value);
+const onResize = () => {
+  viewHeight.value = window.innerHeight;
+  if (!keyboard.open.value) baseHeight.value = window.innerHeight;
+};
+const keyboardShrink = computed(() => (keyboard.open.value ? Math.max(0, baseHeight.value - viewHeight.value) : 0));
+onMounted(() => window.addEventListener("resize", onResize));
+onUnmounted(() => window.removeEventListener("resize", onResize));
 
 // 保存直後: 候補と札が届くまで静かに待つ（両方の pending が false で止まる）。
 // S1 を離れている間は止め（S3 を開いていれば S3 が自分で取り直す）、戻って取り直した記憶がまだ pending なら残りの回数だけ続ける。
 // 30 秒の打ち切り（requirements N-2）は、離れて戻ったあとも保存した時刻（savedAt）から数える
 const facts = ref<Fact[]>([]);
 const recalls = ref<Recall[]>([]);
+// 札の pending（最後に読んだ値）。null はまだ読んでいない
+const recallPending = ref<boolean | null>(null);
 const polling = usePolling(
   async () => {
     const id = saved.value!.id;
@@ -57,15 +126,31 @@ const polling = usePolling(
   },
   (v) => !v.f.pending && !v.r.pending,
 );
-const applyPolled = (v: { f: { items: Fact[] }; r: { items: Recall[] } } | null) => {
+const applyPolled = (v: { f: { items: Fact[] }; r: { pending: boolean; items: Recall[] } } | null) => {
   if (!v) return;
   // 画面で確定・却下した行は同じオブジェクトのまま残す（keepDecided）。行ごと新しいオブジェクトに替えると、
   // 記録に失敗したとき FactChips が戻す印が画面の行に届かず、「✓ そう」のまま「記録できませんでした」が並ぶ。
   // facts が先に揃い recall を待つ間（最長 30 秒）も 2 秒ごとに取り直すので、押した直後に取り直しが重なりうる
   facts.value = keepDecided(facts.value, v.f.items);
   recalls.value = v.r.items;
+  recallPending.value = v.r.pending;
 };
 watch(() => polling.value.value, (v) => applyPolled(v));
+
+// 札を待つ間（WaitingThread）。取り直しの最中で、札がまだ 1 枚も無く、札の pending が false と分かっていない間だけ出す。
+// 届いたら札に入れ替わり、届かずに終わったら（pending が false か 30 秒の打ち切り）静かに薄れて消える。「見つかりませんでした」とは言わない
+const waiting = computed(() => !!saved.value && polling.active.value && recalls.value.length === 0 && recallPending.value !== false);
+const waitingLeaving = ref(false);
+let leavingTimer: ReturnType<typeof setTimeout> | null = null;
+watch(waiting, (on, was) => {
+  if (leavingTimer) clearTimeout(leavingTimer);
+  leavingTimer = null;
+  waitingLeaving.value = false;
+  if (was && !on && recalls.value.length === 0 && saved.value) {
+    waitingLeaving.value = true;
+    leavingTimer = setTimeout(() => (waitingLeaving.value = false), DURATION.base + 40);
+  }
+});
 let savedAt = 0;
 // S1 が表に出ているか（KeepAlive の onActivated / onDeactivated）。離れている間に保存が終わっても、そこではポーリングを始めない
 let shown = true;
@@ -77,7 +162,9 @@ const MAX = 2000;
 const remaining = computed(() => MAX - Array.from(body.value).length);
 // 形だけでなく実在する日付か（2026-11-31 のまま送ると Worker が 400 を返し、汎用の文言しか出ないので直せない）
 const hasDate = computed(() => precision.value === "unknown" || isRealYmd(date.value));
-const canSave = computed(() => body.value.trim().length > 0 && remaining.value >= 0 && hasDate.value && !saving.value);
+const canSave = computed(
+  () => body.value.trim().length > 0 && remaining.value >= 0 && hasDate.value && !saving.value && !photoPicking.value,
+);
 
 // POST に入れる happened_on（day: YYYY-MM-DD / month: YYYY-MM / year: YYYY）
 const happenedOnForPost = computed(() => {
@@ -103,8 +190,13 @@ const save = async () => {
   // 夜に開いたまま裏に回し、翌朝そのまま書いたときに前日で残さない（visibilitychange が届かない WebView もある）
   refreshDefaultDate();
   saving.value = true;
+  // 便箋を沈める。返事が先に来ても、封をする間（--duration-base）は見せる（動きを減らす設定では待たない）
+  sealing.value = true;
+  const hold = prefersMotion() ? wait(DURATION.base) : Promise.resolve();
   error.value = "";
   photoNote.value = "";
+  // きょう初めて残すか（書く画面に戻ったとき、きょうの押し葉を押す動きにする）
+  const firstToday = today.value ? today.value.week.at(-1)?.wrote === false : false;
   let memory: Memory;
   try {
     memory = await api.createMemory({
@@ -115,6 +207,8 @@ const save = async () => {
   } catch {
     error.value = "うまく保存できませんでした。もう少ししてから、もう一度";
     saving.value = false;
+    sealing.value = false;
+    hapticFailed();
     return;
   }
   // 記憶は残った。写真だけ失敗しても記憶は消さない（requirements F2 エラー時）
@@ -128,13 +222,32 @@ const save = async () => {
       photoNote.value = "写真だけ、あとでもう一度";
     }
   }
+  await hold;
+  // 総数は、読めていればその場で 1 足して出し（✓ と同じ間に）、読み直しで合わせる
+  savedCount.value = today.value ? today.value.total + 1 : null;
+  if (today.value) {
+    const t = today.value;
+    today.value = { ...t, total: t.total + 1, week: t.week.map((d, i) => (i === t.week.length - 1 ? { ...d, wrote: true } : d)) };
+  }
+  pressToday.value = firstToday;
+  // 書く画面は保存後の画面に替わる。もうひとつ書くで戻ったとき、このごろとあの日のひとことは現れる動きをやり直さない（押し葉だけ押す）
+  if (today.value) leavesShown.value = true;
+  if (today.value?.that_day) thatDayShown.value = today.value.that_day.memory.id;
   saved.value = memory;
   body.value = "";
   photo.value = null;
   saving.value = false;
+  sealing.value = false;
+  slipShown.value = false;
   facts.value = [];
   recalls.value = [];
+  recallPending.value = null;
   savedAt = Date.now();
+  hapticSaved();
+  const id = memory.id;
+  void loadToday().then((t) => {
+    if (t && saved.value?.id === id && savedCount.value === null) savedCount.value = t.total;
+  });
   // 離れている間に保存が終わったときは、戻ったときの recheckSaved が取り直して続ける
   if (alive && shown) polling.start();
   // 「保存する」は書く画面ごと消えるので、「残しました」の見出しへ（読み上げで残ったことが伝わる）
@@ -146,10 +259,14 @@ const another = () => {
   saved.value = null;
   facts.value = [];
   recalls.value = [];
+  recallPending.value = null;
+  savedCount.value = null;
+  slipShown.value = false;
   precision.value = "day";
   date.value = todayInTokyo();
   dateTouched.value = false;
   shownIds.value = new Set();
+  now.value = new Date();
 };
 
 // 「もうひとつ書く」。ボタンは保存後の画面ごと消えるので、書く画面の見出しへ。入力欄に置くとスマホでキーボードが勝手に開く。
@@ -164,8 +281,12 @@ const refreshDefaultDate = () => {
   if (!saved.value && !dateTouched.value) date.value = todayInTokyo();
 };
 // S1 を開いたままアプリを裏に回し、翌朝戻ったとき（画面は切り替わらないので onActivated は呼ばれない）。見出しも今日にする
+// 問いかけ・このごろ・あの日のひとことも、その日のものに取り直す
 const onVisible = () => {
-  if (document.visibilityState === "visible") refreshDefaultDate();
+  if (document.visibilityState !== "visible") return;
+  refreshDefaultDate();
+  now.value = new Date();
+  void loadToday();
 };
 
 // 保存した記憶を S3 で開いて戻ってきたとき、S3 で決めた候補・添え直した写真・届いた札を映す。
@@ -181,6 +302,7 @@ const recheckSaved = async (id: string) => {
     if (saved.value.photo_key) photoNote.value = "";
     facts.value = keepDecided(facts.value, d.facts.items);
     recalls.value = d.recalls.items;
+    recallPending.value = d.recalls.pending;
     if (d.facts.pending || d.recalls.pending) resumePolling();
   } catch (e) {
     if (saved.value?.id !== id) return;
@@ -193,6 +315,8 @@ onActivated(() => {
   shown = true;
   document.addEventListener("visibilitychange", onVisible);
   refreshDefaultDate();
+  now.value = new Date();
+  void loadToday();
   if (saved.value) void recheckSaved(saved.value.id);
 });
 // 離れるとき: ポーリングを止め、シートを閉じ（選んだ値はそのまま残る）、いま見えているカードと札を「見せた」に数える
@@ -202,6 +326,12 @@ onDeactivated(() => {
   document.removeEventListener("visibilitychange", onVisible);
   sheetOpen.value = false;
   shownIds.value = new Set([...(saved.value ? [saved.value.id] : []), ...recalls.value.map((r) => r.id)]);
+  if (facts.value.length > 0) slipShown.value = true;
+  if (!saved.value) {
+    if (today.value) leavesShown.value = true;
+    if (today.value?.that_day) thatDayShown.value = today.value.that_day.memory.id;
+    pressToday.value = false;
+  }
 });
 
 // S3 で消した記憶のカードや札を残さない（非アクティブの間に届く）
@@ -221,31 +351,43 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 <template>
   <main class="flex flex-1 flex-col gap-6 py-6">
     <template v-if="!saved">
-      <header class="flex items-baseline justify-between">
-        <h1 ref="dateHeading" class="text-[22px] focus:outline-none">{{ headingDate }}</h1>
-        <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
+      <header class="flex flex-col gap-0.5">
+        <div class="flex items-baseline justify-between">
+          <h1 ref="dateHeading" class="text-[22px] focus:outline-none">{{ headingDate }}</h1>
+          <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
+        </div>
+        <!-- 問いかけのあいさつ（時間帯・季節・日替わり）。見出しの下に小さく -->
+        <p class="text-sm leading-[1.6] tracking-[.04em] text-ink-soft" data-greeting>{{ prompt.greeting }}</p>
       </header>
 
       <!-- 便箋（ADR-0010）: 空の朱罫が「書く場所」に見えるよう、5 行分の罫を最初から引いておく。
-           罫は文字と一緒に流れる（bg-local）。行送りと罫の間隔は同じ --leading-letter -->
-      <section class="card px-5 pt-[18px] pb-5">
+           罫は文字と一緒に流れる（bg-local）。行送りと罫の間隔は同じ --leading-letter。
+           下の段に写真（カメラの札と、添えた写真の焼き付け）。保存を押すと封をされるように小さく沈む -->
+      <section class="card px-5 pt-[18px] pb-1.5" :class="sealing ? 'letter-sealing' : ''">
         <label class="sr-only" for="body">きょうのひとこと</label>
         <textarea
           id="body"
           v-model="body"
           rows="5"
           class="letter-text field-sizing-content block min-h-[calc(var(--leading-letter)_*_5_+_2em_/_17)] w-full resize-none bg-local text-ink outline-none"
-          placeholder="きょうのひとこと"
+          :placeholder="prompt.question"
+          :readonly="saving"
         ></textarea>
         <p v-if="remaining < 100" class="text-right text-sm text-ink-soft" aria-live="polite">あと {{ remaining }} 文字</p>
+        <PhotoPicker v-model="photo" variant="letter" :disabled="saving" @picking="photoPicking = $event" />
       </section>
 
-      <PhotoPicker v-model="photo" />
-
-      <div class="flex flex-col items-center gap-3">
-        <button class="btn btn-primary px-10" type="button" :disabled="!canSave" @click="save">保存する</button>
+      <!-- 鍵盤が出ている間は、鍵盤のすぐ上に貼り付く（styles/today.css の .today-save） -->
+      <div class="today-save flex flex-col items-center gap-3" :style="{ '--today-shrink': `${keyboardShrink}px` }">
+        <button class="btn btn-primary press px-10" type="button" :disabled="!canSave" @click="save">保存する</button>
+        <!-- 保存に時間がかかるときだけ見える一文。下の並びを押し下げないよう、ボタンの下に重ねて置く -->
+        <p v-if="saving" class="today-saving absolute top-full right-0 left-0 mt-0.5 text-center text-sm leading-[1.4] text-ink-soft" role="status">残しています</p>
         <p v-if="error" class="text-sm text-ink-soft" role="alert">{{ error }}</p>
       </div>
+
+      <!-- このごろ（7 日の押し葉）と、あの日のひとこと（無い日は出さない）。読めなかったときはどちらも出さない -->
+      <DayLeaves v-if="today" :week="today.week" :season="season" :press-today="pressToday" :animate="!leavesShown" />
+      <ThatDayLetter v-if="today?.that_day" :that-day="today.that_day" :animate="today.that_day.memory.id !== thatDayShown" />
 
       <DateSheet
         v-if="sheetOpen"
@@ -260,19 +402,29 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
     <template v-else>
       <!-- 保存後の画面の h1（wireframes 6 節「画面ごとに h1 は 1 つ」）。保存したらここへフォーカスを置いて読ませるので role="status" は付けない。
            見た目はこれまでの 14px の添え書きのまま（h1 の字体・太さ・字間を本文に戻す。行間は text-sm が決める） -->
-      <h1 ref="savedHeading" class="font-body text-sm leading-[1.6] font-normal tracking-[.08em] text-ink-soft focus:outline-none">残しました</h1>
+      <!-- 「残しました」の横に手書きの ✓（飾り）。右に控えめに「N こめのひとこと」（読めたときだけ） -->
+      <div class="flex items-center gap-1.5">
+        <h1 ref="savedHeading" class="font-body text-sm leading-[1.6] font-normal tracking-[.08em] text-ink-soft focus:outline-none">残しました</h1>
+        <SavedCheck class="text-ember" :draw="!shownIds.has(saved.id)" />
+        <p v-if="savedCount" class="saved-count ml-auto text-sm leading-[1.6] tracking-[.04em] text-ink-soft" :class="shownIds.has(saved.id) ? '' : 'is-fresh'">
+          {{ savedCount }}こめのひとこと
+        </p>
+      </div>
       <!-- 便箋（ADR-0010）: 残したひとことは罫の上の明朝。候補はミシン目から下の控えに鉛筆書きで並ぶ。
            ミシン目の切り欠きがカードの縁にかかるので overflow-hidden は付けず、写真の角は写真の側で丸める -->
-      <article class="card -mt-3" :class="shownIds.has(saved.id) ? '' : 'appear'">
+      <article class="card -mt-3" :class="shownIds.has(saved.id) ? '' : 'letter-sealed'">
         <PhotoImg v-if="saved.photo_key" :photo-key="saved.photo_key" class="h-[200px] w-full rounded-t-[13px] object-cover" />
         <div class="px-5 pt-[18px] pb-5">
           <p class="text-sm leading-[1.6] tracking-[.04em] text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
           <p class="letter-text mt-2.5 whitespace-pre-wrap text-ink">{{ saved.body }}</p>
         </div>
+        <!-- 候補が届いたら、ミシン目の下から控えがすべり出て、候補が少しずつずれて現れる（一度だけ） -->
         <template v-if="facts.length > 0">
           <div class="perf" aria-hidden="true"></div>
-          <div class="slip px-5 pt-4 pb-3">
-            <FactChips :facts="facts" />
+          <div class="slip-reveal" :class="slipShown ? '' : 'is-entering'">
+            <div class="slip px-5 pt-4 pb-3">
+              <FactChips :facts="facts" :stagger="!slipShown" />
+            </div>
           </div>
         </template>
       </article>
@@ -282,6 +434,8 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
         <p class="text-sm text-ink-soft" role="alert">{{ photoNote }}</p>
         <a :href="hrefFor({ name: 'memory', id: saved.id, from: 'today' })" class="inline-flex min-h-11 items-center text-sm text-ink-soft">写真を添え直す ›</a>
       </div>
+      <!-- 札を待つ間。届いたら札に入れ替わり、届かずに終わったら静かに消える -->
+      <WaitingThread v-if="waiting || waitingLeaving" :leaving="!waiting" />
       <RecallCard v-for="r in recalls" :key="r.id" :recall="r" from="today" :animate="!shownIds.has(r.id)" />
       <div class="-mt-1 flex flex-wrap items-baseline gap-x-6">
         <button type="button" class="inline-flex min-h-11 items-center tracking-[.04em] text-ink" @click="writeAnother"><span class="ember-underline">もうひとつ書く</span></button>
