@@ -5,7 +5,7 @@ import { nextTick } from "vue";
 import type { Fact, MemoryDetail } from "../src/api/types";
 import { fakeDocument, mount, resetFakeDocument, type FakeElement } from "./fakeDom";
 
-const { ApiError, getMemory, decideFact } = vi.hoisted(() => {
+const { ApiError, getMemory, decideFact, putPhoto, recallFeedback, haptic } = vi.hoisted(() => {
   class ApiError extends Error {
     constructor(
       public readonly status: number,
@@ -19,6 +19,9 @@ const { ApiError, getMemory, decideFact } = vi.hoisted(() => {
     ApiError,
     getMemory: vi.fn<(id: string) => Promise<MemoryDetail>>(),
     decideFact: vi.fn<(id: string, status: string) => Promise<unknown>>(),
+    putPhoto: vi.fn<(id: string, blob: unknown) => Promise<{ photo_key: string; photo_content_type: string }>>(),
+    recallFeedback: vi.fn<(id: string, feedback: string) => Promise<unknown>>(),
+    haptic: { tap: vi.fn(), select: vi.fn(), stamp: vi.fn(), saved: vi.fn(), arrive: vi.fn(), failed: vi.fn() },
   };
 });
 vi.mock("../src/api", () => ({
@@ -26,16 +29,29 @@ vi.mock("../src/api", () => ({
   api: {
     getMemory: (id: string) => getMemory(id),
     decideFact: (id: string, status: string) => decideFact(id, status),
+    putPhoto: (id: string, blob: unknown) => putPhoto(id, blob),
+    recallFeedback: (id: string, feedback: string) => recallFeedback(id, feedback),
   },
 }));
-// 写真の部品はカメラや取得を使うので、中身の無い部品に置き換える（このテストでは描かない）
+vi.mock("../src/photo", () => ({ PHOTO_MAX_BYTES: 10 * 1024 * 1024, shrinkPhoto: async () => ({ size: 100 }) }));
+// 触覚は手ざわりの名前で呼ばれたかだけを見る（@capacitor/haptics は読まない）
+vi.mock("../src/haptics", () => haptic);
+// 写真の部品はカメラや取得を使うので置き換える。PhotoPicker は「写真を添える」を押すと写真を 1 枚選んだことにするだけ
+// （中身は today の受け持ち）。PhotoImg は alt を持つ img だけ
 vi.mock("../src/components/PhotoPicker.vue", async () => {
   const { defineComponent, h } = await import("vue");
-  return { default: defineComponent({ props: { modelValue: { type: null } }, emits: ["update:modelValue"], render: () => h("div") }) };
+  return {
+    default: defineComponent({
+      props: { modelValue: { type: null } },
+      emits: ["update:modelValue"],
+      setup: (_p, { emit }) => () =>
+        h("div", [h("button", { type: "button", onClick: () => emit("update:modelValue", { name: "p.jpg", type: "image/jpeg", size: 100 }) }, "写真を添える")]),
+    }),
+  };
 });
 vi.mock("../src/components/PhotoImg.vue", async () => {
   const { defineComponent, h } = await import("vue");
-  return { default: defineComponent({ props: { photoKey: String, boxClass: String }, render: () => h("div") }) };
+  return { default: defineComponent({ props: { photoKey: String, boxClass: String, alt: String }, setup: (p) => () => h("img", { alt: p.alt ?? "" }) }) };
 });
 
 const MemoryDetailScreen = (await import("../src/screens/MemoryDetailScreen.vue")).default;
@@ -100,6 +116,9 @@ beforeEach(() => {
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() });
   getMemory.mockReset();
   decideFact.mockReset();
+  putPhoto.mockReset();
+  recallFeedback.mockReset();
+  Object.values(haptic).forEach((f) => f.mockReset());
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -235,5 +254,125 @@ describe("S3 の戻るの文言（開いた元の画面）", () => {
       expect(errors).toEqual([]);
     }
     expect(labels).toEqual(["‹ きょう", "‹ これまで", "‹ つながり"]);
+  });
+});
+
+describe("S3 で写真を添えたとき（見直し n=13）", () => {
+  const alertText = (root: FakeElement) => root.querySelectorAll('[role="alert"]').map((el) => el.textContent);
+
+  it("押したボタンが消えても body に落とさず起きた日の h1 へ置き、「写真を添えました」を読み上げる。写真には本文の 1 行目を alt に入れる", async () => {
+    getMemory.mockResolvedValue({ ...detail([]), memory: { ...detail([]).memory, body: "ゆきと駅前で会った\n雨だった" } });
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    const answer = deferred<{ photo_key: string; photo_content_type: string }>();
+    putPhoto.mockReturnValue(answer.promise);
+    const add = button(container, "写真を添える")!;
+    add.focus();
+    add.click(0);
+    await settle();
+    expect(statusText(container)).toContain("写真を添えています");
+    answer.resolve({ photo_key: "u/mem_1.jpg", photo_content_type: "image/jpeg" });
+    await settle();
+    expect(focused()).toBe("H1:2025年10月5日");
+    expect(statusText(container)).toContain("写真を添えました");
+    expect(byTag(container, "IMG").map((el) => el.getAttribute("alt"))).toEqual(["ゆきと駅前で会った"]);
+    expect(haptic.saved).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("添えられなかったときも h1 へ置き、知らせは alert（status は空に戻す）。失敗の触覚を鳴らし、もう一度押せる", async () => {
+    getMemory.mockResolvedValue(detail([]));
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    putPhoto.mockRejectedValue(new ApiError(500, "internal", "x"));
+    const add = button(container, "写真を添える")!;
+    add.focus();
+    add.click(0);
+    await settle();
+    expect(focused()).toBe("H1:2025年10月5日");
+    expect(alertText(container)).toContain("写真を添えられませんでした。もう一度どうぞ");
+    expect(statusText(container).filter((t) => t.includes("写真"))).toEqual([]);
+    expect(haptic.failed).toHaveBeenCalledTimes(1);
+    expect(button(container, "写真を添える")).toBeDefined();
+    expect(errors).toEqual([]);
+  });
+
+  it("添えている間に利用者が動かしたフォーカスは奪わない", async () => {
+    getMemory.mockResolvedValue(detail([]));
+    const { container } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    const answer = deferred<{ photo_key: string; photo_content_type: string }>();
+    putPhoto.mockReturnValue(answer.promise);
+    button(container, "写真を添える")!.click(1);
+    await settle();
+    button(container, "‹ これまで")!.focus();
+    answer.resolve({ photo_key: "u/mem_1.jpg", photo_content_type: "image/jpeg" });
+    await settle();
+    expect(focused()).toBe("BUTTON:‹ これまで");
+  });
+});
+
+describe("S3 の札の手ざわり（ブラッシュアップ 11/7）", () => {
+  const recall = (id: string) => ({
+    id,
+    reason: "青梅の季節の記憶につながる。",
+    evidence: "駅前で",
+    feedback: "none" as const,
+    created_at: "2026-11-07T00:00:00.000Z",
+    related_memory: { id: `old_${id}`, body: "駅前で", happened_on: "2024-06", happened_on_precision: "month" as const, photo_key: null },
+  });
+  const recalledBy = {
+    id: "rb1",
+    reason: "駅前の記憶につながる。",
+    evidence: "駅前で会った",
+    feedback: "none" as const,
+    created_at: "2026-11-07T00:00:00.000Z",
+    memory: { id: "mem_new", body: "駅前を通った", happened_on: "2026-11-07", happened_on_precision: "day" as const, photo_key: null },
+  };
+
+  it("開いたときからある札は動かさず、開いたあとに届いた札だけ現れる動きを付ける（届いた触覚もその札だけ）", async () => {
+    const first = { ...detail([]), recalls: { pending: true, items: [recall("r1")] } };
+    const later = { ...detail([]), recalls: { pending: false, items: [recall("r1"), recall("r2")] } };
+    getMemory.mockResolvedValueOnce(first).mockResolvedValue(later);
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    const notes = container.findAll((el) => el.tagName === "ARTICLE" && el.hasClass("note"));
+    expect(notes.map((el) => el.hasClass("appear"))).toEqual([false, true]);
+    expect(haptic.arrive).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("「そうだった」で判の触覚（stamp）、記録に失敗したら印を戻して失敗の触覚（failed）", async () => {
+    getMemory.mockResolvedValue({ ...detail([]), recalled_by: { items: [recalledBy] } });
+    const answer = deferred<unknown>();
+    recallFeedback.mockReturnValue(answer.promise);
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    button(container, "そうだった")!.click(1);
+    await settle();
+    expect(haptic.stamp).toHaveBeenCalledTimes(1);
+    expect(haptic.failed).not.toHaveBeenCalled();
+    answer.reject(new ApiError(0, "network", "x"));
+    await settle();
+    expect(haptic.failed).toHaveBeenCalledTimes(1);
+    expect(button(container, "そうだった")!.hasAttribute("aria-pressed")).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
+  it("「消す」で開くシートは、やめるで閉じて「消す」へフォーカスを戻す（動きを減らす設定では待たない）", async () => {
+    getMemory.mockResolvedValue(detail([]));
+    const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from: "past" });
+    await settle();
+    const del = button(container, "消す")!;
+    del.focus();
+    del.click(0);
+    await settle();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(focused()).toBe("BUTTON:やめる");
+    button(container, "やめる")!.click(0);
+    await settle();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(focused()).toBe("BUTTON:消す");
+    expect(errors).toEqual([]);
   });
 });

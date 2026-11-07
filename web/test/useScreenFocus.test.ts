@@ -77,7 +77,8 @@ describe("画面が変わったときのフォーカス", () => {
     doc.querySelector.mockReturnValue(h1);
     useScreen();
     await goTo("#past");
-    expect(doc.querySelector).toHaveBeenCalledWith("main h1");
+    // 画面の移り変わりの間は離れていく画面（data-leaving）も残っていて文書の順で先に来るので、それを除いた main の h1
+    expect(doc.querySelector).toHaveBeenCalledWith("main:not([data-leaving]) h1");
     expect(h1.focus).toHaveBeenCalledWith({ preventScroll: true });
     expect(doc.activeElement).toBe(h1);
   });

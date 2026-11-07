@@ -4,10 +4,17 @@
 // 絵の鉛筆の軸・押し葉・2 枚の紙片を白く抜く（色だけに頼らない。wireframes 0 節・6 節）。
 // 帯は「便箋と押し葉」（ADR-0010）の地と同じ紙（すりガラスにしない）で、上の縁は帳面の綴じ目のような二重罫。
 // 帯の高さは pt-1 + 項目 58px + 下の余白（セーフエリアか 6px）で決まり、画面を切り替えても変わらない（wireframes 第8節 #23）。
-// 項目は 3 等分（402pt で 1 つ約 123px、375pt で約 114px）。いちばん長い「これまで」「つながり」（4 字）でも折り返さない
-import type { From } from "../composables/useScreen";
+// 項目は 3 等分（402pt で 1 つ約 123px、375pt で約 114px）。いちばん長い「これまで」「つながり」（4 字）でも折り返さない。
+// 手ざわり（ブラッシュアップ 11/7）: 押すと項目が沈み（.press）、画面が切り替わるときは select の触覚。選んだ項目の淡い地はばねで
+// 少しふくらんで落ち着く（.nav-pill-on）。いま出ている画面の項目をもう一度押しても何も起きないので鳴らさない（S3 では元の画面へ戻るので鳴らす）
+import { parseHash, type From } from "../composables/useScreen";
+import { select } from "../haptics";
 
 defineProps<{ current: From }>(); // S3 では開いた元の画面（App.vue）
+// いま出ている画面（起動直後のハッシュの無いきょうも含めて）の項目なら、押しても何も変わらないので鳴らさない
+const onPress = (id: From) => {
+  if (parseHash(window.location?.hash ?? "").name !== id) select();
+};
 const items = [
   { id: "today", label: "きょう", href: "#today" },
   { id: "past", label: "これまで", href: "#past" },
@@ -23,14 +30,15 @@ const items = [
     <ul class="flex">
       <li v-for="item in items" :key="item.id" class="min-w-0 flex-1">
         <a
-          class="flex h-[58px] flex-col items-center justify-center gap-[5px] text-sm leading-none tracking-[.08em] whitespace-nowrap [font-feature-settings:'palt']"
+          class="press flex h-[58px] flex-col items-center justify-center gap-[5px] text-sm leading-none tracking-[.08em] whitespace-nowrap [font-feature-settings:'palt']"
           :class="current === item.id ? 'font-bold text-ink' : 'font-medium text-ink-soft'"
           :href="item.href"
           :aria-current="current === item.id ? 'page' : undefined"
+          @click="onPress(item.id)"
         >
           <span
             class="flex h-7 w-14 items-center justify-center rounded-pill border transition-colors duration-200"
-            :class="current === item.id ? 'border-ember bg-ember-soft shadow-highlight' : 'border-transparent'"
+            :class="current === item.id ? 'nav-pill-on border-ember bg-ember-soft shadow-highlight' : 'border-transparent'"
             aria-hidden="true"
           >
             <svg

@@ -61,6 +61,7 @@
   --shadow-stamp: inset 0 0 0 2px rgb(227 234 223), inset 0 0 0 2.75px rgb(95 119 89 / 0.55); /* 判の内側の二重の輪（moss-soft と moss-deep） */
   --shadow-highlight: inset 0 1px 0 rgb(255 255 255 / 0.55); /* 選択中の地のつや */
   --drop-shadow-wax: 0 1.5px 1px rgb(100 40 20 / 0.28); /* 封蝋と栞の落ち影 */
+  --shadow-page: -10px 0 22px -14px rgb(58 50 48 / 0.42); /* 画面の紙が重なって動くときの左の縁の影（S3 の出入り、なぞり） */
 
   --ease-gentle: cubic-bezier(0.2, 0.7, 0.2, 1);
   /* 動きの共通の約束（ブラッシュアップ 11/7、ADR-0011）。どの受け持ちもこの名前で速さと曲線をそろえる。
@@ -192,9 +193,11 @@
 @layer components {
   /* ネイティブのセーフエリア（ノッチ、ホームバー）。下部ナビは自分で pb に env() を足している */
   .safe-area {
+    --gutter: max(20px, env(safe-area-inset-left, 0px)); /* 画面の紙を左右の余白まで広げるときの幅（画面の移り変わり） */
     padding-top: env(safe-area-inset-top, 0px);
-    padding-left: max(20px, env(safe-area-inset-left, 0px));
+    padding-left: var(--gutter);
     padding-right: max(20px, env(safe-area-inset-right, 0px));
+    overflow-x: clip; /* 横から入ってくる画面で横のスクロールを出さない（clip はスクロールの箱を作らないので、下部ナビの sticky は効いたまま） */
   }
   /* 便箋（自分の言葉が書かれる紙）: 入力欄、S1 の記憶カード、S3 の本文 */
   .card {
@@ -295,7 +298,14 @@
     color: var(--color-ink);
     transition:
       background-color 200ms var(--ease-gentle),
-      border-color 200ms var(--ease-gentle);
+      border-color 200ms var(--ease-gentle),
+      transform var(--duration-base) var(--ease-spring);
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* 押したときに沈む（.press と同じ手ざわり。色の移り変わりを消さないよう .press は付けずにここで持つ） */
+  .choice:active {
+    transform: scale(0.96);
+    transition-duration: 200ms, 200ms, var(--duration-quick);
   }
   .choice::after {
     content: "";
@@ -359,7 +369,18 @@
     animation: appear 600ms var(--ease-gentle) both;
   }
   .appear .seal {
-    animation: seal-press 420ms 380ms var(--ease-gentle) both;
+    animation: seal-press 400ms 360ms var(--ease-out-soft) both;
+  }
+  /* 一筆箋（RecallCard）は下から少しすべり込む（460ms）。終わったら押したときの沈み（.press）が効くよう、終わりの形は持たない（backwards）。
+     封蝋は 360ms 待って 400ms で押す。いちばん沈むのは半ば（届いてから約 0.56 秒。motion.ts の SEAL_IMPACT_MS で触覚を合わせる） */
+  .note.appear {
+    animation: slip-in var(--duration-slow) var(--ease-out-soft) backwards;
+  }
+  @keyframes slip-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0);
+    }
   }
   @keyframes appear {
     from {
@@ -371,20 +392,34 @@
       transform: translateY(0);
     }
   }
+  /* 封蝋: 少し浮いたところから押し当て、紙に沈んでから戻る（回さない） */
   @keyframes seal-press {
-    from {
+    0% {
       opacity: 0;
-      transform: scale(1.25);
+      transform: scale(1.4);
     }
-    to {
+    50% {
+      opacity: 1;
+      transform: scale(0.94);
+    }
+    100% {
       opacity: 1;
       transform: none;
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .appear,
-    .appear .seal {
+    .appear .seal,
+    .note.appear {
       animation: none;
+    }
+    .choice {
+      transition:
+        background-color 200ms var(--ease-gentle),
+        border-color 200ms var(--ease-gentle);
+    }
+    .choice:active {
+      transform: none;
     }
   }
 
@@ -622,3 +657,222 @@
   }
 }
 
+
+/* ---- 画面全体の動き（ブラッシュアップ 11/7、motion の受け持ち。ADR-0011）。動かすのは transform と opacity だけ ----
+   名前は App.vue の <Transition name="screen-<motion>">（motion は useScreen が決める）。動きを減らす設定では App.vue が css を切る。
+   離れていく画面は App.vue が position: fixed にして見ていた位置に留める（data-leaving。読み上げと指からは外す）。
+   - forward / backward（下部ナビの切り替え）: 行き先の向きへ 28px 滑らせて重ねる。入る画面 280ms、出る画面は 160ms で薄れる
+   - push（S3 をひらく）: S3 の紙が右から入り、前の画面は 30% 左へ下がって暗くなる（.screen-shade）。pop（戻る）はその逆。どちらも 280ms
+   - swipe（左端からなぞって戻った）: S3 は指の位置から右へ出ていき（useEdgeSwipe の inline の動き）、前の画面は少し左からふわっと出る */
+@layer components {
+  .screen-forward-enter-active,
+  .screen-backward-enter-active,
+  .screen-swipe-enter-active {
+    position: relative;
+    z-index: 2;
+    transition:
+      opacity var(--duration-base) var(--ease-out-soft),
+      transform var(--duration-base) var(--ease-out-soft);
+  }
+  .screen-forward-leave-active,
+  .screen-backward-leave-active {
+    z-index: 1;
+    transition:
+      opacity var(--duration-quick) var(--ease-out-soft),
+      transform var(--duration-base) var(--ease-out-soft);
+  }
+  .screen-forward-enter-from,
+  .screen-backward-leave-to {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  .screen-forward-leave-to,
+  .screen-backward-enter-from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
+  .screen-push-enter-active,
+  .screen-pop-leave-active {
+    position: relative;
+    z-index: 3;
+    transition: transform var(--duration-base) var(--ease-out-soft);
+  }
+  .screen-push-leave-active,
+  .screen-pop-enter-active {
+    position: relative;
+    z-index: 1;
+    transition: transform var(--duration-base) var(--ease-out-soft);
+  }
+  .screen-pop-leave-active {
+    position: fixed; /* App.vue が inline でも付ける。z-index を効かせるため */
+  }
+  .screen-push-leave-active {
+    position: fixed;
+  }
+  .screen-push-enter-from,
+  .screen-pop-leave-to {
+    transform: translate3d(100vw, 0, 0);
+  }
+  .screen-push-leave-to,
+  .screen-pop-enter-from {
+    transform: translate3d(-30%, 0, 0);
+  }
+  .screen-swipe-enter-from {
+    opacity: 0;
+    transform: translate3d(-24px, 0, 0);
+  }
+  .screen-swipe-leave-active {
+    position: fixed;
+    z-index: 3;
+  }
+  /* 重なって動く S3 の紙。左右の余白まで地の紙を敷き、左の縁に影を落とす（下の画面の文字を透かさない）。
+     地の模様は body と同じ所から始める（止まったときに継ぎ目が見えない） */
+  .screen-push-enter-active::before,
+  .screen-pop-leave-active::before,
+  .screen-swipe-leave-active::before,
+  main[data-dragging]::before {
+    content: "";
+    position: absolute;
+    inset: 0 calc(-1 * var(--gutter, 20px));
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--color-paper);
+    background-image: var(--tex-fiber), var(--tex-grain);
+    background-size: 360px 360px, 220px 220px;
+    background-position: 0 calc(-1 * env(safe-area-inset-top, 0px));
+    box-shadow: var(--shadow-page);
+  }
+  main[data-dragging] {
+    position: relative;
+    z-index: 3;
+  }
+  /* S3 の下になる画面を少し暗くする薄い墨（下部ナビとステータスバーの地より下） */
+  .screen-shade {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background: var(--color-ink);
+    opacity: 0;
+  }
+  .screen-shade[data-shade="push"] {
+    animation: shade-in var(--duration-base) var(--ease-out-soft) forwards;
+  }
+  .screen-shade[data-shade="pop"] {
+    animation: shade-in var(--duration-base) var(--ease-out-soft) reverse forwards;
+  }
+  @keyframes shade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 0.12;
+    }
+  }
+
+  /* 下からのシート（useSheetDrag）。紙はばねで上がり（少し行きすぎて戻る）、地はふわっと暗くなる。
+     行きすぎたときに下の縁が浮いて見えないよう、紙を下へ伸ばしておく（::after）。閉じる動きとなぞりは useSheetDrag が inline で付ける */
+  .sheet-paper {
+    animation: sheet-up var(--duration-slow) var(--ease-spring) backwards;
+  }
+  /* シートの置き場（地と紙の親）。後ろの画面のスクロールは WebKit にも始めさせない（useSheetDrag の止め方は最初の touchmove の
+     早さに頼らない）。中身がスクロールするシートは、その要素に data-sheet-scroll を付けて縦だけ任せる */
+  .sheet-host {
+    touch-action: none;
+  }
+  .sheet-host [data-sheet-scroll] {
+    touch-action: pan-y;
+  }
+  .sheet-paper::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 64px;
+    background: inherit;
+    pointer-events: none;
+  }
+  .sheet-backdrop {
+    animation: backdrop-in var(--duration-base) var(--ease-out-soft) backwards;
+  }
+  /* 掴み手（見た目だけ。シートのどこを下へなぞっても閉じる） */
+  .sheet-grip {
+    width: 40px;
+    height: 4px;
+    margin: -8px auto 12px;
+    border-radius: var(--radius-pill);
+    background: var(--color-line-strong);
+  }
+  @keyframes sheet-up {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+  }
+  @keyframes backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* 一覧（S2）とようこそ（S0）: 最初の表示で、上から少しずつずれて現れる（--i 番目 × 50ms。S2 は 5 行目まで） */
+  .rise-in {
+    animation: rise-in var(--duration-slow) var(--ease-out-soft) backwards;
+    animation-delay: calc(var(--i, 0) * 50ms);
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 10px, 0);
+    }
+  }
+  /* 写真の焼き付け: 読み込めたらふわっと出る（PhotoImg。load までは透明） */
+  .photo-develop {
+    opacity: 0;
+    transition: opacity var(--duration-slow) var(--ease-out-soft);
+  }
+  .photo-develop.is-shown {
+    opacity: 1;
+  }
+  /* 下部ナビ: 選んだ項目の淡い地が、ばねで少しふくらんで落ち着く */
+  .nav-pill-on {
+    animation: nav-pill var(--duration-base) var(--ease-spring);
+  }
+  @keyframes nav-pill {
+    from {
+      transform: scale(0.82);
+    }
+  }
+  /* 「そうだった」の判を押した瞬間（RecalledByCard）。少し浮いて押し当て、沈んで戻る */
+  .recall-stamp {
+    animation: recall-stamp var(--duration-base) var(--ease-spring);
+  }
+  @keyframes recall-stamp {
+    0% {
+      transform: scale(1.1);
+    }
+    55% {
+      transform: scale(0.95);
+    }
+    100% {
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet-paper,
+    .sheet-backdrop,
+    .rise-in,
+    .nav-pill-on,
+    .recall-stamp,
+    .screen-shade[data-shade] {
+      animation: none;
+    }
+    .photo-develop {
+      transition: none;
+    }
+    main[data-dragging]::before {
+      box-shadow: none;
+    }
+  }
+}

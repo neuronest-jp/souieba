@@ -4,12 +4,31 @@
 // 反応の記録は親（MemoryDetailScreen）が持つ。札を本文のすぐ下にも一覧にも置けるように、描き方だけをここにまとめる。
 // 見た目は RecallCard と同じ封蝋の付いた一筆箋（ADR-0010）。「関係ないかも」と返した札は、地の色に戻して
 // 二重罫を line にし、封蝋を外す（色だけでなく形で退かせる。文字は薄くしない）。「そうだった」は判の形（二重の輪）
+// 手ざわり（ブラッシュアップ 11/7）: 「そうだった」で判を押す触覚（stamp）と、判が少し浮いて押し当てられる動き（.recall-stamp）。
+// 取り消し（もう一度押す）と「関係ないかも」はふつうのボタンの触覚（tap）。記録の失敗の触覚（failed）は親が鳴らす
+import { onUnmounted, ref } from "vue";
 import type { RecalledBy } from "../api/types";
 import { firstLine, formatHappenedOn } from "../date";
+import { stamp, tap } from "../haptics";
 import Seal from "./motifs/Seal.vue";
 
-withDefaults(defineProps<{ item: RecalledBy; heading?: boolean; notice?: string }>(), { heading: false, notice: "" });
+const props = withDefaults(defineProps<{ item: RecalledBy; heading?: boolean; notice?: string }>(), { heading: false, notice: "" });
 const emit = defineEmits<{ react: [feedback: "helpful" | "not_related"] }>();
+
+const stamping = ref(false);
+let timer: ReturnType<typeof setTimeout> | null = null;
+const answer = (feedback: "helpful" | "not_related") => {
+  if (feedback === "helpful" && props.item.feedback !== "helpful") {
+    stamp();
+    stamping.value = true;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => (stamping.value = false), 400);
+  } else tap();
+  emit("react", feedback);
+};
+onUnmounted(() => {
+  if (timer) clearTimeout(timer);
+});
 </script>
 
 <template>
@@ -27,16 +46,16 @@ const emit = defineEmits<{ react: [feedback: "helpful" | "not_related"] }>();
       <button
         type="button"
         class="choice h-10 px-4"
-        :class="item.feedback === 'helpful' ? 'border-moss-deep bg-moss-soft shadow-stamp' : ''"
+        :class="[item.feedback === 'helpful' ? 'border-moss-deep bg-moss-soft shadow-stamp' : '', stamping ? 'recall-stamp' : '']"
         :aria-pressed="item.feedback === 'helpful'"
-        @click="emit('react', 'helpful')"
+        @click="answer('helpful')"
       >そうだった</button>
       <button
         type="button"
         class="choice h-10 px-4 text-ink-soft"
         :class="item.feedback === 'not_related' ? 'border-ink-soft bg-paper shadow-none' : ''"
         :aria-pressed="item.feedback === 'not_related'"
-        @click="emit('react', 'not_related')"
+        @click="answer('not_related')"
       >関係ないかも</button>
     </div>
     <p v-if="notice" class="-mt-1.5 mb-3 text-sm text-ink-soft" role="status" aria-live="polite">{{ notice }}</p>

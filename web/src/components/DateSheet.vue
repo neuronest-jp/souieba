@@ -2,9 +2,14 @@
 // 「いつ？」のシート。精度（日 / 月 / 年 / いつだったか）と日付を選ぶ（wireframes 2.1）。
 // 内部では常に完全な日付（YYYY-MM-DD）を持ち、精度に応じた表示用の値を派生させる。
 // 精度を 日 → 年 → 日 と戻しても、選んだ月日は失われない。
+// 手ざわり（ブラッシュアップ 11/7、useSheetDrag）: 紙はばねで上がり、掴み手かシートを下へなぞると閉じる（離した位置と速さで決める）。
+// 地を押す・「とじる」・Esc でも、紙が下がってから close を出す（動きを減らす設定では待たない）。開いている間は後ろをスクロールさせない。
+// 精度を切り替えたときは select の触覚。ボタンは押すと沈む（.choice、.press）
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import type { Precision } from "../api/types";
+import { useSheetDrag } from "../composables/useSheetDrag";
 import { clampDay, isRealYmd, todayInTokyo } from "../date";
+import { select } from "../haptics";
 
 const precision = defineModel<Precision>("precision", { required: true });
 const date = defineModel<string>("date", { required: true }); // 常に YYYY-MM-DD
@@ -46,8 +51,14 @@ const yearModel = computed({
   },
 });
 
+const { panel, backdrop, close } = useSheetDrag({ onClose: () => emit("close") });
+const choose = (p: Precision) => {
+  if (precision.value !== p) select();
+  precision.value = p;
+};
+
 const onKey = (e: KeyboardEvent) => {
-  if (e.key === "Escape") emit("close");
+  if (e.key === "Escape") close();
 };
 onMounted(() => {
   if (!isRealYmd(date.value)) date.value = todayInTokyo();
@@ -58,9 +69,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
-  <div class="fixed inset-0 z-20 flex items-end justify-center bg-ink/30" @click.self="emit('close')">
-    <div class="tex-sheet w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
-      <div class="mx-auto -mt-2 mb-3 h-1 w-10 rounded-full bg-line" aria-hidden="true"></div>
+  <div class="sheet-host fixed inset-0 z-20 flex items-end justify-center">
+    <div ref="backdrop" class="sheet-backdrop absolute inset-0 bg-ink/30" aria-hidden="true" @click="close"></div>
+    <div ref="panel" class="sheet-paper tex-sheet relative w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="date-sheet-title">
+      <div class="sheet-grip" aria-hidden="true"></div>
       <h2 id="date-sheet-title" class="text-xl">いつのこと</h2>
       <div class="mt-4 flex flex-wrap gap-2">
         <button
@@ -71,7 +83,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           class="choice h-11"
           :class="precision === o.id ? 'border-ember bg-ember-soft text-ink shadow-highlight' : 'text-ink-soft'"
           :aria-pressed="precision === o.id"
-          @click="precision = o.id"
+          @click="choose(o.id)"
         >
           {{ o.label }}
         </button>
@@ -85,7 +97,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         <p v-else class="text-sm text-ink-soft">日付は入れずに残します。</p>
       </div>
       <div class="mt-4 flex justify-center">
-        <button type="button" class="min-h-11 px-6 text-ink-soft" @click="emit('close')">とじる</button>
+        <button type="button" class="press min-h-11 px-6 text-ink-soft" @click="close">とじる</button>
       </div>
     </div>
   </div>

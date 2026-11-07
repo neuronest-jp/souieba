@@ -2,13 +2,16 @@
 // S2 これまで。時系列の静かなリスト。
 // App.vue の KeepAlive で残すので、記憶を開いて戻っても「もっと前を見る」で足した分と位置はそのまま。
 // 「よみこみ中」は初回だけ（wireframes 0 節、3.1）。戻ってきたときは裏で取り直して入れ替える。
-import { onActivated, onMounted, ref } from "vue";
+// 動き（ブラッシュアップ 11/7）: 読み込めて一覧を初めて出すときだけ、行が上から少しずつずれて現れる（.rise-in。5 行目まで 50ms ずつ、
+// 6 行目からは 5 行目と一緒）。戻ってきたときの取り直しや「もっと前を見る」で足した行は動かさない。写真は PhotoImg が読めたらふわっと出す
+import { onActivated, onMounted, onUnmounted, ref } from "vue";
 import { api } from "../api";
 import type { Memory } from "../api/types";
 import MemoryCard from "../components/MemoryCard.vue";
 import Leaf from "../components/motifs/Leaf.vue";
 import { useMemoryDeleted } from "../composables/useMemoryDeleted";
 import { useMemoryPhoto } from "../composables/useMemoryPhoto";
+import { DURATION, prefersMotion } from "../motion";
 
 defineOptions({ name: "TimelineScreen" }); // KeepAlive の include で使う
 
@@ -20,6 +23,23 @@ const loadingMore = ref(false);
 // 一覧を書き換える処理（続き・取り直し）のたびに進める。あとから始めた方の結果だけを使う
 let version = 0;
 
+// 最初に出した行の ID（この行だけ .rise-in で現れる）。動き終わったら空にする
+const STAGGER_ROWS = 5;
+const entering = ref(new Set<string>());
+let enterTimer: ReturnType<typeof setTimeout> | null = null;
+const stagger = (rows: Memory[]) => {
+  if (!prefersMotion() || rows.length === 0) return;
+  entering.value = new Set(rows.map((m) => m.id));
+  if (enterTimer) clearTimeout(enterTimer);
+  enterTimer = setTimeout(() => {
+    enterTimer = null;
+    entering.value = new Set();
+  }, STAGGER_ROWS * 50 + DURATION.slow + 100);
+};
+onUnmounted(() => {
+  if (enterTimer) clearTimeout(enterTimer);
+});
+
 const load = async () => {
   version += 1;
   state.value = "loading";
@@ -28,6 +48,7 @@ const load = async () => {
     items.value = page.items;
     nextCursor.value = page.next_cursor;
     state.value = "ready";
+    stagger(page.items);
   } catch {
     state.value = "error";
   }
@@ -101,7 +122,7 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 
     <section v-else-if="state === 'error'" class="flex flex-col items-center gap-3 py-16 text-center">
       <p class="text-ink-soft">読み込めませんでした</p>
-      <button type="button" class="btn btn-quiet" @click="load">もう一度</button>
+      <button type="button" class="btn btn-quiet press" @click="load">もう一度</button>
     </section>
 
     <section v-else-if="items.length === 0" class="flex flex-1 flex-col items-center justify-center gap-1 py-16 text-center text-ink-soft">
@@ -111,13 +132,18 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 
     <template v-else>
       <ul class="-mt-[18px]">
-        <li v-for="m in items" :key="m.id">
+        <li
+          v-for="(m, i) in items"
+          :key="m.id"
+          :class="entering.has(m.id) ? 'rise-in' : ''"
+          :style="entering.has(m.id) ? { '--i': Math.min(i, STAGGER_ROWS - 1) } : undefined"
+        >
           <MemoryCard :memory="m" />
         </li>
       </ul>
       <div v-if="nextCursor" class="flex flex-col items-center gap-3">
         <p v-if="moreError" class="text-ink-soft">読み込めませんでした</p>
-        <button type="button" class="btn btn-quiet" :disabled="loadingMore" @click="more">もっと前を見る</button>
+        <button type="button" class="btn btn-quiet press" :disabled="loadingMore" @click="more">もっと前を見る</button>
       </div>
     </template>
   </main>

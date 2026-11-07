@@ -1,8 +1,11 @@
 <script setup lang="ts">
 // S0 ようこそ（ログイン）。招待コードとメールアドレスだけ。パスワードは無い（ADR-0007）。
+// 動き（ブラッシュアップ 11/7）: 開いたとき、題・入力の便箋・添え書きが上から少しずつずれて現れる（.rise-in）。
+// 「はじめる」は押すと沈み（.press）、入れなかったときは failed の触覚
 import { computed, ref } from "vue";
 import { api, ApiError } from "../api";
 import { saveToken } from "../auth";
+import { failed } from "../haptics";
 
 const emit = defineEmits<{ done: [userId: string] }>();
 
@@ -22,6 +25,7 @@ const start = async () => {
     await saveToken(r.token, r.user_id);
     emit("done", r.user_id);
   } catch (e) {
+    failed();
     if (e instanceof ApiError && (e.status === 401 || e.status === 400)) error.value = "招待コードかメールアドレスが違うようです";
     else if (e instanceof ApiError && e.status === 429) error.value = "少し待ってから、もう一度";
     else error.value = "いま、うまくつながりません";
@@ -33,7 +37,7 @@ const start = async () => {
 
 <template>
   <main class="flex flex-1 flex-col justify-center gap-8 py-16">
-    <div class="space-y-3 text-center">
+    <div class="rise-in space-y-3 text-center">
       <!-- 句点だけ ember（起動画面の「そういえば。」と同じ。ADR-0008）。38px の太字なので地との 3:1 で足りる -->
       <h1 class="text-4xl tracking-[.04em]">そういえば<span class="text-ember">。</span></h1>
       <p class="text-ink-soft">
@@ -41,7 +45,7 @@ const start = async () => {
         いつか、ふと思い出すきっかけになります。
       </p>
     </div>
-    <form class="card flex flex-col gap-4 p-5" @submit.prevent="start">
+    <form class="rise-in card flex flex-col gap-4 p-5 [--i:2]" @submit.prevent="start">
       <label class="flex flex-col gap-1">
         <span class="text-sm text-ink-soft">招待コード</span>
         <input v-model="code" type="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" class="h-12 rounded-xl border border-line bg-paper px-3" />
@@ -50,9 +54,9 @@ const start = async () => {
         <span class="text-sm text-ink-soft">メールアドレス</span>
         <input v-model="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" class="h-12 rounded-xl border border-line bg-paper px-3" />
       </label>
-      <button class="btn btn-primary mt-2 self-center px-10" type="submit" :disabled="!canStart">はじめる</button>
+      <button class="btn btn-primary press mt-2 self-center px-10" type="submit" :disabled="!canStart">はじめる</button>
       <p v-if="error" class="text-center text-sm text-ink-soft" role="alert">{{ error }}</p>
     </form>
-    <p class="text-center text-sm text-ink-soft">招待コードは、お渡ししたものを入れてください</p>
+    <p class="rise-in text-center text-sm text-ink-soft [--i:4]">招待コードは、お渡ししたものを入れてください</p>
   </main>
 </template>
