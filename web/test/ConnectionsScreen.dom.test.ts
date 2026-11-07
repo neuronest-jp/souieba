@@ -801,13 +801,15 @@ describe("帯を押したとき", () => {
     const figure = container.querySelector("figure")!;
     expect(figure.getAttribute("aria-hidden")).toBe("true"); // 押せても読み上げには出さない（同じ組は一覧にある）
     const svg = figure.querySelector("svg")!;
-    const layout = layoutLoom({ beads, items: [pair("r1"), older], width: 362 });
-    (svg as unknown as { getBoundingClientRect: () => object }).getBoundingClientRect = () => ({ left: 0, top: 0, width: layout.width, height: layout.height });
+    const scroller = figure as FakeElement & { scrollLeft: number };
+    const layout = layoutLoom({ beads, items: [pair("r1"), older], width: 362, scroll: true });
+    (scroller as unknown as { getBoundingClientRect: () => object }).getBoundingClientRect = () => ({ left: 0, top: 0, width: layout.view, height: layout.height });
+    const shift = scroller.scrollLeft;
     const row = rowOf(container, "r2")!;
     const scrolled = vi.fn();
     (row as unknown as { scrollIntoView: typeof scrolled }).scrollIntoView = scrolled;
     const arc = layout.arcs.find((a) => a.id === "r2")!;
-    pressAt(svg, (arc.x1 + arc.x2) / 2, layout.baseline - arc.height);
+    pressAt(svg, (arc.x1 + arc.x2) / 2 - shift, layout.baseline - arc.height);
     await settle();
     expect(scrolled).toHaveBeenCalledWith({ behavior: "auto", block: "start" }); // 動きを減らす設定では、なめらかにせず飛ぶ
     expect(rowOf(container, "r2")!.hasClass("pair-glow")).toBe(true);
@@ -818,6 +820,76 @@ describe("帯を押したとき", () => {
     await settle();
     expect(scrolled).toHaveBeenCalledTimes(1);
     expect(haptic.select).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("年が多い帯は横に送れる年表になり、開いたときは新しい側（右端）を見せる。押した位置には送った量を足して当てる", async () => {
+    const { container, errors } = await open([pair("r1"), older]);
+    const figure = container.querySelector("figure")!;
+    const scroller = figure as FakeElement & { scrollLeft: number };
+    const layout = layoutLoom({ beads, items: [pair("r1"), older], width: 362, scroll: true });
+    expect(layout.width).toBeGreaterThan(layout.view);
+    expect(figure.hasClass("loom")).toBe(true);
+    expect(scroller.scrollLeft).toBe(layout.width - layout.view); // 右端から
+    expect(figure.querySelector("svg")!.getAttribute("width")).toBe(String(layout.width));
+    (scroller as unknown as { getBoundingClientRect: () => object }).getBoundingClientRect = () => ({ left: 0, top: 0, width: layout.view, height: layout.height });
+    const row = rowOf(container, "r2")!;
+    const scrolled = vi.fn();
+    (row as unknown as { scrollIntoView: typeof scrolled }).scrollIntoView = scrolled;
+    // 左の端まで送ってから、古い端（2023 年）の近くの弧を押す
+    scroller.scrollLeft = 0;
+    const arc = layout.arcs.find((a) => a.id === "r2")!;
+    const svg = figure.querySelector("svg")!;
+    await wait(200); // 送った直後の指離れの時間を過ぎてから
+    pressAt(svg, arc.x1 + 6, layout.baseline - 8);
+    await settle();
+    expect(scrolled).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("一覧で組をひらくと、帯もその組の弧が見える所まで送る（reveal）", async () => {
+    const { container, errors } = await open([pair("r1"), older]);
+    const figure = container.querySelector("figure")! as FakeElement & { scrollLeft: number };
+    const layout = layoutLoom({ beads, items: [pair("r1"), older], width: 362, scroll: true });
+    expect(figure.scrollLeft).toBe(layout.width - layout.view);
+    const arc = layout.arcs.find((a) => a.id === "r2")!;
+    const lo = Math.min(arc.x1, arc.x2) - 28;
+    const hi = Math.max(arc.x1, arc.x2) + 28;
+    expect(lo).toBeLessThan(figure.scrollLeft); // 右端からはこの弧が収まっていない
+    openButtonOf(container, "r2").click();
+    await settle();
+    // 収まるなら弧を真ん中に、収まらなければ新しい端を右のぼかしの内側に
+    const want = hi - lo <= layout.view ? (lo + hi - layout.view) / 2 : hi - layout.view;
+    expect(figure.scrollLeft).toBe(Math.round(Math.max(0, want)));
+    expect(figure.scrollLeft).toBeLessThan(layout.width - layout.view);
+    expect(errors).toEqual([]);
+  });
+
+  it("横に送った直後の指離れでは、弧を押したことにしない", async () => {
+    const { container, errors } = await open([pair("r1"), older]);
+    const figure = container.querySelector("figure")!;
+    const scroller = figure as FakeElement & { scrollLeft: number };
+    const layout = layoutLoom({ beads, items: [pair("r1"), older], width: 362, scroll: true });
+    (scroller as unknown as { getBoundingClientRect: () => object }).getBoundingClientRect = () => ({ left: 0, top: 0, width: layout.view, height: layout.height });
+    const row = rowOf(container, "r2")!;
+    const scrolled = vi.fn();
+    (row as unknown as { scrollIntoView: typeof scrolled }).scrollIntoView = scrolled;
+    const fire = (el: FakeElement, type: string) =>
+      ((el as unknown as { listeners: Map<string, Array<{ fn: (e: unknown) => void }>> }).listeners.get(type) ?? []).forEach((l) => l.fn({}));
+    const arc = layout.arcs.find((a) => a.id === "r2")!;
+    const svg = figure.querySelector("svg")!;
+    // 指を置いてから送られた
+    fire(scroller, "pointerdown");
+    scroller.scrollLeft -= 120;
+    fire(scroller, "scroll");
+    pressAt(svg, (arc.x1 + arc.x2) / 2 - scroller.scrollLeft, layout.baseline - arc.height);
+    await settle();
+    // 送った直後（指は動かしていない）
+    fire(scroller, "scroll");
+    pressAt(svg, (arc.x1 + arc.x2) / 2 - scroller.scrollLeft, layout.baseline - arc.height);
+    await settle();
+    expect(scrolled).not.toHaveBeenCalled();
+    expect(haptic.select).not.toHaveBeenCalled();
     expect(errors).toEqual([]);
   });
 });

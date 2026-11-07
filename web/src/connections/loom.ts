@@ -4,6 +4,8 @@
 //   x = left + (t − t0) / (t1 − t0) × (right − left)。viewBox 0 0 362 90 なら left 10、right 352（幅 342）
 //   t0 は一番古い年の 1 月 1 日、t1 は今年の翌年の 1 月 1 日。t は day ならその日、month は 15 日、year は 7 月 1 日。unknown は置かない
 //   弧の高さ（0.75k）= 8 + 30√(span / 342)。短い糸から順に決め、端を 6px 以内で分け合う糸は先に置いた糸より 6px 高くして入れ子にする（最大 54）
+// 横に送る年表（scroll。11/8、ADR-0009 の末尾の追記）: 見える幅に詰めると 1 年が 150px を割るときだけ、1 年 180px で全体の幅を延ばす
+//   （帯の幅は 3600px まで。それより長い年月は 1 年を縮める）。x の式は同じで、right − left が全体の幅になる。弧の高さも全体の幅で決める
 import type { Precision } from "../api/types";
 import { todayInTokyo } from "../date";
 
@@ -31,7 +33,8 @@ export type LoomArc = {
 };
 
 export type LoomLayout = {
-  width: number;
+  width: number; // 全体の幅（横に送らないときは見える幅と同じ）
+  view: number; // 見える幅（入力の width）
   height: number;
   baseline: number; // 縁の線の y（60）
   labelY: number; // 年や月の文字の y（84）
@@ -45,8 +48,10 @@ export type LoomInput = {
   beads: readonly LoomBead[];
   items: readonly LoomItem[];
   today?: string; // Asia/Tokyo の今日 'YYYY-MM-DD'。省略すると todayInTokyo()
-  width?: number; // 362
+  width?: number; // 見える幅（362）
   height?: number; // 90
+  // 横に送る年表にする（ThreadLoom）。省略すると、11/7 までの帯と同じく見える幅に詰める（見本の数値と突き合わせるテストのため）
+  scroll?: boolean;
 };
 
 const PAD = 10; // 左右の余白（粒と結び目がはみ出さない）
@@ -57,6 +62,10 @@ const MAX_ARC = 54;
 const LABEL_SPACING = 44; // 年の文字（14px の「2024」）が重ならない間隔。狭ければ間引く
 const LABEL_HALF = 16; // 文字の半分の幅。viewBox からはみ出さないよう中心をこの内側に収める
 const QUARTER_MONTHS = [1, 4, 7, 10] as const;
+// 横に送る年表（scroll）の 1 年の幅。詰めても 1 年が MIN_YEAR 以上あるなら詰めて横に送らない（少しだけ送れる帯にしない）
+export const LOOM_YEAR = 180;
+export const LOOM_MIN_YEAR = 150;
+export const LOOM_MAX_WIDTH = 3600; // 1 年 180px で 20 年ぶん。ずっと昔の記憶があっても帯が延びすぎない
 const DAY_MS = 86_400_000;
 
 const round1 = (v: number): number => Math.round(v * 10) / 10;
@@ -83,13 +92,10 @@ const dayOf = (d: Dated): { year: number; day: number } | null => {
 const jan1 = (y: number): number => Date.UTC(y, 0, 1) / DAY_MS;
 
 export const layoutLoom = (input: LoomInput): LoomLayout => {
-  const width = input.width ?? 362;
+  const view = input.width ?? 362;
   const height = input.height ?? 90;
   const baseline = height - 30;
   const labelY = height - 6;
-  const left = PAD;
-  const right = width - PAD;
-  const span = right - left;
   const thisYear = Number((input.today ?? todayInTokyo()).slice(0, 4));
 
   const beadDays = input.beads.map(dayOf).filter((b): b is NonNullable<typeof b> => b !== null);
@@ -101,6 +107,17 @@ export const layoutLoom = (input: LoomInput): LoomLayout => {
   for (const p of pairs) if (p.old && p.now) years.push(p.old.year, p.now.year);
   const y0 = Math.min(...years);
   const yLast = Math.max(...years);
+
+  // 全体の幅: 見える幅に詰めて 1 年が LOOM_MIN_YEAR を割るときだけ、1 年 LOOM_YEAR（帯は LOOM_MAX_WIDTH まで）で延ばす
+  const yearCount = yLast - y0 + 1;
+  const fitYear = (view - 2 * PAD) / yearCount;
+  const width =
+    input.scroll && fitYear < LOOM_MIN_YEAR
+      ? Math.max(view, Math.round(2 * PAD + yearCount * Math.min(LOOM_YEAR, (LOOM_MAX_WIDTH - 2 * PAD) / yearCount)))
+      : view;
+  const left = PAD;
+  const right = width - PAD;
+  const span = right - left;
   const t0 = jan1(y0);
   const t1 = jan1(yLast + 1);
   const xOf = (day: number): number => clamp(left + ((day - t0) / (t1 - t0)) * span, left, right);
@@ -170,11 +187,12 @@ export const layoutLoom = (input: LoomInput): LoomLayout => {
     };
   });
 
-  return { width, height, baseline, labelY, rules, labels, beads, arcs };
+  return { width, view, height, baseline, labelY, rules, labels, beads, arcs };
 };
 
 // 帯を押したとき（余裕があれば、の仕様。wireframes 9.2）に、押した位置からいちばん近い弧の組を選ぶ。
-// x, y は viewBox の座標（帯は実際の幅を viewBox に渡すので、1 単位 = 1pt）。reach（22 = 44pt の的の半分）より遠ければ null。
+// x, y は帯の全体の中の座標（viewBox。帯は実際の幅で描くので 1 単位 = 1pt。横に送った帯では、押した位置に送った量を足してから渡す）。
+// reach（22 = 指の大きさ 44pt の的の半分）より遠ければ null。
 // 弧が密なときは、指にいちばん近い弧を選ぶ（入れ子の内と外は押した高さで分かれる）。同じ近さ（両端の結び目を分け合う弧など）なら、
 // 短い弧（小さくて押しにくい方）を、それも同じなら一覧で先の組を選ぶ
 const ARC_SAMPLES = 32;

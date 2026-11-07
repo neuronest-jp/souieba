@@ -279,3 +279,62 @@ describe("pickArc（帯を押したときの組の選び方）", () => {
     expect(pickArc(l, 100, 40)).toBeNull();
   });
 });
+
+describe("横に送る年表（scroll。11/8）", () => {
+  const STORY: LoomItem[] = [
+    item("long", ["2026-11-07", "day"], ["2020-01-05", "day"]),
+    item("short", ["2026-10-01", "day"], ["2026-09-20", "day"]),
+    ...TEN,
+  ];
+  const storyBeads = [at("2020-01-05", "day"), ...SEED_BEADS];
+
+  it("詰めると 1 年が 150px を割るときだけ、1 年 180px で全体の幅を延ばす。粒の x は同じ式で全体の幅に置く", () => {
+    const l = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402, scroll: true });
+    expect(l.view).toBe(402);
+    expect(l.width).toBe(20 + 7 * 180); // 2020〜2026 の 7 年
+    const r2020 = l.rules.find((r) => r.year === 2020)!;
+    expect(r2020.x2 - r2020.x1).toBeCloseTo(180 - 6, 0);
+    // 2026-11-07 は右の端の近く
+    expect(l.beads.at(-1)!).toBeGreaterThan(l.width - 40);
+    expect(l.beads[0]!).toBeLessThan(15);
+    // 粒の間: 2024-02-20 と 2024-03-09 は 18 日 ≒ 9px 離れる（詰めると 3px 足らず）
+    const fit = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402 });
+    expect(l.beads[2]! - l.beads[1]!).toBeGreaterThan(8);
+    expect(fit.beads[2]! - fit.beads[1]!).toBeLessThan(3);
+  });
+
+  it("年が少なく、詰めても 1 年 150px 以上あるときは見える幅のまま（送らない）", () => {
+    const l = layoutLoom({ beads: [at("2026-01-04", "day")], items: [], today: TODAY, width: 402, scroll: true });
+    expect(l.width).toBe(402);
+    const two = layoutLoom({ beads: [at("2025-01-04", "day")], items: [], today: TODAY, width: 402, scroll: true });
+    expect(two.width).toBe(402); // 2 年なら 1 年 191px
+  });
+
+  it("ずっと昔の記憶があっても帯は 3600px まで", () => {
+    const l = layoutLoom({ beads: [at("1960-01-01", "day")], items: [], today: TODAY, width: 402, scroll: true });
+    expect(l.width).toBeLessThanOrEqual(3600);
+  });
+
+  it("幅を延ばしても、長くまたぐ弧は帯の高さに収まる（上にはみ出さない）", () => {
+    const l = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402, scroll: true });
+    for (const a of l.arcs) {
+      expect(a.height).toBeLessThanOrEqual(54);
+      expect(l.baseline - a.height / 0.75).toBeGreaterThanOrEqual(-12); // 光の太い線（9px）の半分ほどまで
+    }
+    const top = Math.min(...l.arcs.map((a) => l.baseline - a.height / 0.75));
+    expect(top).toBeGreaterThanOrEqual(-12);
+  });
+
+  it("pickArc は帯の全体の座標で当たる（見える位置に送った量を足す）。指の大きさ（半径 22）の内なら当たる", () => {
+    const l = layoutLoom({ beads: storyBeads, items: STORY, today: TODAY, width: 402, scroll: true });
+    const s = l.arcs.find((a) => a.id === "short")!;
+    const scrollLeft = l.width - l.view;
+    const apexX = (s.x1 + s.x2) / 2;
+    const apexY = l.baseline - s.height;
+    // 見えている位置（入れ物の左端から）+ scrollLeft
+    expect(pickArc(l, apexX - scrollLeft + scrollLeft, apexY)).toBe("short");
+    // 足し忘れると、左の方の何も無い所になる
+    expect(pickArc(l, apexX - scrollLeft, apexY)).not.toBe("short");
+    expect(pickArc(l, apexX, apexY - 20)).not.toBeNull();
+  });
+});
