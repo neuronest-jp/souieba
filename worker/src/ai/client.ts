@@ -1,15 +1,19 @@
 // Claude 呼び出しの境界（architecture 6.1、ADR-0005）。Structured Outputs（output_config.format）だけを使う。
-// 入力「system + user + JSON Schema」→ 出力「パース済み JSON か失敗理由」。再試行はしない。
+// 入力「system + user（+ 写真）+ JSON Schema」→ 出力「パース済み JSON か失敗理由」。再試行はしない。
 import Anthropic from "@anthropic-ai/sdk";
 import type { Env } from "../env";
 
 export type Effort = "low" | "medium" | "high";
+
+export type AiImage = { media_type: "image/jpeg" | "image/png"; data: string }; // data は base64
 
 export type AiRequest = {
   system: string;
   user: string;
   schema: Record<string, unknown>;
   effort: Effort;
+  // C3（写真からの気づき候補）だけが使う。あれば画像ブロックを先に、user の文をその後に置く
+  image?: AiImage;
 };
 
 export type AiResult =
@@ -31,7 +35,17 @@ export const callClaude: AiCaller = async (env, req) => {
       model,
       max_tokens: MAX_TOKENS,
       system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: req.user }],
+      messages: [
+        {
+          role: "user",
+          content: req.image
+            ? [
+                { type: "image", source: { type: "base64", media_type: req.image.media_type, data: req.image.data } },
+                { type: "text", text: req.user },
+              ]
+            : req.user,
+        },
+      ],
       output_config: { effort: req.effort, format: { type: "json_schema", schema: req.schema } },
     });
     const usage = { input_tokens: res.usage.input_tokens, output_tokens: res.usage.output_tokens };

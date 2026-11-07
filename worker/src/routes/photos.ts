@@ -1,7 +1,8 @@
 // 写真。PUT /api/memories/:id/photo（multipart、フィールド名 photo）と GET /api/photos/*。
 // requirements F2-5〜F2-8、architecture 5.7 / 5.8。
 import { Hono } from "hono";
-import { getMemory } from "../db/memories";
+import type { PhotoInfo } from "../ai/photo";
+import { getMemory, type MemoryRow } from "../db/memories";
 import type { Env, Variables } from "../env";
 import { ApiError } from "../errors";
 
@@ -24,8 +25,21 @@ export const sniffImageType = (bytes: Uint8Array): "image/jpeg" | "image/png" | 
   return null;
 };
 
-export const putPhotoRoute = () => {
+// 写真を保存したあとの AI 処理（C3 写真からの気づき候補、requirements F7）の起動口。200 の前に呼ぶ
+export type AfterPhoto = (args: {
+  env: Env;
+  userId: string;
+  memory: MemoryRow;
+  photo: PhotoInfo;
+  waitUntil: (p: Promise<unknown>) => void;
+}) => Promise<void>;
+export const noAfterPhoto: AfterPhoto = async () => {};
+
+export type PhotosDeps = { afterPhoto?: AfterPhoto };
+
+export const putPhotoRoute = (deps: PhotosDeps = {}) => {
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+  const afterPhoto = deps.afterPhoto ?? noAfterPhoto;
 
   app.put("/:id/photo", async (c) => {
     const user = c.get("user");
@@ -68,6 +82,19 @@ export const putPhotoRoute = () => {
       } catch (e) {
         console.error("old photo delete failed", memory.photo_key, e);
       }
+    }
+    // 200 を返す前に写真候補の記録（running）を作る（afterPhoto 側の責務。waitUntil で続きを走らせる）。
+    // ここで失敗しても写真は保存済みなので 200 を返す。AI は「静かな失敗」（architecture 6.6）
+    try {
+      await afterPhoto({
+        env: c.env,
+        userId: user.id,
+        memory,
+        photo: { key, contentType: type, size: bytes.byteLength },
+        waitUntil: (p) => c.executionCtx.waitUntil(p),
+      });
+    } catch (e) {
+      console.error("afterPhoto failed", id, e);
     }
     return c.json({ photo_key: key, photo_content_type: type });
   });

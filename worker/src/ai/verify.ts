@@ -179,3 +179,46 @@ export function verifyFacts(out: unknown, body: string, happenedOn: string | nul
   stats.kept = kept.length;
   return { items: kept, stats };
 }
+
+// C3 写真からの気づき候補（requirements F7）。本文の引用は無いので X-6 / X-7 の照合はしない（根拠は写真そのもの。ADR-0012）。
+// (1) kind が thing / place 以外を捨てる（person / date は写真からは出さない。F7-4）→ value の前後の空白を除き、空なら捨てる
+// → (2) (kind, value) の重複を除く → (3) 先頭から最大 5 件。年齢・感情の語は prompt で禁じるだけで、ここでは kind でだけ捨てる
+export const PHOTO_HINTS_MAX = 5;
+export type VerifiedPhotoHint = { kind: "thing" | "place"; value: string };
+const PHOTO_KINDS = new Set(["thing", "place"]);
+
+export function verifyPhotoHints(out: unknown): { items: VerifiedPhotoHint[]; stats: VerifyStats } {
+  const stats: VerifyStats = { kept: 0, dropped: [] };
+  const items = parseItems(out);
+  if (!items) return { items: [], stats: { kept: 0, dropped: [{ reason: "malformed", item: out }] } };
+  const seen = new Set<string>();
+  const kept: VerifiedPhotoHint[] = [];
+  for (const raw of items) {
+    if (kept.length >= PHOTO_HINTS_MAX) {
+      stats.dropped.push({ reason: "over_max", item: raw });
+      continue;
+    }
+    if (!isObj(raw) || typeof raw.kind !== "string" || typeof raw.value !== "string") {
+      stats.dropped.push({ reason: "malformed", item: raw });
+      continue;
+    }
+    if (!PHOTO_KINDS.has(raw.kind)) {
+      stats.dropped.push({ reason: "bad_kind", item: raw });
+      continue;
+    }
+    const value = raw.value.trim();
+    if (value.length === 0) {
+      stats.dropped.push({ reason: "empty", item: raw });
+      continue;
+    }
+    const key = `${raw.kind}\u0000${value}`;
+    if (seen.has(key)) {
+      stats.dropped.push({ reason: "duplicate", item: raw });
+      continue;
+    }
+    seen.add(key);
+    kept.push({ kind: raw.kind as VerifiedPhotoHint["kind"], value });
+  }
+  stats.kept = kept.length;
+  return { items: kept, stats };
+}

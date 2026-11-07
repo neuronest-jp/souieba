@@ -94,8 +94,14 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
     const memory = await getMemory(c.env.DB, user.id, id);
     if (!memory) throw new ApiError(404, "not_found", "見つかりません");
     const now = nowIso();
-    // pending を先に読み、items は後で読む（insert → finish の順にコミットされるため。facts.ts の GET を参照）
-    const [factsPending, recallPending] = await Promise.all([isPending(c.env.DB, id, "facts", now), isPending(c.env.DB, id, "recall", now)]);
+    // pending を先に読み、items は後で読む（insert → finish の順にコミットされるため。facts.ts の GET を参照）。
+    // facts の pending には写真からの気づき候補（kind='photo'）も入れる（GET /facts と同じ。requirements F7）
+    const [textPending, photoPending, recallPending] = await Promise.all([
+      isPending(c.env.DB, id, "facts", now),
+      isPending(c.env.DB, id, "photo", now),
+      isPending(c.env.DB, id, "recall", now),
+    ]);
+    const factsPending = textPending || photoPending;
     const [facts, recalls, recalledBy] = await Promise.all([listFacts(c.env.DB, id), listRecalls(c.env.DB, id), listRecalledBy(c.env.DB, id)]);
     return c.json({
       memory: toMemoryJson(memory),

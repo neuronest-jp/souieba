@@ -21,3 +21,9 @@ export async function finishAiRun(
     .bind(id, result.status, result.error ? result.error.slice(0, 500) : null, result.input_tokens ?? null, result.output_tokens ?? null, result.now, result.model ?? null)
     .run();
 }
+
+// この記憶にこの kind の記録が（状態を問わず）既にあるか。同じ memory_id・kind の 2 行目を作らないために使う（requirements N-5）
+export async function hasAiRun(db: D1Database, memoryId: string, kind: AiRunKind): Promise<boolean> {
+  const row = await db.prepare("SELECT 1 AS x FROM ai_runs WHERE memory_id = ?1 AND kind = ?2 LIMIT 1").bind(memoryId, kind).first<{ x: number }>();
+  return row !== null;
+}

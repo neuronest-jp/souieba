@@ -46,3 +46,13 @@ export async function listConfirmedFactsByMemory(db: D1Database, memoryIds: stri
   }
   return out;
 }
+
+// 写真候補（evidence が photo: で始まる行）の (kind, value)。同じ記憶に同じ写真候補を二重に足さないために使う。
+// 本文の候補とは比べない（写真候補と本文候補は (kind, value) が同じでも別の行。requirements F7-7）
+export async function listPhotoFactKeys(db: D1Database, memoryId: string): Promise<Set<string>> {
+  const { results } = await db
+    .prepare("SELECT kind, value FROM memory_facts WHERE memory_id = ?1 AND source = 'ai' AND evidence LIKE 'photo:%'")
+    .bind(memoryId)
+    .all<{ kind: string; value: string }>();
+  return new Set((results ?? []).map((r) => `${r.kind}\u0000${r.value}`));
+}

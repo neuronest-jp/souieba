@@ -73,7 +73,7 @@ export function createTestD1(): TestD1 {
   return { prepare, batch, raw, exec: async (q: string) => (raw.exec(q), { count: 0, duration: 0 }) } as unknown as TestD1;
 }
 
-// R2 の最小スタブ。put / get / delete だけ。
+// R2 の最小スタブ。put / get / delete だけ（get は body のストリームと arrayBuffer()）。
 export const fakeR2 = () => {
   const store = new Map<string, { body: Uint8Array; contentType: string | null }>();
   return {
@@ -85,7 +85,13 @@ export const fakeR2 = () => {
     get: async (key: string) => {
       const v = store.get(key);
       if (!v) return null;
-      return { key, body: new Blob([v.body]).stream(), httpMetadata: { contentType: v.contentType ?? undefined }, size: v.body.byteLength };
+      return {
+        key,
+        body: new Blob([v.body]).stream(),
+        arrayBuffer: async () => v.body.slice().buffer,
+        httpMetadata: { contentType: v.contentType ?? undefined },
+        size: v.body.byteLength,
+      };
     },
     delete: async (key: string | string[]) => {
       for (const k of Array.isArray(key) ? key : [key]) store.delete(k);

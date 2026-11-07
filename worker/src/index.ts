@@ -5,15 +5,15 @@ import { type Env, type Variables } from "./env";
 import { ApiError, errorBody } from "./errors";
 import { authRoutes, type AuthDeps } from "./routes/auth";
 import { memoriesRoutes, type MemoriesDeps } from "./routes/memories";
-import { getPhotoRoute, putPhotoRoute } from "./routes/photos";
+import { getPhotoRoute, putPhotoRoute, type PhotosDeps } from "./routes/photos";
 import { factsRoute, memoryFactsRoute } from "./routes/facts";
 import { memoryRecallsRoute, recallsRoute } from "./routes/recalls";
 import { connectionsRoute } from "./routes/connections";
 import { todayRoute } from "./routes/today";
-import { aiAfterSave } from "./ai/after-save";
+import { aiAfterPhoto, aiAfterSave } from "./ai/after-save";
 
 export type AppType = Hono<{ Bindings: Env; Variables: Variables }>;
-export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps; auth?: AuthDeps };
+export type AppDeps = ResolveUserDeps & { memories?: MemoriesDeps; auth?: AuthDeps; photos?: PhotosDeps };
 
 // Worker 本体。/api/* だけここに来る（wrangler.toml の run_worker_first）。それ以外は Static Assets が開発用プレビューを返す。
 export const createApp = (deps: AppDeps = {}): AppType => {
@@ -66,7 +66,7 @@ export const createApp = (deps: AppDeps = {}): AppType => {
   authed.route("/recalls", recallsRoute());
   authed.route("/connections", connectionsRoute());
   authed.route("/today", todayRoute());
-  authed.route("/memories", putPhotoRoute());
+  authed.route("/memories", putPhotoRoute({ afterPhoto: aiAfterPhoto(), ...deps.photos }));
   authed.route("/photos", getPhotoRoute());
 
   app.route("/api", authed);

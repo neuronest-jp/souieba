@@ -44,7 +44,30 @@ export const FACTS_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// C3 写真からの気づき候補（requirements F7）。kind は写っている物事（thing）と場所の種類（place）だけ。
+// 人物（person）と日付（date）は写真からは出さない（enum で外し、Worker でも kind で捨てる）。件数（最大 5）は verify.ts で切る。
+export const PHOTO_HINTS_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["thing", "place"], description: "thing は写っている物事（季節の「桜」「紅葉」「雪」もここ）、place は場所の種類" },
+          value: { type: "string", description: "短い日本語の名詞（例: 桜、紅葉、公園、海辺）。語尾や説明は付けない" },
+        },
+        required: ["kind", "value"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+} as const;
+
 export type RecallOutput = { items: Array<{ related_memory_id: string; reason: string; evidence: string }> };
 export type FactsOutput = {
   items: Array<{ kind: "person" | "place" | "date" | "thing"; value: string; evidence: string; date_precision: "day" | "month" | "year" | "unknown" }>;
 };
+export type PhotoHintsOutput = { items: Array<{ kind: "thing" | "place"; value: string }> };

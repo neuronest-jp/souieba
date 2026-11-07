@@ -14,7 +14,9 @@ export const memoryFactsRoute = () => {
     const now = new Date().toISOString();
     // pending を先に読み、items は後で読む。裏の処理は候補の INSERT → ai_runs の更新の順にコミットするので、
     // pending=false が見えた時点で items はそろっている（並行に読むと pending=false・items=[] になり得て、画面のポーリングが止まる）
-    const pending = await isPending(c.env.DB, id, "facts", now);
+    // 写真からの気づき候補（kind='photo'）が走っている間も pending にする。画面は写真候補が届くまで取り直す（requirements F7）
+    const [factsPending, photoPending] = await Promise.all([isPending(c.env.DB, id, "facts", now), isPending(c.env.DB, id, "photo", now)]);
+    const pending = factsPending || photoPending;
     const items = await listFacts(c.env.DB, id);
     return c.json({ pending, items: items.map(({ memory_id: _m, ...f }) => f) });
   });
