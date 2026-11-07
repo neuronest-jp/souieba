@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { api, ApiError, type Me } from "./api";
 import { clearToken, loadToken } from "./auth";
 import BottomNav from "./components/BottomNav.vue";
-import { focusScreenHeading, useScreen } from "./composables/useScreen";
+import { focusScreenHeading, useScreen, type From } from "./composables/useScreen";
 import SplashOverlay from "./components/SplashOverlay.vue";
 import { hideSplash, isNative, platform } from "./native";
+import ConnectionsScreen from "./screens/ConnectionsScreen.vue";
 import MemoryDetailScreen from "./screens/MemoryDetailScreen.vue";
 import TimelineScreen from "./screens/TimelineScreen.vue";
 import TodayScreen from "./screens/TodayScreen.vue";
@@ -22,6 +23,8 @@ const splash = ref(isNative() || splashParam !== null);
 const splashSeamless = platform() === "ios" || splashParam?.startsWith("ios") === true;
 const splashHold = splashParam?.endsWith("-hold") === true; // ?splash=ios-hold は消さずに止める（動きの確認用）
 const { screen } = useScreen();
+// 下部ナビの現在地。S3 は開いた元の画面（from）を示す（戻る先と同じ）
+const navCurrent = computed<From>(() => (screen.value.name === "memory" ? screen.value.from : screen.value.name));
 
 const boot = async () => {
   state.value = { kind: "loading" };
@@ -88,14 +91,15 @@ onUnmounted(() => window.removeEventListener("souieba:unauthorized", onUnauthori
     </main>
 
     <template v-else>
-      <!-- S1（書きかけ・残しました・候補・札）と S2（読み込んだ一覧）は画面を行き来しても残す（wireframes 0 節）。
+      <!-- S1（書きかけ・残しました・候補・札）、S2（読み込んだ一覧）、S5（つながりの一覧）は画面を行き来しても残す（wireframes 0 節）。
            S3 は開くたびに読み直す。401 で S0 に戻ると v-else ごと外れ、残した画面も捨てる -->
-      <KeepAlive include="TodayScreen,TimelineScreen">
+      <KeepAlive include="TodayScreen,TimelineScreen,ConnectionsScreen">
         <TodayScreen v-if="screen.name === 'today'" />
         <TimelineScreen v-else-if="screen.name === 'past'" />
+        <ConnectionsScreen v-else-if="screen.name === 'connections'" />
         <MemoryDetailScreen v-else :id="screen.id" :from="screen.from" :recall="screen.recall" />
       </KeepAlive>
-      <BottomNav :current="screen.name === 'past' || (screen.name === 'memory' && screen.from === 'past') ? 'past' : 'today'" />
+      <BottomNav :current="navCurrent" />
     </template>
   </div>
 </template>

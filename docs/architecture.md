@@ -61,7 +61,7 @@
 | `capacitor.config.ts` | ルートに置く。appId `jp.neuronest.souieba`、appName「そういえば。」、`webDir: "web/dist"`、地の色 `#FAF5EC`、SplashScreen / StatusBar の設定 |
 | `ios/` `android/` | `cap add` が生成したネイティブプロジェクト。git にコミットする（`Pods/`、`build/`、`public/`、署名ファイルは除く。.gitignore とフックで保護） |
 | `web/index.html` | SPA の入口。Google Fonts の link と `#app`。`viewport-fit=cover` |
-| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアント。`VITE_API_BASE`、Bearer、401 で `souieba:unauthorized`）、`auth.ts`（トークンの保持。`@capacitor/preferences`）、`camera.ts`（写真の取得。ネイティブは `@capacitor/camera`、Web は `<input type="file">`）、`native.ts`（ステータスバーとスプラッシュ。Web では何もしない）、`photo.ts`（縮小）、`date.ts`、`screens/`（S0〜S3）、`components/`、`composables/` |
+| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアント。`VITE_API_BASE`、Bearer、401 で `souieba:unauthorized`）、`auth.ts`（トークンの保持。`@capacitor/preferences`）、`camera.ts`（写真の取得。ネイティブは `@capacitor/camera`、Web は `<input type="file">`）、`native.ts`（ステータスバーとスプラッシュ。Web では何もしない）、`photo.ts`（縮小）、`date.ts`、`screens/`（S0〜S3、S5）、`components/`、`composables/` |
 | `web/.env.example` | `VITE_API_BASE` の見本。実際の値は `web/.env.production` / `web/.env.local`（git に入れない） |
 | `worker/src/` | Hono。`index.ts`（app とルート登録）、`jwt.ts`（HS256 の署名と検証、定数時間比較。純粋ロジック）、`auth.ts`（認証ミドルウェア。Bearer と `X-Dev-User` の振り分け）、`cors.ts`（許可オリジン）、`routes/auth.ts`（`POST /api/auth/login`）、`env.ts`、`errors.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts` |
 | `worker/migrations/` | D1 マイグレーション。`0001_init.sql`（記憶のスキーマ。変更しない）と `0002_login_attempts.sql`（ログインのレート制限） |
@@ -441,6 +441,27 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 
 本書では枠だけ決める。`→ {"axis": "person", "value": "はると"}` または `{"axis": "period", "from": "2024-01", "to": "2024-12"}`。レスポンスは `{"paragraphs": [{"text": "…", "memory_id": "…", "evidence": "…"}]}`。保存はしない（毎回生成、`ai_runs.kind='retrospect'` に記録）。実装は 11/9 に時間があれば。
 
+### 5.14 GET /api/connections（つながり。ADR-0009、wireframes 第9節）
+
+書いたひとことと、そのとき浮かんだ昔のひとこと（札の両端）の組を新しい順に返す。S5「つながり」が使う。`worker/src/routes/connections.ts`、DB は `worker/src/db/recalls.ts` の `listConnections` / `listBeads`。
+
+```json
+200 {
+  "items": [
+    {"id": "<recall id>", "reason": "…", "evidence": "…", "feedback": "none", "created_at": "…",
+     "memory":         {"id": "…", "body": "…全文…", "happened_on": "2026-11-07", "happened_on_precision": "day", "photo_key": null},
+     "related_memory": {"id": "…", "body": "…全文…", "happened_on": "2024-06-01", "happened_on_precision": "month", "photo_key": null}}
+  ],
+  "beads": [{"happened_on": "2024-06-01", "happened_on_precision": "month"}]
+}
+```
+
+- `memory` が書いたひとこと（新しい側 = `recalls.memory_id`）、`related_memory` が思い出した昔のひとこと（`recalls.related_memory_id`）。5.11 の札と向きが同じ
+- `feedback` が `not_related` の札は返さない（原則 1・2。S3 では退いた札として残り、そこで外せばまた返る）。`feedback` は `none` か `helpful`
+- 組は `created_at DESC, id DESC` で 50 まで（ページ送りなし。続きは P2）。`beads` は糸の帯の粒で、起きた日がわかる自分の記憶の日付だけ（`unknown` を除く）を `happened_on DESC` で 500 まで
+- ユーザーの絞り込みは札の両端の `memories.user_id` でかける（X-11）。2 つの読みは `db.batch` で 1 往復（1 トランザクション）。マイグレーションは要らない
+- 反応は 5.12 をそのまま使う
+
 ## 6. AI 呼び出し（仕様 2 章、9 章）
 
 ### 6.1 方式: JSON Schema による形の固定
@@ -573,8 +594,8 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 
 | 判断 | 理由 |
 |---|---|
-| vue-router を入れない | 画面は S0〜S3 の 4 つで、遷移は「きょう ⇄ これまで → 詳細」だけ。依存最小限の方針（仕様 12 章）。SPA のパスルーティングを持たないので Static Assets のフォールバックにも頼らない。Capacitor の WebView でもハッシュ遷移はそのまま動く |
-| 代わりにハッシュ | `#today`（S1、既定）/ `#past`（S2）/ `#memory/<id>`（S3）。`composables/useScreen.ts` が `location.hash` を ref に写し、`hashchange` で戻るボタンに追従する。20 行程度 |
+| vue-router を入れない | 画面は S0〜S3 と S5 つながり（ADR-0009）の 5 つで、遷移は「きょう ⇄ これまで ⇄ つながり → 詳細」だけ。依存最小限の方針（仕様 12 章）。SPA のパスルーティングを持たないので Static Assets のフォールバックにも頼らない。Capacitor の WebView でもハッシュ遷移はそのまま動く |
+| 代わりにハッシュ | `#today`（S1、既定）/ `#past`（S2）/ `#connections`（S5）/ `#memory/<id>[?from=today\|connections][&recall=<recall id>]`（S3。`from` は戻り先と下部ナビの現在地、既定は past）。`composables/useScreen.ts` が `location.hash` を ref に写し、`hashchange` で戻るボタンに追従する。20 行程度 |
 | S0 | ログイン画面（招待コードとメールアドレス、「はじめる」。wireframes 1 節）。起動時に `loadToken()` → `GET /api/me` を試し、トークンが無いか 401 なら S0。他のエラーでトークンがあれば「いま、うまくつながりません」+「もう一度」。ログイン成功で `saveToken` → S1 |
 | 401 | どの画面でも `api.ts` が 401 を受けたら `clearToken()` して `souieba:unauthorized` を dispatch。`App.vue` が `signed_out` に戻す |
 | ネイティブだけの処理 | `native.ts` の `setupNative()`（ステータスバーを明るい地に濃い文字、Android は背景 `#FAF5EC`）と `hideSplash()`（起動の判定が終わってから隠す）。`Capacitor.isNativePlatform()` が false なら何もしない |
@@ -584,7 +605,7 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 ```
 web/src/
   main.ts            setupNative() → createApp(App).mount("#app")
-  App.vue            起動の判定（loading / signed_out / ready / trouble）と useScreen() で S0〜S3 を切り替える。下部に「きょう / これまで」の 2 タブ
+  App.vue            起動の判定（loading / signed_out / ready / trouble）と useScreen() で S0〜S3・S5 を切り替える。下部に「きょう / これまで / つながり」の 3 タブ。S1 / S2 / S5 は KeepAlive で残す
   style.css          Tailwind v4 と @theme（8 章）、.safe-area
   api.ts             fetch ラッパと 5 章のレスポンス型。VITE_API_BASE、Authorization: Bearer、401 で souieba:unauthorized。ローカルの X-Dev-User は Vite の proxy が付けるため画面側では触らない
   auth.ts            loadToken / getTokenSync / saveToken / clearToken（@capacitor/preferences）
@@ -594,8 +615,10 @@ web/src/
   date.ts            happened_on と精度の表示（「2024年6月」「いつだったか」）、ローカル日付の今日
   composables/useScreen.ts    ハッシュ ⇄ 画面
   composables/usePolling.ts   2 秒間隔・最大 30 秒（15 回）
-  screens/WelcomeScreen.vue / TodayScreen.vue / TimelineScreen.vue / MemoryDetailScreen.vue
+  screens/WelcomeScreen.vue / TodayScreen.vue / TimelineScreen.vue / MemoryDetailScreen.vue / ConnectionsScreen.vue
   components/BottomNav.vue / MemoryCard.vue / FactChips.vue / RecallCard.vue / PhotoPicker.vue
+  components/connections/PairCard.vue / PairSheet.vue / ThreadLoom.vue / Stitch.vue   S5 の一組、シート、糸の帯、糸と結び目
+  connections/loom.ts / pair.ts / excerpt.ts   糸の帯の並べ方（純粋関数）、一組の言い方、引用の切り分け
 ```
 
 ### 7.2 ポーリング

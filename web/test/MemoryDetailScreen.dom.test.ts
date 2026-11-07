@@ -223,3 +223,17 @@ describe("S3 で記憶が見つからない・読み込めないとき", () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe("S3 の戻るの文言（開いた元の画面）", () => {
+  it("きょう・これまで・つながりから開いたとき、それぞれ「‹ きょう」「‹ これまで」「‹ つながり」", async () => {
+    getMemory.mockResolvedValue(detail([]));
+    const labels: string[] = [];
+    for (const from of ["today", "past", "connections"] as const) {
+      const { container, errors } = mount(MemoryDetailScreen, { id: "mem_1", from });
+      await settle();
+      labels.push(container.findAll((el) => el.tagName === "BUTTON" && el.textContent.startsWith("‹"))[0]!.textContent);
+      expect(errors).toEqual([]);
+    }
+    expect(labels).toEqual(["‹ きょう", "‹ これまで", "‹ つながり"]);
+  });
+});

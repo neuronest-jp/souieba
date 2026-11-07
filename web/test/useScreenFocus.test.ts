@@ -112,6 +112,17 @@ describe("画面が変わったときのフォーカス", () => {
     expect(h1.focus).toHaveBeenCalledTimes(1);
   });
 
+  it("下部ナビの「つながり」から S5 へ移ったときも、S5 の h1 へ移す", async () => {
+    const h1 = fakeEl();
+    doc.querySelector.mockReturnValue(h1);
+    doc.activeElement = { tagName: "A" };
+    const { screen } = useScreen();
+    await goTo("#connections");
+    expect(screen.value).toEqual({ name: "connections" });
+    expect(h1.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(doc.activeElement).toBe(h1);
+  });
+
   it("S3 の読み込み中のように h1 が無い画面では何もしない", async () => {
     useScreen();
     await expect(goTo("#memory/mem_1")).resolves.toBeUndefined();

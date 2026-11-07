@@ -1,4 +1,4 @@
-// S1 / S2 は KeepAlive で残すので、離れたときの位置を覚えて戻ったときに戻す。S3 は毎回いちばん上。
+// S1 / S2 / S5 は KeepAlive で残すので、離れたときの位置を覚えて戻ったときに戻す。S3 は毎回いちばん上。
 // DOM は使わず window（location / scrollY / scrollTo / history / hashchange）を差し替える。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, watch } from "vue";
@@ -105,5 +105,19 @@ describe("useScreen の位置", () => {
     expect(lastTop()).toBe(700);
     await goTo("#today", 10);
     expect(lastTop()).toBe(80);
+  });
+
+  it("S5 つながり → S3 → 戻るで、S5 を離れたときの位置に戻る。S1 / S2 とは別に覚える", async () => {
+    const { screen } = useScreen();
+    await goTo("#connections", 300); // S2 を 300 で離れる
+    expect(screen.value).toEqual({ name: "connections" });
+    expect(lastTop()).toBe(0); // 初めて開く
+    await goTo("#memory/mem_old?from=connections&recall=rc_1", 640);
+    expect(screen.value).toEqual({ name: "memory", id: "mem_old", from: "connections", recall: "rc_1" });
+    expect(lastTop()).toBe(0);
+    await goTo("#connections", 90);
+    expect(lastTop()).toBe(640);
+    await goTo("#past", 640);
+    expect(lastTop()).toBe(300);
   });
 });

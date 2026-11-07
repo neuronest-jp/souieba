@@ -17,10 +17,10 @@ import { useNotice } from "../composables/useNotice";
 import { usePolling } from "../composables/usePolling";
 import { notifyMemoryDeleted } from "../composables/useMemoryDeleted";
 import { notifyMemoryPhoto } from "../composables/useMemoryPhoto";
-import { back as goBack, focusHeading, go } from "../composables/useScreen";
+import { back as goBack, focusHeading, go, type From } from "../composables/useScreen";
 import { keepDecided } from "../facts";
 
-const props = defineProps<{ id: string; from: "today" | "past"; recall?: string }>();
+const props = defineProps<{ id: string; from: From; recall?: string }>();
 
 const detail = ref<MemoryDetail | null>(null);
 const state = ref<"loading" | "ready" | "missing" | "error">("loading");
@@ -178,7 +178,9 @@ watch(addingPhoto, async (file) => {
   }
 });
 
+// 戻る先は開いた元の画面（アプリの外から直接開いたときの既定も同じ）。文言はその画面の名前
 const back = () => goBack({ name: props.from });
+const BACK_LABEL: Record<From, string> = { today: "きょう", past: "これまで", connections: "つながり" };
 
 onMounted(load);
 watch(() => props.id, load);
@@ -186,7 +188,7 @@ watch(() => props.id, load);
 
 <template>
   <main class="flex flex-1 flex-col gap-4 py-4">
-    <button type="button" class="self-start min-h-11 tracking-[.04em] text-ink-soft" @click="back">‹ {{ from === "today" ? "きょう" : "これまで" }}</button>
+    <button type="button" class="self-start min-h-11 tracking-[.04em] text-ink-soft" @click="back">‹ {{ BACK_LABEL[from] }}</button>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
     <!-- 見つからない・読み込めないときの一文は、見出しの位置に出すこの画面の h1（wireframes 4 節、6 節「画面ごとに h1 は 1 つ」）。

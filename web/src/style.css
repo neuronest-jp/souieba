@@ -374,4 +374,219 @@
       animation: none;
     }
   }
+
+  /* ---- S5 つながり（ADR-0009）: ふたつの紙片を結ぶ糸と結び目、糸の帯 ----
+     糸は確かめる前は しつけ糸（ember の破線と中空の結び目）、「そうだった」で本縫い（実線と塗った結び目）、
+     「関係ないかも」はほどけた糸（line-strong の破線）。確定の見た目にするのは本縫いだけ（推測を事実として見せない）。
+     状態は data-stitch="basting" | "sewn" | "loose" で切り替える。本縫いの線は pathLength=1 にして stroke-dashoffset で描く */
+  .thread svg path,
+  .loom-arc path {
+    fill: none;
+    stroke: var(--color-ember);
+    stroke-linecap: round;
+    transition:
+      opacity 320ms var(--ease-gentle),
+      stroke 320ms var(--ease-gentle);
+  }
+  .thread svg path {
+    stroke-width: 2;
+  }
+  .thread .stitch-basting {
+    stroke-dasharray: 6 5;
+  }
+  .thread .stitch-sewn,
+  .loom-arc .stitch-sewn,
+  .thread[data-stitch="sewn"] .stitch-basting,
+  .loom-arc[data-stitch="sewn"] .stitch-basting {
+    opacity: 0;
+  }
+  .thread[data-stitch="sewn"] .stitch-sewn,
+  .loom-arc[data-stitch="sewn"] .stitch-sewn {
+    opacity: 1;
+  }
+  .thread[data-stitch="loose"] path,
+  .loom-arc[data-stitch="loose"] path {
+    stroke: var(--color-line-strong);
+  }
+  /* 結び目: 紙片の縁に半分かけた 11px の輪。その紙の色の 2.5px のふちで、糸が紙に通っているように見せる */
+  .knot {
+    position: absolute;
+    z-index: 2;
+    left: 28px;
+    width: 11px;
+    height: 11px;
+    margin-left: -5.5px;
+    border-radius: 50%;
+    border: 2px solid var(--color-ember);
+    background: var(--color-card);
+    box-shadow: 0 0 0 2.5px var(--color-card);
+    transition:
+      background-color 320ms var(--ease-gentle),
+      border-color 320ms var(--ease-gentle);
+  }
+  .knot-top {
+    top: -6px;
+  }
+  .knot-bottom {
+    bottom: -6px;
+    background: var(--color-letter);
+    box-shadow: 0 0 0 2.5px var(--color-letter);
+  }
+  .thread[data-stitch="sewn"] .knot {
+    background: var(--color-ember);
+  }
+  .thread[data-stitch="loose"] .knot {
+    border-color: var(--color-line-strong);
+  }
+  /* 「関係ないかも」の一筆箋は地の紙に退く（.note-quiet）ので、下の結び目のふちも地の色にする */
+  .thread[data-stitch="loose"] .knot-bottom {
+    background: var(--color-paper);
+    box-shadow: 0 0 0 2.5px var(--color-paper);
+  }
+  /* 糸の帯: 年の縁、登録したひとことの粒（飾り）、結ばれた二つを渡す弧と、その両端の結び目 */
+  .loom-rule {
+    stroke: var(--color-line);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+  }
+  .loom-label {
+    fill: var(--color-ink-soft);
+    font-family: var(--font-body);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-anchor: middle;
+  }
+  .loom-bead {
+    fill: var(--color-ink-faint);
+  }
+  .loom-arc path {
+    stroke-width: 1.75;
+  }
+  .loom-arc .stitch-basting {
+    stroke-width: 1.25;
+    stroke-dasharray: 2.5 4;
+  }
+  .loom-arc[data-stitch="basting"] .stitch-basting {
+    opacity: 0.8;
+  }
+  .loom-end {
+    fill: var(--color-paper);
+    stroke: var(--color-ember);
+    stroke-width: 1.5;
+    transition: fill 320ms var(--ease-gentle);
+  }
+  .loom-end[data-stitch="sewn"] {
+    fill: var(--color-ember);
+    stroke: var(--color-paper);
+  }
+  .loom-end[data-stitch="loose"] {
+    stroke: var(--color-line-strong);
+  }
+  /* 動き。最初に読み込んだときだけ組が順に現れて糸が描かれ（.pairs-entering / .loom-entering）、シートは下から上がる。
+     「そうだった」で糸を描き直し（.tying）、「関係ないかも」の組はシートを閉じると薄れて上へ抜ける（.pair-leaving）。
+     prefers-reduced-motion: reduce ではどれも動かさず、状態だけを切り替える */
+  @keyframes thread-draw {
+    from {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 1;
+    }
+    to {
+      stroke-dasharray: 1;
+      stroke-dashoffset: 0;
+    }
+  }
+  @keyframes knot-pin {
+    0% {
+      transform: scale(0.4);
+    }
+    70% {
+      transform: scale(1.15);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+  @keyframes stitch-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes sheet-rise {
+    from {
+      transform: translateY(40px);
+      opacity: 0.4;
+    }
+  }
+  @keyframes sheet-sink {
+    to {
+      transform: translateY(40px);
+      opacity: 0;
+    }
+  }
+  @keyframes pair-leave {
+    to {
+      opacity: 0;
+      transform: translateY(-12px);
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .pairs-entering > li {
+      animation: appear 600ms var(--ease-gentle) both;
+      animation-delay: calc(var(--i, 0) * 90ms);
+    }
+    .pairs-entering .thread[data-stitch="sewn"] .stitch-sewn {
+      animation: thread-draw 900ms var(--ease-gentle) both;
+      animation-delay: calc(var(--i, 0) * 90ms + 260ms);
+    }
+    .pairs-entering .knot {
+      animation: knot-pin 360ms var(--ease-gentle) both;
+      animation-delay: calc(var(--i, 0) * 90ms + 200ms);
+    }
+    .loom-entering .loom-arc[data-stitch="sewn"] .stitch-sewn {
+      animation: thread-draw 1100ms var(--ease-gentle) both;
+      animation-delay: 200ms;
+    }
+    .loom-entering .loom-arc[data-stitch="basting"] .stitch-basting {
+      animation: stitch-fade 900ms var(--ease-gentle) both;
+      animation-delay: 300ms;
+    }
+    .sheet-scrim.is-opening {
+      animation: stitch-fade 200ms var(--ease-gentle) both;
+    }
+    .sheet-scrim.is-opening .sheet-panel {
+      animation: sheet-rise 340ms var(--ease-gentle) both;
+    }
+    .sheet-scrim.is-opening .thread[data-stitch="sewn"] .stitch-sewn {
+      animation: thread-draw 760ms var(--ease-gentle) both;
+      animation-delay: 220ms;
+    }
+    .sheet-scrim.is-opening .thread[data-stitch="basting"] .stitch-basting {
+      animation: stitch-fade 600ms var(--ease-gentle) both;
+      animation-delay: 220ms;
+    }
+    .sheet-scrim.is-opening .knot {
+      animation: knot-pin 360ms var(--ease-gentle) both;
+      animation-delay: 160ms;
+    }
+    .sheet-scrim.is-closing {
+      animation: stitch-fade 180ms var(--ease-gentle) reverse both;
+    }
+    .sheet-scrim.is-closing .sheet-panel {
+      animation: sheet-sink 200ms var(--ease-gentle) both;
+    }
+    .tying .stitch-sewn {
+      animation: thread-draw 640ms var(--ease-gentle) both;
+    }
+    .pair-leaving {
+      animation: pair-leave 280ms var(--ease-gentle) forwards;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thread svg path,
+    .knot,
+    .loom-arc path,
+    .loom-end {
+      transition: none;
+    }
+  }
 }

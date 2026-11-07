@@ -1,15 +1,23 @@
-// location.hash を画面に写す。#today（既定）/ #past / #memory/<id>[?from=today][&recall=<recall_id>]。
-// 戻るボタンは hashchange で追従する。recall は S1 の札から開いたときの札の id（wireframes 4.2）。
+// location.hash を画面に写す。#today（既定）/ #past / #connections / #memory/<id>[?from=today|connections][&recall=<recall_id>]。
+// 戻るボタンは hashchange で追従する。recall は S1 の札やつながりの組から開いたときの札の id（wireframes 4.2、5 節）。
+// from は S3 の戻り先と下部ナビの現在地（既定は past）。
 import { nextTick, onMounted, onUnmounted, ref } from "vue";
+
+// S3 を開いた元の画面（戻る先）。S1 / S2 / S5
+export type From = "today" | "past" | "connections";
 
 export type Screen =
   | { name: "today" }
   | { name: "past" }
-  | { name: "memory"; id: string; from: "today" | "past"; recall?: string };
+  | { name: "connections" }
+  | { name: "memory"; id: string; from: From; recall?: string };
+
+const isFrom = (v: string): v is From => v === "today" || v === "past" || v === "connections";
 
 export const parseHash = (hash: string): Screen => {
   const h = hash.replace(/^#/, "");
   if (h === "past") return { name: "past" };
+  if (h === "connections") return { name: "connections" };
   const q = h.indexOf("?");
   const m = /^memory\/([^/?]+)$/.exec(q < 0 ? h : h.slice(0, q));
   if (m && m[1]) {
@@ -20,20 +28,21 @@ export const parseHash = (hash: string): Screen => {
       return { name: "today" }; // 壊れた %xx（手で打った URL など）で画面ごと落とさない
     }
     const params = new URLSearchParams(q < 0 ? "" : h.slice(q + 1));
-    const from = params.get("from");
-    if (from !== null && from !== "today" && from !== "past") return { name: "today" };
+    const from = params.get("from") ?? "past";
+    if (!isFrom(from)) return { name: "today" };
     const recall = params.get("recall");
-    return { name: "memory", id, from: from === "today" ? "today" : "past", ...(recall ? { recall } : {}) };
+    return { name: "memory", id, from, ...(recall ? { recall } : {}) };
   }
   return { name: "today" };
 };
 
 export const hrefFor = (s: Screen): string => {
   if (s.name === "past") return "#past";
+  if (s.name === "connections") return "#connections";
   if (s.name === "memory") {
     // from=past で recall も無ければクエリを付けない（今までと同じ文字列）
     const params = new URLSearchParams();
-    if (s.from === "today") params.set("from", "today");
+    if (s.from !== "past") params.set("from", s.from);
     if (s.recall) params.set("recall", s.recall);
     const query = params.toString();
     return `#memory/${encodeURIComponent(s.id)}${query ? `?${query}` : ""}`;
@@ -75,7 +84,7 @@ export const focusHeading = (el: HTMLElement | null | undefined, { force = false
 export const focusScreenHeading = (opts: { force?: boolean } = {}) =>
   focusHeading(document.querySelector<HTMLElement>("main h1"), opts);
 
-// S1 / S2 は App.vue の KeepAlive で残すので、離れたときの位置を覚えて、戻ったときにそこへ戻す。S3 は毎回いちばん上。
+// S1 / S2 / S5 は App.vue の KeepAlive で残すので、離れたときの位置を覚えて、戻ったときにそこへ戻す。S3 は毎回いちばん上。
 const keptKey = (s: Screen): string | null => (s.name === "memory" ? null : s.name);
 
 export function useScreen() {

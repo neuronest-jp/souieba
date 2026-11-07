@@ -5,13 +5,13 @@
 // 見た目は封蝋の付いた一筆箋（ADR-0010）: 左に朱の二重罫、右上に封蝋、引用は罫の上の明朝。
 // S1 の札（見出しあり）にだけ、左下に押し葉を置く（昔の記憶から届いたもの）
 import type { Recall } from "../api/types";
-import { hrefFor } from "../composables/useScreen";
+import { hrefFor, type From } from "../composables/useScreen";
 import { formatHappenedOn } from "../date";
 import Leaf from "./motifs/Leaf.vue";
 import Seal from "./motifs/Seal.vue";
 
 // animate: 現れる動き（.appear と封蝋の押される動き）を付けるか。S1 に戻ってきたとき、もう見せた札は動かさない
-withDefaults(defineProps<{ recall: Recall; from: "today" | "past"; heading?: boolean; animate?: boolean }>(), {
+withDefaults(defineProps<{ recall: Recall; from: From; heading?: boolean; animate?: boolean }>(), {
   heading: true,
   animate: true,
 });

@@ -160,7 +160,7 @@ describe("下部ナビ", () => {
     const nav = container.querySelector("nav")!;
     expect(nav.hasClass("pt-1") && nav.hasClass("pb-[max(env(safe-area-inset-bottom),6px)]")).toBe(true);
     const links = nav.findAll((el) => el.tagName === "A");
-    expect(links.map((el) => el.hasClass("h-[58px]"))).toEqual([true, true]);
+    expect(links.map((el) => el.hasClass("h-[58px]"))).toEqual([true, true, true]); // きょう / これまで / つながり（ADR-0009）
     const current = links.find((el) => el.getAttribute("aria-current") === "page")!;
     expect(current.textContent?.trim()).toBe("これまで");
     expect(current.hasClass("font-bold")).toBe(true);
