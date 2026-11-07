@@ -227,8 +227,8 @@ export function verifyPhotoHints(out: unknown): { items: VerifiedPhotoHint[]; st
 // (1) 形の崩れ・kind が enum 以外・label が空を捨てる → (2) surfaces のうち、渡した本文のどれかに逐語で含まれる形だけを残す
 // （エスケープを戻した形でも照合する。matchEvidence）。1 字のかな・英数字は、どの本文にも紛れ込むので捨てる。重複を除いて先頭 3 個
 // → (3) 残った形が無ければ捨てる → (4) label が本文のどこにも無ければ、残った最初の形に替える（本文に無い言葉を地図に出さない。原則 3）
-// → (5) label の重複を除き、先頭から最大 40 個
-export const KEYWORDS_MAX = 40;
+// → (5) label の重複を除き、先頭から最大 60 個
+export const KEYWORDS_MAX = 60;
 export const SURFACES_MAX = 3;
 export const KEYWORD_LABEL_MAX = 20;
 const KEYWORD_KIND_SET = new Set(["person", "place", "thing", "event", "feeling"]);

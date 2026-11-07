@@ -7,7 +7,8 @@
 //     ふくらみ（制御点の x）は年の札の縁から 6〜21px で、側ごとに、つなぐ年の端から端までが長い糸ほど背骨の近くを通す（あいだの年の言葉から離す）。
 //     言葉の縁には 14px より近づけない。線は背骨と言葉のあいだ（年の札の縁から言葉の内側の縁まで）だけを通るので、言葉の文字には重ならない
 //     （細い線どうしは交わることがある）。札の縁には小さな結び目（年と側ごとに 1 つ）。色・太さ・不透明度は画面が決める（WordsScreen.vue）
-//   - 言葉の大きさは回数で少しだけ変える（13〜17px）。幅は字数から見積もり、収まらなければ字を小さくし、それでも収まらなければ 2 行にする
+//   - 言葉の大きさは回数で少しだけ変える（13〜17px）。幅は字数から見積もり、収まらなければ字を小さくし（1 行に収まるなら 12px まで。
+//     「隣のおばあちゃん」のような 8 字を 2 行に割らない）、それでも収まらなければ 13px の 2 行にする（行の長さはそろえる。WordsScreen.vue）
 // 位置は箱の左上（x, y）と幅・高さ。測らずに決める（線の端を描くのに getBoundingClientRect を使わない）
 // 糸の端の結び目（knots）も位置をここで決める（SVG の path の端は画面から読めないので）
 import type { KeywordMap, MapKeyword, YearCount } from "../api/types";
@@ -25,6 +26,7 @@ export const WORDS = {
   padX: 22, // 言葉の箱の内側の左右の余白（縁 1px を含む）
   minSize: 13,
   maxSize: 17,
+  fitMin: 12, // 1 行に収めるためだけに下げてよい字の大きさ（2 行にするときは minSize）
 } as const;
 
 export type Side = "left" | "right";
@@ -74,7 +76,7 @@ export const sizeFor = (total: number, min: number, max: number): number => {
 };
 
 const fit = (label: string, size: number, room: number): { size: number; w: number; lines: 1 | 2 } => {
-  for (let s = size; s >= WORDS.minSize; s -= 1) {
+  for (let s = size; s >= WORDS.fitMin; s -= 1) {
     const w = estimateWidth(label, s);
     if (w <= room) return { size: s, w, lines: 1 };
   }

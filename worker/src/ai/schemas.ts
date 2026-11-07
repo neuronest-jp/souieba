@@ -67,7 +67,7 @@ export const PHOTO_HINTS_SCHEMA = {
 } as const;
 
 // ことばの地図（ADR-0014）。Claude は「その人の暮らしを形づくっている言葉」と、本文に出てくる形（surfaces）を選ぶだけ。
-// 数（何年に何回）と引用は Worker が本文から数える（worker/src/keywords/count.ts）。件数（最大 40、surfaces 1〜3）は verify.ts で切る
+// 数（何年に何回）と引用は Worker が本文から数える（worker/src/keywords/count.ts）。件数（最大 60、surfaces 1〜3）は verify.ts で切る
 export const KEYWORD_KINDS = ["person", "place", "thing", "event", "feeling"] as const;
 export const KEYWORDS_SCHEMA = {
   type: "object",

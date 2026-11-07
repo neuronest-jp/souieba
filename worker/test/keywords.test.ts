@@ -5,17 +5,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiCaller, AiRequest } from "../src/ai/client";
 import { KEYWORDS_TIMEOUT_MS, pickForPrompt } from "../src/ai/keywords";
 import { KEYWORDS_SCHEMA } from "../src/ai/schemas";
-import { verifyKeywords } from "../src/ai/verify";
+import { KEYWORDS_MAX, verifyKeywords } from "../src/ai/verify";
 import { DEV_USER_HEADER } from "../src/auth";
 import type { Env } from "../src/env";
 import { createApp } from "../src/index";
-import { buildKeywordMap, sentenceWith, splitSentences, type CountMemory, type StoredKeyword } from "../src/keywords/count";
+import { BRIDGE_MAX, buildKeywordMap, LEAF_PER_YEAR, sentenceWith, splitSentences, type CountMemory, type StoredKeyword } from "../src/keywords/count";
 import { mapKey, writeStoredMap } from "../src/keywords/store";
 import type { KeywordsResponse } from "../src/routes/keywords";
 import { createTestD1, fakeExecutionCtx, fakeR2, type TestD1 } from "./sqlite-d1";
 
 const ME = "hana@example.com";
 const OTHER = "other@example.com";
+// 互いに部分文字列にならない名前（「橋1」が「橋10」の本文にも当たらないように、数字ではなく 1 字ずつ違う漢字にする）
+const NAMES = [..."甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉戌亥"];
 
 let db: TestD1;
 let env: Env;
@@ -95,7 +97,7 @@ describe("verifyKeywords", () => {
     ]);
   });
 
-  it("kind が enum 以外・形の崩れ・label の重複は捨てる。surfaces は重複を除いて 3 個まで。最大 40 個", () => {
+  it("kind が enum 以外・形の崩れ・label の重複は捨てる。surfaces は重複を除いて 3 個まで。最大 KEYWORDS_MAX（60）個", () => {
     const r = verifyKeywords(
       {
         keywords: [
@@ -110,8 +112,8 @@ describe("verifyKeywords", () => {
     );
     expect(r.items).toEqual([{ label: "展望台", kind: "place", surfaces: ["展望台", "展望", "展"] }]);
     expect(r.stats.dropped.map((d) => d.reason)).toEqual(["bad_kind", "duplicate", "malformed", "malformed"]);
-    const many = { keywords: Array.from({ length: 45 }, (_, i) => ({ label: `語${i}`, kind: "thing", surfaces: [`語${i}`] })) };
-    expect(verifyKeywords(many, [many.keywords.map((k) => k.label).join(" ")]).items).toHaveLength(40);
+    const many = { keywords: Array.from({ length: KEYWORDS_MAX + 5 }, (_, i) => ({ label: `語${i}`, kind: "thing", surfaces: [`語${i}`] })) };
+    expect(verifyKeywords(many, [many.keywords.map((k) => k.label).join(" ")]).items).toHaveLength(KEYWORDS_MAX);
     expect(verifyKeywords({ items: [] }, bodies).stats.dropped[0]!.reason).toBe("malformed");
   });
 
@@ -189,20 +191,24 @@ describe("buildKeywordMap", () => {
     expect(m.years.map((y) => y.year)).toEqual([2020, 2021, 2023, 2026]);
   });
 
-  it("leaf は年ごとに回数の多い順に 4 つまで（同じなら先に挙げた言葉）、bridge は合計の多い順に 8 つまで", () => {
-    const leafWords = ["一", "二", "三", "四", "五"].map((w) => `${w}丁目`);
+  it("leaf は年ごとに回数の多い順に LEAF_PER_YEAR（6）つまで（同じなら先に挙げた言葉）、bridge は合計の多い順に BRIDGE_MAX（20）まで", () => {
+    // leaf: 2024 だけに出る言葉を LEAF_PER_YEAR + 1 個。最後の 1 つだけ 5 回、ほかは 2 回
+    const leafWords = NAMES.slice(0, LEAF_PER_YEAR + 1).map((w) => `${w}丁目`);
+    const last = leafWords.length - 1;
     const rows: CountMemory[] = [];
     leafWords.forEach((w, i) => {
-      for (let k = 0; k < 2 + (i === 4 ? 3 : 0); k += 1) rows.push(mem(`${w}${k}`, `${w}を歩いた`, `2024-0${k + 1}-01`));
+      for (let k = 0; k < 2 + (i === last ? 3 : 0); k += 1) rows.push(mem(`${w}${k}`, `${w}を歩いた`, `2024-0${k + 1}-01`));
     });
-    const bridgeWords = Array.from({ length: 10 }, (_, i) => `橋${i}`);
+    // bridge: 2020 と 2021 に出る言葉を BRIDGE_MAX + 2 個。i 番めは 2 + i 回（幅はどれも 1 なので、合計の多い順になる）
+    const bridgeWords = NAMES.slice(0, BRIDGE_MAX + 2).map((w) => `${w}橋`);
     bridgeWords.forEach((w, i) => {
-      for (let k = 0; k < 2 + i; k += 1) rows.push(mem(`${w}-${k}`, `${w}を渡った`, `${2020 + (k % 2)}-03-0${(k % 9) + 1}`));
+      for (let k = 0; k < 2 + i; k += 1) rows.push(mem(`${w}-${k}`, `${w}を渡った`, `${2020 + (k % 2)}-03-${String((k % 28) + 1).padStart(2, "0")}`));
     });
     const m = buildKeywordMap({ generated_at: STORED_AT, keywords: [...leafWords, ...bridgeWords].map((w) => kw(w)) }, rows);
-    // 五丁目（5 回）が先頭、残りは 2 回ずつで挙げた順。5 つめの「四丁目」が落ちる
-    expect(m.keywords.filter((k) => k.role === "leaf").map((k) => k.label)).toEqual(["五丁目", "一丁目", "二丁目", "三丁目"]);
-    expect(m.keywords.filter((k) => k.role === "bridge").map((k) => k.label)).toEqual(["橋9", "橋8", "橋7", "橋6", "橋5", "橋4", "橋3", "橋2"]);
+    // 5 回の言葉が先頭、残りは 2 回ずつで挙げた順。LEAF_PER_YEAR + 1 番めが落ちる
+    expect(m.keywords.filter((k) => k.role === "leaf").map((k) => k.label)).toEqual([leafWords[last], ...leafWords.slice(0, LEAF_PER_YEAR - 1)]);
+    // 少ない 2 つ（甲橋・乙橋）が落ちる
+    expect(m.keywords.filter((k) => k.role === "bridge").map((k) => k.label)).toEqual(bridgeWords.slice(2).reverse());
   });
 
   it("bridge は合計の多い 2 つを先に入れ、残りはつなぐ年の幅（最初から最後まで）の大きい順に選ぶ。隣り合う年だけの言葉は、離れた年をつなぐ言葉に譲る", () => {
@@ -210,20 +216,21 @@ describe("buildKeywordMap", () => {
     // 「人」は 2025・2026 に 10 回ずつ（幅 1）、「展望台」は 2020 と 2023 に 1 回ずつ（幅 3）
     for (let k = 0; k < 10; k += 1) rows.push(mem(`p5-${k}`, "人と歩いた", `2025-0${(k % 9) + 1}-01`), mem(`p6-${k}`, "人と歩いた", `2026-0${(k % 9) + 1}-01`));
     rows.push(mem("t20", "ひとりで展望台へ", "2020-07-12"), mem("t23", "あの展望台で", "2023-11-22"));
-    const fillers = Array.from({ length: 8 }, (_, i) => `言葉${i}`);
+    // 合計 3 回・幅 1 の言葉を BRIDGE_MAX 個（「人」「展望台」と合わせて BRIDGE_MAX + 2 個。2 つ落ちる）
+    const fillers = NAMES.slice(0, BRIDGE_MAX).map((w) => `言葉${w}`);
     fillers.forEach((w, i) => {
       for (let k = 0; k < 3; k += 1) rows.push(mem(`${w}-${k}`, `${w}を書いた`, `${2025 + (k % 2)}-1${i % 3}-0${k + 1}`));
     });
     const m = buildKeywordMap({ generated_at: STORED_AT, keywords: ["人", ...fillers, "展望台"].map((w) => kw(w)) }, rows);
     const bridges = m.keywords.filter((k) => k.role === "bridge");
-    expect(bridges).toHaveLength(8);
-    // 合計の多い 2 つ（人 20 回、言葉0 3 回）が先、その次に幅 3 の展望台。合計 3 回の言葉 8 つのうち、幅の順で残りは 5 つだけ
-    expect(bridges.slice(0, 3).map((k) => k.label)).toEqual(["人", "言葉0", "展望台"]);
+    expect(bridges).toHaveLength(BRIDGE_MAX);
+    // 合計の多い 2 つ（人 20 回、言葉甲 3 回）が先、その次に幅 3 の展望台。合計 3 回の言葉のうち、残りは挙げた順に BRIDGE_MAX - 3 個だけ
+    expect(bridges.slice(0, 3).map((k) => k.label)).toEqual(["人", fillers[0], "展望台"]);
     expect(bridges[2]!.years).toEqual([
       { year: 2020, count: 1 },
       { year: 2023, count: 1 },
     ]);
-    expect(bridges.map((k) => k.label)).not.toContain("言葉7");
+    expect(bridges.map((k) => k.label)).not.toContain(fillers[BRIDGE_MAX - 1]);
   });
 
   it("mentions は新しい順（起きた日、同じ日は書いた順の降順）に 10 件まで。各件は surface を含む本文の一文", () => {

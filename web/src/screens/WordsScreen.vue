@@ -374,7 +374,7 @@ const orderOf = computed(() => {
                 class="block max-w-full rounded-pill border px-[10px] py-[3px] font-letter leading-[1.45] font-medium tracking-[.02em] text-ink"
                 :class="[
                   w.keyword.role === 'bridge' ? 'border-ember/50 bg-ember-soft' : 'border-line bg-card shadow-press',
-                  w.lines === 2 ? 'line-clamp-2 rounded-[14px] text-center' : 'whitespace-nowrap',
+                  w.lines === 2 ? 'line-clamp-2 rounded-[14px] text-center text-balance' : 'whitespace-nowrap',
                 ]"
                 :style="{ fontSize: `${w.size}px` }"
               >{{ w.keyword.label }}</span>

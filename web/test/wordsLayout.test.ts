@@ -88,7 +88,7 @@ describe("layoutWords", () => {
         // 背骨のまわり（年の札と糸が通る所）には置かない
         if (w.side === "right") expect(w.x).toBeGreaterThanOrEqual(l.spineX + WORDS.inset);
         else expect(w.x + w.w).toBeLessThanOrEqual(l.spineX - WORDS.inset);
-        expect(w.size).toBeGreaterThanOrEqual(13);
+        expect(w.size).toBeGreaterThanOrEqual(w.lines === 1 ? WORDS.fitMin : WORDS.minSize);
         expect(w.size).toBeLessThanOrEqual(17);
       }
       for (let i = 0; i < l.words.length; i += 1) for (let j = i + 1; j < l.words.length; j += 1) expect(overlaps(l.words[i]!, l.words[j]!)).toBe(false);
@@ -139,6 +139,25 @@ describe("layoutWords", () => {
     expect(long.size).toBe(13);
     const short = l.words.find((w) => w.keyword.label === "先輩")!;
     expect(short.lines).toBe(1);
+  });
+
+  it("1 行に収まるなら 12px まで小さくして、8 字の言葉を 2 行に割らない（画面の幅 370 で片側 121px）", () => {
+    const one = (label: string): KeywordMap => ({
+      generated_at: "2026-11-08T00:00:00.000Z",
+      years: [{ year: 2024, count: 3 }],
+      keywords: [
+        { label, kind: "person", role: "leaf", years: [{ year: 2024, count: 1 }], total: 1, mentions: [] },
+        { label: "先輩", kind: "person", role: "leaf", years: [{ year: 2024, count: 3 }], total: 3, mentions: [] },
+      ],
+    });
+    const w = layoutWords(one("隣のおばあちゃん"), 370).words.find((x) => x.keyword.label === "隣のおばあちゃん")!;
+    expect(w.lines).toBe(1);
+    expect(w.size).toBe(WORDS.fitMin);
+    expect(w.h).toBe(WORDS.wordH);
+    // 12px でも収まらない長さは、13px の 2 行
+    const long = layoutWords(one("隣の家のおばあちゃんたち"), 370).words.find((x) => x.keyword.label === "隣の家のおばあちゃんたち")!;
+    expect(long.lines).toBe(2);
+    expect(long.size).toBe(WORDS.minSize);
   });
 
   for (const width of [362, 335]) {

@@ -4,7 +4,8 @@
 //   - 年: happened_on の年。起きた日が「いつだったか」（unknown）の記憶は背骨に置けないので、数にも引用にも入れない
 //   - 1 つの年だけに出る言葉は leaf（その年の周り。1 回でも出す。Claude が暮らしを形づくる言葉として選んだものなので、短い日記では 1 回でもその年の特徴になる）、
 //     2 つ以上の年に出る言葉は bridge（回数の多い年 3 つまでをつなぐ）
-//   - leaf は年ごとに回数の多い順に 4 つまで（同じなら Claude が先に挙げた言葉）。bridge は 8 つまでで、まず合計の多い 2 つ（よく出てくる人など）、
+//   - leaf は年ごとに回数の多い順に 6 つまで（同じなら Claude が先に挙げた言葉）。bridge は 20 まで（11/8 に 8 から上げた。8 では物語のデータで、
+//     Claude が選んだ 30 語のうち 12 語（手袋・雪・軽トラ・日本酒など。何年かを隔てて出てくる言葉）が落ち、地図が薄かった）で、まず合計の多い 2 つ（よく出てくる人など）、
 //     残りはつなぐ年の幅（最初の年から最後の年まで）の大きい順、同じなら合計の多い順、それも同じなら Claude が先に挙げた順。
 //     何年も離れた日をつなぐ言葉を先にする（「そういえば」の形。11/7 夜に回数の順だけで選ぶと、物語のデータで「展望台」（2020 と 2023）が
 //     日々の言葉に押し出され、幅の順だけで選ぶと、隣り合う年に 17 回出る「そら」が落ちた）
@@ -14,8 +15,8 @@ import type { MemoryRow } from "../db/memories";
 import type { KeywordKind } from "../ai/schemas";
 
 export const KEYWORD_MIN_TOTAL = 1;
-export const LEAF_PER_YEAR = 4;
-export const BRIDGE_MAX = 8;
+export const LEAF_PER_YEAR = 6;
+export const BRIDGE_MAX = 20;
 /** bridge のうち、合計の多い順に先に入れる数（よく出てくる人など、暮らしの真ん中の言葉を幅の順で落とさない） */
 export const BRIDGE_BY_TOTAL = 2;
 export const BRIDGE_YEARS = 3;
@@ -167,7 +168,7 @@ export function buildKeywordMap(stored: { generated_at: string; keywords: readon
   });
 
   // bridge: 2 つ以上の年に出る言葉。つなぐ年は回数の多い年 3 つまで（同じ回数なら新しい年）を、古い順に並べる。
-  // 選ぶのは 8 つまでで、まず合計の多い 2 つ、残りはつなぐ年の幅（最初から最後まで）の大きい順、同じなら合計の多い順、それも同じなら Claude が先に挙げた順
+  // 選ぶのは BRIDGE_MAX まで（20）で、まず合計の多い 2 つ、残りはつなぐ年の幅（最初から最後まで）の大きい順、同じなら合計の多い順、それも同じなら Claude が先に挙げた順
   const candidates = counted
     .filter((c) => c.years.length >= 2)
     .map((c) => {
@@ -188,7 +189,7 @@ export function buildKeywordMap(stored: { generated_at: string; keywords: readon
     .slice(0, BRIDGE_MAX - byTotal.length);
   const bridges = [...byTotal, ...bySpan].map(({ c, top }) => toMap(c, "bridge", top));
 
-  // leaf: 1 つの年だけに出る言葉。年ごとに回数の多い順（同じなら Claude が先に挙げた順）に 4 つまで。年の古い順に並べる
+  // leaf: 1 つの年だけに出る言葉。年ごとに回数の多い順（同じなら Claude が先に挙げた順）に LEAF_PER_YEAR（6）まで。年の古い順に並べる
   const leavesByYear = new Map<number, Counted[]>();
   for (const c of counted) {
     if (c.years.length !== 1) continue;
