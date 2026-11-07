@@ -56,9 +56,11 @@ INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, pho
    'ゆきと駅前の喫茶店でパンケーキを食べた。ゆきは相変わらずよく笑う。',
    '2025-05-11', 'day', NULL, NULL, '2025-05-11T06:00:00.000Z', '2025-05-11T06:00:00.000Z'),
 
+  -- mem_daily_06: 撮影の日（11/7〜11/8）の書く画面の「あの日のひとこと」に出る 1 年まえの記憶（GET /api/today の前後 3 日）。
+  -- これが無いと、11 月の記憶は mem_daily_03（終電）だけになり、それが出る。D1〜D4 のどれとも関係しない（人物はゆきだけ）
   ('mem_daily_06', 'demo@example.com',
-   '会社の健康診断だった。朝ごはん抜きがつらかった。',
-   '2025-10-03', 'day', NULL, NULL, '2025-10-03T03:45:00.000Z', '2025-10-03T03:45:00.000Z'),
+   'ゆきが手編みのマフラーをくれた。編み目が少し曲がっているのが、ゆきらしくてうれしかった。',
+   '2025-11-08', 'day', NULL, NULL, '2025-11-08T12:20:00.000Z', '2025-11-08T12:20:00.000Z'),
 
   ('mem_daily_07', 'demo@example.com',
    '初詣の帰りに甘酒を飲んだ。思ったより人が少なかった。',
@@ -78,11 +80,11 @@ INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, pho
 
   ('mem_daily_11', 'demo@example.com',
    '古い写真を整理していたら、半日たっていた。',
-   '2026-10-01', 'month', NULL, NULL, '2026-10-12T09:00:00.000Z', '2026-10-12T09:00:00.000Z'),
+   '2026-10-01', 'month', NULL, NULL, '2026-11-04T12:10:00.000Z', '2026-11-04T12:10:00.000Z'),
 
   ('mem_daily_12', 'demo@example.com',
    '新しい靴を買った。少しきつい。',
-   NULL, 'unknown', NULL, NULL, '2026-10-25T09:30:00.000Z', '2026-10-25T09:30:00.000Z');
+   NULL, 'unknown', NULL, NULL, '2026-11-06T11:30:00.000Z', '2026-11-06T11:30:00.000Z');
 
 -- 他ユーザーの記憶（1 件）。invalid/recall-related-other-user.json の検証用。想起の入力には絶対に含まれない。
 INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, photo_key, photo_content_type, created_at, updated_at) VALUES
@@ -155,4 +157,4 @@ INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, input_tokens, 
   ('run_seed_02', 'demo@example.com', 'mem_daily_08', 'recall', 'claude-opus-5-5', 'succeeded', 2410, 120, NULL,
    '2026-04-06T04:00:05.000Z', '2026-04-06T04:00:40.000Z'),
   ('run_seed_03', 'demo@example.com', 'mem_daily_12', 'recall', 'claude-opus-5-5', 'empty', 3120, 18, NULL,
-   '2026-10-25T09:30:05.000Z', '2026-10-25T09:30:11.000Z');
+   '2026-11-06T11:30:05.000Z', '2026-11-06T11:30:11.000Z');
