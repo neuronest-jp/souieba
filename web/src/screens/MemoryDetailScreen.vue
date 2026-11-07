@@ -210,7 +210,7 @@ watch(addingPhoto, async (file) => {
 
 // 戻る先は開いた元の画面（アプリの外から直接開いたときの既定も同じ）。文言はその画面の名前
 const back = () => goBack({ name: props.from });
-const BACK_LABEL: Record<From, string> = { today: "きょう", past: "これまで", connections: "つながり" };
+const BACK_LABEL: Record<From, string> = { today: "きょう", past: "これまで", connections: "つながり", words: "ことばの地図" };
 // 左端からなぞって戻る（「消しますか」のシートが出ている間は拾わない）
 useEdgeSwipe(root, { onBack: () => goBack({ name: props.from }, { swipe: true }), enabled: () => !confirming.value });
 

@@ -66,8 +66,38 @@ export const PHOTO_HINTS_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// ことばの地図（ADR-0014）。Claude は「その人の暮らしを形づくっている言葉」と、本文に出てくる形（surfaces）を選ぶだけ。
+// 数（何年に何回）と引用は Worker が本文から数える（worker/src/keywords/count.ts）。件数（最大 40、surfaces 1〜3）は verify.ts で切る
+export const KEYWORD_KINDS = ["person", "place", "thing", "event", "feeling"] as const;
+export const KEYWORDS_SCHEMA = {
+  type: "object",
+  properties: {
+    keywords: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string", description: "地図に出す短い言葉。本文に出てくる言葉のまま（言い換えない）" },
+          kind: { type: "string", enum: KEYWORD_KINDS, description: "person は人、place は場所、thing はもの、event は出来事、feeling は本文に言葉として書かれた気持ち" },
+          surfaces: {
+            type: "array",
+            items: { type: "string", description: "本文に出てくる形のまま。一字も変えない" },
+            description: "この言葉が本文に出てくる形を 1〜3 個（例: そら / そらくん）",
+          },
+        },
+        required: ["label", "kind", "surfaces"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["keywords"],
+  additionalProperties: false,
+} as const;
+
 export type RecallOutput = { items: Array<{ related_memory_id: string; reason: string; evidence: string }> };
 export type FactsOutput = {
   items: Array<{ kind: "person" | "place" | "date" | "thing"; value: string; evidence: string; date_precision: "day" | "month" | "year" | "unknown" }>;
 };
 export type PhotoHintsOutput = { items: Array<{ kind: "thing" | "place"; value: string }> };
+export type KeywordKind = (typeof KEYWORD_KINDS)[number];
+export type KeywordsOutput = { keywords: Array<{ label: string; kind: KeywordKind; surfaces: string[] }> };

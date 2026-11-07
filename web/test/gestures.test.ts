@@ -1,7 +1,7 @@
 // なぞりの決め方（S3 の左端から戻る / シートを下へ閉じる）と、画面の移り変わりで離れていく画面の留め方。
 // 指の動きそのものと見た目は headless Chrome（タッチの再現）と iPhone の実機で確かめる。ここは決め方の数だけを固定する
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h, KeepAlive, nextTick, ref } from "vue";
 import { SWIPE, swipeDecision, useEdgeSwipe } from "../src/composables/useEdgeSwipe";
 import { SHEET, sheetDecision, velocityOf } from "../src/composables/useSheetDrag";
 import { pinLeaving, prefersMotion, unpinLeaving } from "../src/motion";
@@ -120,6 +120,137 @@ describe("useEdgeSwipe（左端からなぞって戻る。指の動きを最小�
     expect(onBack).not.toHaveBeenCalled();
     expect(haptic.select).not.toHaveBeenCalled();
     expect(el.style.transform).toBe("");
+    unmount();
+  });
+});
+
+describe("useEdgeSwipe を KeepAlive で残す画面で使う（S6 ことばの地図。仕舞われている間は拾わない）", () => {
+  type Handler = (e: unknown) => void;
+  const fakeEl = () => {
+    const attrs = new Map<string, string>();
+    return {
+      style: {} as Record<string, string>,
+      offsetWidth: 402,
+      isConnected: true,
+      attrs,
+      setAttribute: (k: string, v: string) => void attrs.set(k, v),
+      removeAttribute: (k: string) => void attrs.delete(k),
+      hasAttribute: (k: string) => attrs.has(k),
+    };
+  };
+  // document の受け手は種類ごとにいくつでも持ち、外せる（本物と同じ）
+  const setup = async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }), innerWidth: 402 });
+    const listeners = new Map<string, Set<Handler>>();
+    vi.stubGlobal("document", {
+      addEventListener: (type: string, fn: Handler) => {
+        if (!listeners.has(type)) listeners.set(type, new Set());
+        listeners.get(type)!.add(fn);
+      },
+      removeEventListener: (type: string, fn: Handler) => void listeners.get(type)?.delete(fn),
+    });
+    const fire = (type: string, e: unknown) => [...(listeners.get(type) ?? [])].forEach((fn) => fn(e));
+    const words = fakeEl();
+    const detail = fakeEl();
+    const onWordsBack = vi.fn();
+    const onDetailBack = vi.fn();
+    const screen = (name: string, el: unknown, onBack: () => void) =>
+      defineComponent({
+        name,
+        setup() {
+          useEdgeSwipe(ref(el as HTMLElement), { onBack });
+          return () => h("main");
+        },
+      });
+    const Words = screen("WordsScreen", words, onWordsBack);
+    const Detail = screen("MemoryDetailScreen", detail, onDetailBack);
+    const shown = ref<"words" | "detail">("words");
+    resetFakeDocument();
+    const view = mount(defineComponent({ setup: () => () => h(KeepAlive, { include: "WordsScreen" }, [shown.value === "words" ? h(Words) : h(Detail)]) }));
+    await nextTick();
+    return { listeners, fire, words, detail, onWordsBack, onDetailBack, shown, ...view };
+  };
+  const touch = (x: number, t: number) => ({ touches: [{ clientX: x, clientY: 400 }], timeStamp: t, cancelable: true, preventDefault: vi.fn() });
+  // 左端（x=5）から右へ速く払って離す
+  const flick = (fire: (type: string, e: unknown) => void) => {
+    fire("touchstart", touch(5, 0));
+    fire("touchmove", touch(20, 16));
+    fire("touchmove", touch(40, 32));
+    fire("touchmove", touch(65, 48));
+    fire("touchend", { timeStamp: 56 });
+  };
+
+  it("S6 から開いた S3 でなぞると、S3 の戻るだけが走る。仕舞われた S6 は拾わず、印も付かない", async () => {
+    const { listeners, fire, words, onWordsBack, onDetailBack, shown, errors, unmount } = await setup();
+    shown.value = "detail";
+    await nextTick();
+    expect(listeners.get("touchstart")?.size).toBe(1);
+    flick(fire);
+    expect(onDetailBack).toHaveBeenCalledTimes(1);
+    expect(onWordsBack).not.toHaveBeenCalled();
+    expect(haptic.select).toHaveBeenCalledTimes(1);
+    expect(words.style.transform ?? "").toBe("");
+    expect(words.attrs.has("data-dragging")).toBe(false);
+    // S6 に戻ると、作り直さない S3 の受け手は外れ、S6 のなぞりがまた効く
+    shown.value = "words";
+    await nextTick();
+    expect(listeners.get("touchstart")?.size).toBe(1);
+    flick(fire);
+    expect(onWordsBack).toHaveBeenCalledTimes(1);
+    expect(onDetailBack).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+    unmount();
+    expect(listeners.get("touchstart")?.size).toBe(0);
+  });
+
+  it("なぞって S6 から戻ったあと、また S6 を開けば、もう一度なぞって戻れる（右へ出たままの印も残さない）", async () => {
+    const { fire, words, onWordsBack, shown, errors, unmount } = await setup();
+    flick(fire);
+    expect(onWordsBack).toHaveBeenCalledTimes(1);
+    expect(words.style.transform).toBe("translate3d(100vw, 0, 0)");
+    // App.vue が離れていく S6 を留めて（data-leaving）、仕舞う。右へ出ていく inline の動きはそのまま
+    words.setAttribute("data-leaving", "");
+    shown.value = "detail";
+    await nextTick();
+    expect(words.style.transform).toBe("translate3d(100vw, 0, 0)");
+    words.removeAttribute("data-leaving");
+    words.isConnected = false;
+    vi.advanceTimersByTime(1000);
+    // また S6 を開く
+    words.isConnected = true;
+    shown.value = "words";
+    await nextTick();
+    expect(words.style.transform).toBe("");
+    expect(words.attrs.has("data-dragging")).toBe(false);
+    flick(fire);
+    expect(onWordsBack).toHaveBeenCalledTimes(2);
+    expect(errors).toEqual([]);
+    unmount();
+  });
+
+  it("戻ったのに画面が変わらなかったら、1 秒で元の位置へ戻し、次のなぞりも拾う", async () => {
+    const { fire, words, onWordsBack, unmount } = await setup();
+    flick(fire);
+    expect(onWordsBack).toHaveBeenCalledTimes(1);
+    flick(fire); // 戻る途中のなぞりは拾わない
+    expect(onWordsBack).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1000);
+    expect(words.style.transform).toBe("");
+    flick(fire);
+    expect(onWordsBack).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it("外れた要素・離れていく途中の要素では拾わない", async () => {
+    const { fire, words, onWordsBack, unmount } = await setup();
+    words.isConnected = false;
+    flick(fire);
+    words.isConnected = true;
+    words.setAttribute("data-leaving", "");
+    flick(fire);
+    expect(onWordsBack).not.toHaveBeenCalled();
+    expect(haptic.select).not.toHaveBeenCalled();
     unmount();
   });
 });

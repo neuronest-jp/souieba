@@ -68,3 +68,22 @@ export const PHOTO_SYSTEM = `あなたは、一人の人が残した日記のよ
 - JSON 以外は書きません。`;
 
 export const photoUserMessage = (memory: Pick<MemoryRow, "body">): string => `<memory>${esc(memory.body)}</memory>`;
+
+// ことばの地図（ADR-0014）。その人の記憶を新しい順に読んで、暮らしを形づくっている言葉を選ぶ。
+// Claude が決めるのは言葉（label・kind）と、本文に出てくる形（surfaces）だけ。何年に何回出てくるか・どの一文に出てくるかは
+// Worker が本文から数える（数を Claude に言わせない。原則 1・3）。COMMON は evidence（逐語引用）を返す係の決まりなので、ここで言い直す
+export const KEYWORDS_SYSTEM = `あなたは、一人の人が残した日記のような短い記憶を、まとめて静かに読む係です。会話はしません。
+あなたの仕事: memories の本文を読み、この人の暮らしを形づくっている言葉を選びます。最大 40 個です。
+- 何度も出てくる人・場所・もの・出来事の言葉を選びます。ある年だけに出てくる言葉も、何年にもわたって出てくる言葉も選びます。
+- 一般的すぎる言葉は選びません（例: 今日、きょう、時間、こと、もの、自分、感じ、気持ち、一日、毎日、今年、去年、最近、さん、ちゃん、する、なる、ある、思う、行く）。
+- 本文に無い言葉を作りません。まとめ言葉や言い換え（「家族」「子育て」「仕事運」のような、本文に書かれていない言葉）にしません。label は本文に出てくる言葉のまま、短い名詞にします。
+- surfaces には、その言葉が本文に出てくる形を、本文から一字も変えずに 1〜3 個書きます（例: label「そら」に surfaces「そら」「そらくん」）。句読点や空白も変えません。本文に出てこない形は書きません。
+- 人物の年齢・感情・関係（「息子」「妻」「元恋人」など）を推しはかりません。本文に書かれた呼び方のまま label にします。
+- 気持ち（feeling）は、本文に言葉として書かれているもの（例: うれしい、さみしい）だけを選びます。出来事から気持ちを推しはかりません。
+- kind は、人は person、場所は place、ものは thing、出来事は event、本文に書かれた気持ちは feeling にします。
+- 入力の本文では & < > " を &amp; &lt; &gt; &quot; と表記しています。これは記号の表記で、surfaces と label には元の記号（& < > "）のまま書きます。
+- 選べる言葉が無ければ keywords を空配列にします。無理に選びません。
+- JSON 以外は書きません。`;
+
+export const keywordsUserMessage = (memories: ReadonlyArray<Pick<MemoryRow, "body" | "happened_on" | "happened_on_precision">>): string =>
+  `<memories>\n${memories.map((m) => `  <memory happened_on="${esc(happenedAttr(m))}">${esc(m.body)}</memory>`).join("\n")}\n</memories>`;

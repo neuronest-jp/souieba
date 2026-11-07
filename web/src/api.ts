@@ -1,7 +1,7 @@
 // Worker の API を呼ぶ薄いクライアント。エラーは { error: { code, message } } の形で返ってくる。
 // ネイティブアプリでは VITE_API_BASE（https://<api-domain>）を叩き、Web の開発では同一オリジン（/api）。
 import { clearToken, getTokenSync } from "./auth";
-import type { ConnectionsResponse, Fact, ListStart, Memory, MemoryDetail, MemoryList, MemoryMonths, NewMemory, Recall, TodayResponse } from "./api/types";
+import type { ConnectionsResponse, Fact, KeywordsResponse, ListStart, Memory, MemoryDetail, MemoryList, MemoryMonths, NewMemory, Recall, TodayResponse } from "./api/types";
 
 export const API_BASE: string = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/+$/, "") ?? "";
 
@@ -86,6 +86,9 @@ export const api = {
     request<{ id: string; status: string; decided_at: string }>(`/api/facts/${encodeURIComponent(id)}`, json("PATCH", { status })),
   connections: () => request<ConnectionsResponse>("/api/connections"),
   today: () => request<TodayResponse>("/api/today"),
+  // ことばの地図（ADR-0014）。keywords は見るたびに数え直した地図、collectKeywords は集めなおす（Claude を 1 回呼ぶので数十秒かかる）
+  keywords: () => request<KeywordsResponse>("/api/keywords"),
+  collectKeywords: () => request<KeywordsResponse>("/api/keywords", { method: "POST" }),
   recallFeedback: (id: string, feedback: "helpful" | "not_related" | "none") =>
     request<{ id: string; feedback: string }>(`/api/recalls/${encodeURIComponent(id)}`, json("PATCH", { feedback })),
   putPhoto: (id: string, photo: Blob) => {

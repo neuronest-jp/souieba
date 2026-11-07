@@ -19,6 +19,7 @@ import {
 } from "../db/memories";
 import type { Env, Variables } from "../env";
 import { ApiError } from "../errors";
+import { forgetDeletedBody } from "../keywords/store";
 import { maskPhotoKey } from "./photos";
 import { parseListStart, parseMemoryInput, todayInTokyo } from "../validate";
 
@@ -149,6 +150,12 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
         // 残った写真を探す手がかりにキーを出すが、メールアドレスの区切りは伏せる（記憶の ID とファイル名で探せる。ADR-0013）
         console.error("photo delete failed", maskPhotoKey(deleted.photo_key), e instanceof Error ? e.message : String(e));
       }
+    }
+    // ことばの地図の置き場（R2）から、この本文にだけ出てきた言葉を外す（ADR-0014。失敗しても記憶はもう消えているので 204 のまま）
+    try {
+      await forgetDeletedBody(c.env, user.id, memory.body);
+    } catch (e) {
+      console.error("keywords forget failed", memory.id, e instanceof Error ? e.message : String(e));
     }
     return c.body(null, 204);
   });

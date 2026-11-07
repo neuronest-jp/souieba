@@ -222,3 +222,72 @@ export function verifyPhotoHints(out: unknown): { items: VerifiedPhotoHint[]; st
   stats.kept = kept.length;
   return { items: kept, stats };
 }
+
+// ことばの地図（ADR-0014）。bodies: Claude に渡した本文。
+// (1) 形の崩れ・kind が enum 以外・label が空を捨てる → (2) surfaces のうち、渡した本文のどれかに逐語で含まれる形だけを残す
+// （エスケープを戻した形でも照合する。matchEvidence）。1 字のかな・英数字は、どの本文にも紛れ込むので捨てる。重複を除いて先頭 3 個
+// → (3) 残った形が無ければ捨てる → (4) label が本文のどこにも無ければ、残った最初の形に替える（本文に無い言葉を地図に出さない。原則 3）
+// → (5) label の重複を除き、先頭から最大 40 個
+export const KEYWORDS_MAX = 40;
+export const SURFACES_MAX = 3;
+export const KEYWORD_LABEL_MAX = 20;
+const KEYWORD_KIND_SET = new Set(["person", "place", "thing", "event", "feeling"]);
+export type VerifiedKeyword = { label: string; kind: "person" | "place" | "thing" | "event" | "feeling"; surfaces: string[] };
+
+// 1 字だけのひらがな・カタカナ・英数字（「の」「ア」「a」）。漢字 1 字（海・雪・犬）は残す
+const tooShort = (s: string): boolean => {
+  const chars = Array.from(s);
+  return chars.length === 1 && /^[぀-ヿｦ-ﾟA-Za-z0-9０-９Ａ-Ｚａ-ｚー]$/.test(s);
+};
+
+const inAnyBody = (s: string, bodies: readonly string[]): string | null => {
+  for (const b of bodies) {
+    const m = matchEvidence(s, b);
+    if (m !== null) return m;
+  }
+  return null;
+};
+
+export function verifyKeywords(out: unknown, bodies: readonly string[]): { items: VerifiedKeyword[]; stats: VerifyStats } {
+  const stats: VerifyStats = { kept: 0, dropped: [] };
+  if (!isObj(out) || !Array.isArray(out.keywords)) return { items: [], stats: { kept: 0, dropped: [{ reason: "malformed", item: out }] } };
+  const seen = new Set<string>();
+  const kept: VerifiedKeyword[] = [];
+  for (const raw of out.keywords as unknown[]) {
+    if (kept.length >= KEYWORDS_MAX) {
+      stats.dropped.push({ reason: "over_max", item: raw });
+      continue;
+    }
+    if (!isObj(raw) || typeof raw.label !== "string" || typeof raw.kind !== "string" || !Array.isArray(raw.surfaces)) {
+      stats.dropped.push({ reason: "malformed", item: raw });
+      continue;
+    }
+    if (!KEYWORD_KIND_SET.has(raw.kind)) {
+      stats.dropped.push({ reason: "bad_kind", item: raw });
+      continue;
+    }
+    const surfaces: string[] = [];
+    for (const s of raw.surfaces as unknown[]) {
+      if (surfaces.length >= SURFACES_MAX) break;
+      if (typeof s !== "string" || s.length === 0 || tooShort(s) || countChars(s) > KEYWORD_LABEL_MAX) continue;
+      const matched = inAnyBody(s, bodies);
+      if (matched !== null && !surfaces.includes(matched)) surfaces.push(matched);
+    }
+    if (surfaces.length === 0) {
+      stats.dropped.push({ reason: "surface_not_in_body", item: raw });
+      continue;
+    }
+    const rawLabel = raw.label.trim();
+    const labelInBody = rawLabel.length > 0 && !tooShort(rawLabel) && countChars(rawLabel) <= KEYWORD_LABEL_MAX ? inAnyBody(rawLabel, bodies) : null;
+    // label は残った形のどれかに含まれるときだけ使う。本文の別の所に出てくる語（まとめ言葉・言い換え）を、ほかの形の回数と引用に付けて出さない（原則 1・3）
+    const label = labelInBody !== null && surfaces.some((s) => s.includes(labelInBody)) ? labelInBody : surfaces[0]!;
+    if (seen.has(label)) {
+      stats.dropped.push({ reason: "duplicate", item: raw });
+      continue;
+    }
+    seen.add(label);
+    kept.push({ label, kind: raw.kind as VerifiedKeyword["kind"], surfaces });
+  }
+  stats.kept = kept.length;
+  return { items: kept, stats };
+}

@@ -81,3 +81,27 @@ export type TodayDay = { date: string; wrote: boolean };
 export type ThatDay = { memory: MemorySummary; years: number; match: "day" | "near" | "month" };
 
 export type TodayResponse = { today: string; week: TodayDay[]; that_day: ThatDay | null; total: number };
+
+// ことばの地図（GET / POST /api/keywords。ADR-0014、architecture 第13節）。Claude が選んだ言葉を、Worker がいまの本文で数え直したもの。
+// years は起きた日の年（「いつだったか」は入らない）ごとの記憶の数。role は leaf（1 つの年だけに出る）か bridge（2 つ以上の年をつなぐ。years は多い年 3 つまで）。
+// mentions はその言葉が出てくる記憶を新しい順に 10 件まで。sentence は本文の一文（原文のまま）、surface はその文の中の言葉の形
+export type KeywordKind = "person" | "place" | "thing" | "event" | "feeling";
+export type YearCount = { year: number; count: number };
+export type KeywordMention = {
+  memory_id: string;
+  happened_on: string;
+  happened_on_precision: Exclude<Precision, "unknown">;
+  sentence: string;
+  surface: string;
+};
+export type MapKeyword = {
+  label: string;
+  kind: KeywordKind;
+  role: "leaf" | "bridge";
+  years: YearCount[];
+  total: number;
+  mentions: KeywordMention[];
+};
+export type KeywordMap = { generated_at: string; years: YearCount[]; keywords: MapKeyword[] };
+// stale_count: 地図を作ったあとに書いた記憶の数。reason: few は記憶が 8 件未満。refreshed は POST だけ（false は集めなおせず、前の地図のまま）
+export type KeywordsResponse = { map: KeywordMap | null; stale_count: number; memory_count: number; reason?: "few"; refreshed?: boolean };
