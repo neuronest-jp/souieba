@@ -1,5 +1,5 @@
 // 画面の部品（.vue）を DOM なしで描くための最小の DOM。jsdom などの依存を増やさず、Vue の createRenderer に渡す。
-// 部品が使うものだけを持つ: 要素の入れ子、属性、dataset、文字、イベント、focus / blur、isConnected、
+// 部品が使うものだけを持つ: 要素の入れ子、属性、dataset、inline の style（値を入れておくだけ）、文字、イベント、focus / blur、isConnected、
 // 単純なセレクタ（`tag`、`[attr]`、`[attr="v"]` とその組み合わせ、空白で区切った子孫）の querySelector(All)。
 // フォーカスを持った要素が外れたら、ブラウザと同じく activeElement は body に落ちる。
 import { createRenderer, markRaw, type Component } from "vue";
@@ -40,6 +40,8 @@ export class FakeElement extends FakeNode {
   attrs = new Map<string, string>();
   private listeners = new Map<string, Listener[]>();
   readonly dataset: Record<string, string | undefined>;
+  // el.style.transform などを書く部品（なぞりの印）のため。描き方には使わない（patchProp の style も扱わない）
+  readonly style: Record<string, string> = {};
 
   constructor(readonly tagName: string) {
     super(1);

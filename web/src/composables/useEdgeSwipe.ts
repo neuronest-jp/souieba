@@ -5,7 +5,9 @@
 //     速さは離したときのもの（払ってから指を止めて離したら、迷って止めたとみなして戻らない）
 //   - 動きを減らす設定では紙を動かさず、reduceCommit px 右へなぞった時点で、すぐに戻る
 // 紙の地と左の影は style.css の main[data-dragging]（画面の移り変わりの紙と同じ）
-import { onMounted, onUnmounted, type Ref } from "vue";
+// KeepAlive で残す画面（S6 ことばの地図）でも使う。仕舞われている間は document の受け手を外し、出てきたら付け直す
+// （付けたままだと、ほかの画面でなぞったときにも仕舞われた画面の戻るが走る）。外れた要素・離れていく途中の要素では拾わない
+import { onActivated, onDeactivated, onMounted, onUnmounted, type Ref } from "vue";
 import { select } from "../haptics";
 import { DURATION, prefersMotion } from "../motion";
 import { velocityOf } from "./useSheetDrag";
@@ -41,13 +43,14 @@ export function useEdgeSwipe(target: Ref<HTMLElement | null>, opts: { onBack: ()
       el.style.transform = "translate3d(100vw, 0, 0)";
     } else clear(el);
     opts.onBack();
-    // 戻れなかった（画面が変わらなかった）ときに、右へ出たままの S3 を残さない
+    // 戻れなかった（画面が変わらなかった）ときに、右へ出たままの S3 を残さない。
+    // 画面を離れていても次のなぞりは拾えるように戻す（KeepAlive で残す画面は、また出てくる）。
+    // 離れていく途中（data-leaving）の印は App.vue の unpinLeaving が外す
     if (settle) clearTimeout(settle);
     settle = setTimeout(() => {
       settle = null;
-      if (!el.isConnected || el.hasAttribute("data-leaving")) return;
       mode = "idle";
-      clear(el);
+      if (!el.hasAttribute("data-leaving")) clear(el);
     }, 1000);
   };
 
@@ -65,7 +68,8 @@ export function useEdgeSwipe(target: Ref<HTMLElement | null>, opts: { onBack: ()
   const onStart = (e: TouchEvent) => {
     const t = e.touches[0];
     if (mode === "done" || e.touches.length !== 1 || !t || t.clientX > SWIPE.edge) return;
-    if (!target.value || !(opts.enabled?.() ?? true)) return;
+    const el = target.value;
+    if (!el || !el.isConnected || el.hasAttribute("data-leaving") || !(opts.enabled?.() ?? true)) return;
     start = { x: t.clientX, y: t.clientY };
     mode = "pending";
     samples = [{ t: e.timeStamp, v: t.clientX }];
@@ -119,19 +123,45 @@ export function useEdgeSwipe(target: Ref<HTMLElement | null>, opts: { onBack: ()
 
   // テストの最小の DOM（document に addEventListener が無い）では付けない
   const listenable = () => typeof document !== "undefined" && typeof document.addEventListener === "function";
-  onMounted(() => {
-    if (!listenable()) return;
+  let attached = false;
+  const attach = () => {
+    if (attached || !listenable()) return;
+    attached = true;
     document.addEventListener("touchstart", onStart, { passive: true });
     document.addEventListener("touchmove", onMove, { passive: false });
     document.addEventListener("touchend", onEnd, { passive: true });
     document.addEventListener("touchcancel", onEnd, { passive: true });
-  });
-  onUnmounted(() => {
-    if (settle) clearTimeout(settle);
-    if (!listenable()) return;
+  };
+  const detach = () => {
+    if (!attached) return;
+    attached = false;
     document.removeEventListener("touchstart", onStart);
     document.removeEventListener("touchmove", onMove);
     document.removeEventListener("touchend", onEnd);
     document.removeEventListener("touchcancel", onEnd);
+  };
+  // なぞりの途中の状態を捨てる。離れていく途中の要素の inline の動き（右へ出ていく）は残す（unpinLeaving が外す）
+  const reset = () => {
+    if (settle) clearTimeout(settle);
+    settle = null;
+    start = null;
+    samples = [];
+    mode = "idle";
+    const el = target.value;
+    if (el && !el.hasAttribute("data-leaving")) clear(el);
+  };
+  onMounted(attach);
+  // KeepAlive の中だけで呼ばれる（最初の表示のあとにも呼ばれるが、付けてあれば何もしない）
+  onActivated(() => {
+    reset();
+    attach();
+  });
+  onDeactivated(() => {
+    detach();
+    reset();
+  });
+  onUnmounted(() => {
+    if (settle) clearTimeout(settle);
+    detach();
   });
 }
