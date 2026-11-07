@@ -5,7 +5,7 @@
 Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026-11-03〜11-08）。
 
 - デモ動画（3 分）: 【要記入: デモ動画の URL】
-- 選んだテーマ: 【要記入: テーマ 1 か 2】
+- 選んだテーマ: テーマ 2（これまで届いていなかった人と、その人を阻んでいた壁。スマートフォンは毎日使っても、AI に暮らしのことを話す習慣がない人へ）
 - 提出物と審査の観点: [docs/submission.md](docs/submission.md)
 
 | 書く | そういえば。 | つながり |
@@ -16,16 +16,21 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 > When you write something new, Claude reads your own past entries and brings back at most three that are truly related, each with the reason and a verbatim quote of what you wrote back then.
 > The Worker checks every quote against the original text before it is shown, and when nothing is related the app simply stays quiet.
 > People, places, things and what appears in a photo ("cherry blossoms, maybe?") stay candidates until you tap 「そう」 (yes); nothing guessed is ever stored as a fact.
+> It grew out of everyday life in Akita, where remembering who gave you what, and what they like, is what keeps people close — and out of how much it helps when Claude remembers what you said last time.
+> Souieba brings that "someone remembers" feeling to people who use a phone every day but have never thought of telling an AI about their day: nothing to compose, just one line.
 > Built in one week with Claude Code at the center: multi-agent workflows that compare designs and adversarially verify every review finding, the iOS Simulator MCP for builds and measurements, hooks that guard secrets and signing files, and project Skills for the steps we repeat.
 
 ## どんな困りごとから
 
-自分の生活は、自分でどうにかするしかない。でも、自分の記憶はいつまでもあるわけじゃない。
+秋田で暮らしていて、気づいたことがあります。誰から何をもらったか。あの人は何が好きで、何が苦手か。何をしてみたいと言っていたか。そういう小さな記憶が、次の気遣いや、人とのつながりを支えています。「そういえば、あの人、これが好きだったな」の一言が、お返しになり、ちょっとした声かけになる。
 
-つらかった時期のことも、大切な人と過ごした何気ない日のことも、書かなければ薄れていきます。書いても、読み返すきっかけが無いまま眠っていきます。
-昔の自分が何に悩んでいたのか。パートナーが何をほしがっていたのか。子どもがいつ初めて立ったのか。思い出したいときに限って、出てこない。
+一方で、私は Claude のような AI と日常的に話すなかで、以前話したことを踏まえて相談を続けられる便利さに助けられています。覚えていてくれる相手がいる。それだけで、暮らしは少し楽になります。
 
-「そういえば。」は、記憶を記録にしておくと、今日のひとことを書くたびに、関係のある昔の記録をそのときの言葉のまま返します。自分のために、そしてそばにいる誰かのために。
+でも、この便利さは、まだ AI と話す人のものだと思います。スマートフォンで連絡を取り、写真を撮り、短いメモも残す。それでも、AI に自分の日常を話す習慣はない。何を話せばいいか分からないし、「近所の方から梅干しをもらった」のような一言を残して役に立つとも思っていない。そういう人に届けたいと考えました。
+
+書かなければ、記憶は薄れていきます。書いても、読み返すきっかけが無いまま眠っていきます。あの人が何をほしがっていたのか。子どもがいつ初めて立ったのか。思い出したいときに限って、出てこない。
+
+「そういえば。」は、その入口を毎日のひとことに置いたアプリです。きちんとした相談を考えなくていい。「スーパーで青梅を見かけた」と書くだけで、昔残した梅干しの記憶が、そのときの言葉のまま浮かんでくる。日々の小さな記憶が、あとの暮らしにもう一度つながる。そのとき自然に口から出る「そういえば」を、大切にしたくて作りました。
 
 ## できること
 
