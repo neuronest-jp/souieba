@@ -370,7 +370,14 @@ const orderOf = computed(() => {
           </li>
         </ol>
       </div>
-      <p v-if="hasWords" class="text-center text-sm text-ink-soft">{{ generatedOn }}に集めました</p>
+      <!-- いつでも集めなおせる（11/7 夜。データを入れ直した・撮る前に新しくしたい、のように新しいひとことが無くても集めなおしたいときのため）。
+           新しいひとことがあるときは上の知らせに「集めなおす」があるので、ここには出さない（同じボタンを 2 つ並べない） -->
+      <p v-if="hasWords" class="flex flex-wrap items-center justify-center gap-x-3 text-center text-sm text-ink-soft">
+        <span>{{ generatedOn }}に集めました</span>
+        <button v-if="!collecting && staleCount === 0" type="button" class="press min-h-11 px-1 tracking-[.04em] text-ink" @click="collect">
+          <span class="ember-underline">集めなおす</span>
+        </button>
+      </p>
     </template>
 
     <WordSheet v-if="openKeyword" :keyword="openKeyword" :sheet-id="SHEET_ID" @close="close()" />

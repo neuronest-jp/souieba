@@ -272,6 +272,19 @@ describe("S6 ことばの地図: 地図", () => {
     expect(errors).toEqual([]);
   });
 
+  it("新しいひとことが無くても、地図の下の「集めなおす」でいつでも集めなおせる（新しいひとことがあるときは上の知らせのものだけ）", async () => {
+    const { container, errors } = await open(ready());
+    const again = container.findAll((el) => el.tagName === "BUTTON" && el.textContent.trim() === "集めなおす");
+    expect(again).toHaveLength(1);
+    collectKeywords.mockResolvedValue(ready({ refreshed: true }));
+    again[0]!.click();
+    await settle();
+    expect(collectKeywords).toHaveBeenCalledTimes(1);
+    const stale = await open(ready({ stale_count: 2 }));
+    expect(stale.container.findAll((el) => el.tagName === "BUTTON" && el.textContent.trim() === "集めなおす")).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+
   it("新しいひとことがあれば「新しいひとことが N こあります。」と「集めなおす」。集めなおせなかったら前の地図のまま「もう一度」", async () => {
     const { container, errors } = await open(ready({ stale_count: 2 }));
     expect(container.textContent).toContain("新しいひとことが 2 こあります。");
