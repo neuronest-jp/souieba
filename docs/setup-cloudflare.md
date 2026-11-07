@@ -129,8 +129,8 @@ pnpm exec wrangler secret put JWT_SECRET
 0123456789abcdef=you@example.com,fedcba9876543210=family@example.com
 ```
 
-- 1 行（改行なし）。人を足すときは `,コード=メール` を後ろに足して `wrangler secret put INVITE_CODE` を入れ直す（全体の置き換えになる）
-- メールは大文字小文字と前後の空白を無視して比べる。同じコードを 2 回書く、コードが空、メールの形が違う、`=` の無い値（旧形式）のどれかがあると、ログインは全員 503 `auth_unavailable` になる（理由は `wrangler tail` のログにだけ出る）
+- 形は `コード=メール[,コード=メール…]`。1 行（改行なし）で、末尾にカンマを付けない（空の行として数えられ、形の誤りになる）。人を足すときは `,コード=メール` を後ろに足して `wrangler secret put INVITE_CODE` を入れ直す（全体の置き換えになる）
+- メールは大文字小文字と前後の空白を無視して比べる。同じコードを 2 回書く、コードが空、メールの形が違う、末尾にカンマがある、`=` の無い値（旧形式。コードだけ）のどれかがあると、ログインは全員 503 `auth_unavailable` になる（理由は `wrangler tail` のログにだけ出る）
 
 - Worker がまだ無い状態で実行すると、wrangler が「Worker を作るか」と聞くことがある（要確認）。迷うなら第 5 節の最初の deploy の後に実行する
 - 確認: `pnpm exec wrangler secret list` に 3 つが出る（値は出ない）
@@ -194,7 +194,7 @@ routes = [
 
 ## 6. CORS（設定不要）
 
-アプリの WebView（`capacitor://localhost`、`https://localhost`）と開発サーバ（`http://localhost:5173`、`http://localhost`）だけを Worker のコード（worker/src/cors.ts）が許可している。Cloudflare のダッシュボードや Transform Rules で CORS ヘッダを足さない（二重に付くとブラウザが拒否する）。許可オリジンを増やしたいときはコードを変えて deploy する。
+アプリの WebView（iOS の `capacitor://localhost`、Android の `https://localhost`）と開発サーバ（`http://localhost:5173`）の 3 つだけを Worker のコード（worker/src/cors.ts の `ALLOWED_ORIGINS`）が許可している。`http://localhost`（ポートなし）や LAN の IP は入っていない。Cloudflare のダッシュボードや Transform Rules で CORS ヘッダを足さない（二重に付くとブラウザが拒否する）。許可オリジンを増やしたいときはコードを変えて deploy する。
 
 ## 7. 疎通確認（curl）
 
@@ -354,3 +354,31 @@ pnpm preview            # 本番と同じ配信形（画面を Worker から配�
 | 3 | `JWT_SECRET` のローテーション（全員ログアウト）を提出前に行うか | 行わない（発行済みトークンは 90 日有効） |
 | 4 | `ANTHROPIC_MODEL` を Opus のままにするか Sonnet にするか（コスト） | `claude-opus-5-5`（ADR-0003 / 0005） |
 | 5 | ネイティブでの写真表示（architecture.md 5.8 の `<img>` と Bearer の問題）をどの方式で直すか | 画面側で `fetch` + Bearer → `createObjectURL`（tasks.md T-1107-00b） |
+
+## 13. 記憶を全部消したいと言われたとき
+
+アプリの「消す」（`DELETE /api/memories/:id`）は 1 件ずつ。ある人の記憶をまとめて消すときは、開発者の手元で `--remote` のコマンドを使う。
+`<メール>` はその人のメール（小文字。`users.id` と同じ）。バックアップは無いので取り消せない（spec 第 5 節）。消す前に 1 で件数を確かめる。
+
+```sh
+# 1. 件数と写真のキーを控える（2 で users を消すと memories ごと消え、写真のキーが分からなくなる）
+pnpm exec wrangler d1 execute souieba --remote --command "SELECT count(*) AS n FROM memories WHERE user_id = '<メール>'"
+pnpm exec wrangler d1 execute souieba --remote --command "SELECT photo_key FROM memories WHERE user_id = '<メール>' AND photo_key IS NOT NULL"
+
+# 2. D1: users の行を消すと、memories → memory_facts・recalls が CASCADE で消える
+pnpm exec wrangler d1 execute souieba --remote --command "DELETE FROM users WHERE id = '<メール>'"
+# ai_runs は users に結んでいない（外部キーが無い）ので別に消す
+pnpm exec wrangler d1 execute souieba --remote --command "DELETE FROM ai_runs WHERE user_id = '<メール>'"
+
+# 3. R2: 1 で控えた photo_key（photos/<メール>/<記憶の id>/<乱数>.<拡張子>）を 1 つずつ消す
+pnpm exec wrangler r2 object delete "souieba-photos/<photo_key>" --remote
+
+# 4. 確かめる（どれも 0）
+pnpm exec wrangler d1 execute souieba --remote --command "SELECT (SELECT count(*) FROM memories WHERE user_id = '<メール>') AS memories, (SELECT count(*) FROM ai_runs WHERE user_id = '<メール>') AS ai_runs, (SELECT count(*) FROM memory_facts WHERE memory_id NOT IN (SELECT id FROM memories)) AS facts_left, (SELECT count(*) FROM recalls WHERE memory_id NOT IN (SELECT id FROM memories) OR related_memory_id NOT IN (SELECT id FROM memories)) AS recalls_left"
+```
+
+- CASCADE は worker/migrations/0001_init.sql の `ON DELETE CASCADE`（`memories.user_id`、`memory_facts.memory_id`、`recalls.memory_id`・`related_memory_id`）。D1 は外部キー制約を有効にして動く（architecture.md 4 章）。4 の `facts_left` と `recalls_left` が 0 なら効いている
+- D1 を先に、R2 を後に消す（architecture.md 4.6 と同じ順。R2 を先に消して D1 が失敗すると、写真だけが失われる）
+- `login_attempts` はメールを持たない（IP・成否・時刻だけ）ので、人を選んでは消せない。1 時間より古い行はログインのたびに消える（worker/src/routes/auth.ts）。すぐ消したいなら `DELETE FROM login_attempts`（全員の回数が数え直しになるだけ）
+- wrangler の `r2 object` には一覧もまとめて消すコマンドも無い。差し替えや削除のときに消し損ねた写真（D1 から参照されない孤児。architecture.md 4.6）は、ダッシュボードの R2 → `souieba-photos` で `photos/<メール>/` から始まるものを探して消す（要確認: 画面名）
+- 消しても、その人が持っているトークン（90 日）は有効のまま。次にアプリを開くと `users` の行が空で作り直される（記憶は戻らない）。もう入れないようにもするなら、`INVITE_CODE` からその人の `コード=メール` を外して入れ直す（4.1。新しいログインを止める）。発行済みのトークンまで切るなら `JWT_SECRET` を変える（全員がログイン画面に戻る）

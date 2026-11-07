@@ -36,6 +36,7 @@ API のベース URL は Vite の環境変数 `VITE_API_BASE` で決める（`we
 | 実機からローカルの Worker | `http://<Mac の LAN IP>:8787`（`pnpm dev:worker:lan`。1.1 節） | `web/.env.local` |
 
 `http://` で API を叩くのは開発だけ。iOS は `NSAppTransportSecurity` の例外が無いと `http://localhost` 以外を拒否する。本番は必ず `https://`。
+本番ビルドの前に `VITE_API_BASE` が空なら、`pnpm cap:sync` はそこで止まる（scripts/check-api-base.mjs。空のまま入れたアプリは API に届かない）。
 
 ローカルの Worker は `pnpm dev:worker` で起動する（開発専用の招待コード `dev`、`JWT_SECRET` も開発用の既定値。`.dev.vars` があればそちらが優先）。
 `pnpm dev:worker` は Mac の中（`localhost`）からしか届かない。実機から叩くときは 1.1 節。

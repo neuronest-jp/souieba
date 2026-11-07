@@ -23,6 +23,12 @@
 
 ## 影響
 
-- docs/spec.md 第9節・第12節の「tool use による強制」は「Structured Outputs による強制」と読み替える（原本到着後に本 ADR を添えて差し替えを提案）
+- docs/spec.md 第9節・第12節の「tool use による強制」は「Structured Outputs による強制」と読み替える（11/5 に spec.md を追従済み。原本は届かず、spec.md が正。ADR-0001）
 - docs/architecture.md の AI 呼び出し節は本 ADR に従う
 - wrangler.toml の `ANTHROPIC_MODEL` 既定値を `claude-opus-5-5` にする
+
+## 追記（2026-11-07）: 実測
+
+実測（11/6〜11/7、ローカル、claude-opus-5-5）: 候補の抽出 1.7〜3.7 秒（effort low）、想起 1.9〜4.1 秒（effort medium、過去の記憶 16〜20 件、入力 約 1,200〜1,700 トークン）。画面は保存の直後に 1 回、そのあと 2 秒おきに見に行くので、札は保存して 2〜6 秒で浮かぶ。
+
+effort は候補の抽出 `low`・想起 `medium` のまま変えない（worker/src/ai/facts.ts、recall.ts）。見に行く間隔は web/src/composables/usePolling.ts の `POLL_INTERVAL_MS`（2 秒、30 秒で打ち切り）。spec 第5節の 10 秒の内に収まる。

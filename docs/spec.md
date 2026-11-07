@@ -1,10 +1,6 @@
-# そういえば。 仕様書 v0.3（再構成ドラフト）
+# そういえば。 仕様書 v0.3
 
-> **このファイルについて**
-> 開発者が書いた v0.2 の原本は、この作業ブランチの時点でリポジトリに存在しなかった。
-> 本ファイルは、開発者からの依頼文（スタック・製品原則・作成順・11/4 スコープ・デモ4シナリオ）を
-> もとに Claude Code が同じ章立てで再構成したドラフトである（docs/decisions/0001 参照）。
-> 原本が届いたら、このファイルを原本で置き換え、差分があれば docs/requirements.md 以降を追従させる。
+> 依頼文から再構成した仕様書。v0.2 の原本は届かなかったので、本書を正とする（ADR-0001）。
 
 ## 変更点（v0.2 → v0.3、2026-11-04）
 
@@ -109,6 +105,7 @@ Claude の出力はすべて JSON Schema で形を強制した構造化出力（
 | S2 これまで | 時系列の一覧 |
 | S3 記憶の詳細 | 本文、写真、確定済みの事実、関連する「そういえば。」の履歴、削除 |
 | S4 ふりかえり（P1） | 人物/期間を選んで語りを読む |
+| S5 つながり | 書いたひとことと、そのとき浮かんだ昔のひとことの組を新しい順に並べる。下部ナビの 3 つめ（きょう / これまで / つながり）。「関係ないかも」と返した組は出さない（ADR-0009） |
 
 詳細は docs/wireframes.md。
 
@@ -124,10 +121,13 @@ Claude の出力はすべて JSON Schema で形を強制した構造化出力（
 
 ## 8. API（概要）
 
-すべて `/api/*`。認証必須（`/api/health` を除く）。
+すべて `/api/*`。認証必須（`/api/health` と `POST /api/auth/login` を除く）。
 
 - `GET /api/health` → `{ ok, service, version, time }`
-- `GET /api/me` → `{ user_id, display_name }`
+- `POST /api/auth/login` → `{ token, expires_at, user_id }`（招待コード + メール。第10節）
+- `GET /api/me` → `{ user_id, display_name, since }`
+- `GET /api/today` → `{ today, week: [{ date, wrote }], that_day: { memory, years, match } | null, total }`（S1 の「このごろ」7 日分と「あの日のひとこと」0〜1 件と記憶の総数。日付は Asia/Tokyo。ADR-0011）
+- `GET /api/connections` → `{ items: [{ id, reason, evidence, feedback, created_at, memory, related_memory }], beads: [{ happened_on, happened_on_precision }] }`（S5。`memory` が書いたひとこと、`related_memory` が思い出した昔のひとこと。`not_related` の札は返さない。反応は `PATCH /api/recalls/:id`。ADR-0009）
 - `GET /api/memories?cursor=` / `POST /api/memories` / `GET /api/memories/:id` / `DELETE /api/memories/:id`
 - `PUT /api/memories/:id/photo`（multipart）/ `GET /api/photos/:key`
 - `GET /api/memories/:id/facts` / `PATCH /api/facts/:id`（confirm/reject）
@@ -166,7 +166,8 @@ Claude の出力はすべて JSON Schema で形を強制した構造化出力（
 ## 12. スタック（変更不可）
 
 - API: Cloudflare Workers + Hono + D1 + R2
-- アプリ: Capacitor（iOS / Android）の WebView で Vue 3 + Vite + TypeScript + Tailwind を動かす。`@capacitor/core`、`cli`、`ios`、`android`、`camera`、`preferences`、`status-bar`、`splash-screen`。appId `jp.neuronest.souieba`、表示名「そういえば。」
+- アプリ: Capacitor（iOS / Android）の WebView で Vue 3 + Vite + TypeScript + Tailwind を動かす。`@capacitor/core`、`cli`、`ios`、`android`、`camera`、`preferences`、`status-bar`、`splash-screen`、`haptics`、`keyboard`（後ろの 2 つは 11/7 に足した。ADR-0011）。appId `jp.neuronest.souieba`、表示名「そういえば。」
+- 対象の端末: iPhone に絞って作り込み、Android はビルドが通ることだけ確かめる（ADR-0011）
 - 開発プレビュー: Workers Static Assets で同じ画面を同一 Worker から配信（配布には使わない）
 - 認証: 招待コード + HS256 JWT（第10節）
 - AI: `@anthropic-ai/sdk`、JSON Schema による構造化出力（ADR-0005）、モデル名は環境変数
