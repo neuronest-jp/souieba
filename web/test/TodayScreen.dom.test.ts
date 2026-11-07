@@ -2,9 +2,10 @@
 // 札を待つ間の糸（届いたら札に替わり、届かずに終わったら静かに消える）、保存中と写真を開いている間の止め（見直し n=14 / 15）。
 // App.vue と同じく KeepAlive の中に描く（onActivated で読み込む）。DOM は web/test/fakeDom.ts
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { KeepAlive, defineComponent, h, nextTick } from "vue";
+import { KeepAlive, defineComponent, h, nextTick, ref } from "vue";
 import type { Fact, Memory, Recall, TodayResponse } from "../src/api/types";
 import type { PickedPhoto } from "../src/camera";
+import { MEMORY_PHOTO } from "../src/composables/useMemoryPhoto";
 import { fakeDocument, mount, resetFakeDocument, type FakeElement } from "./fakeDom";
 
 const { ApiError, api, haptic, pickPhoto } = vi.hoisted(() => {
@@ -503,6 +504,153 @@ describe("写真を添えて保存したとき（F7）", () => {
     const ids = container.findAll((el) => el.tagName === "LI" && el.hasAttribute("data-fact-id")).map((el) => el.getAttribute("data-fact-id"));
     expect(ids).toEqual(["t1", "p1"]);
     // 届いたら止まる
+    await vi.advanceTimersByTimeAsync(4000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(2);
+    expect(errors).toEqual([]);
+  });
+});
+
+// S3 であとから写真を添えたとき。写真の処理は PUT の 200 の前に走り始めるので、S1 の取り直しの 30 秒は、保存した時刻と
+// 写真を添えた時刻（S3 からの知らせ useMemoryPhoto を受けた時刻）の遅いほうから数える。Date.now だけを進める
+describe("S3 であとから写真を添えて戻ったとき（F7）", () => {
+  const textFact: Fact = { id: "t1", kind: "place", value: "公園", status: "candidate", source: "ai", evidence: "公園", created_at: "", decided_at: null };
+  const photoFact: Fact = { id: "p1", kind: "thing", value: "桜", status: "candidate", source: "ai", evidence: "photo:k", created_at: "", decided_at: null };
+  const saidBody = "公園で花が咲いていた";
+  let clock = 0;
+  beforeEach(() => {
+    clock = Date.UTC(2026, 10, 7, 3);
+    vi.spyOn(Date, "now").mockImplementation(() => clock);
+  });
+  afterEach(() => {
+    vi.mocked(Date.now).mockRestore();
+  });
+  // KeepAlive で残した S1 を、ほかの画面（S3 の代わり）と行き来させる
+  const host = () => {
+    const shown = ref<"today" | "other">("today");
+    const Other = defineComponent({ name: "OtherScreen", render: () => h("main", [h("h1", "記憶")]) });
+    const App = defineComponent({
+      setup: () => () => h(KeepAlive, { include: "TodayScreen" }, [shown.value === "today" ? h(TodayScreen) : h(Other)]),
+    });
+    return { App, shown };
+  };
+  // S3 が PUT の 200 のあとに出す知らせ（notifyMemoryPhoto）。TodayScreen が window に付けた受け手を呼ぶ
+  const photoFromS3 = (id: string, photo_key: string) => {
+    const on = (window as unknown as { addEventListener: Mock }).addEventListener;
+    const handler = on.mock.calls.find((c) => c[0] === MEMORY_PHOTO)?.[1] as ((e: Event) => void) | undefined;
+    expect(handler).toBeTypeOf("function");
+    handler!({ detail: { id, photo_key, photo_content_type: "image/jpeg" } } as unknown as Event);
+  };
+  const detail = (over: { photo_key: string | null; factsPending: boolean }) => ({
+    memory: { ...memory, body: saidBody, photo_key: over.photo_key, photo_content_type: over.photo_key ? "image/jpeg" : null },
+    facts: { pending: over.factsPending, items: [textFact] },
+    recalls: { pending: false, items: [] },
+    recalled_by: { items: [] },
+  });
+  // 写真なしで残し、候補の取り直しが 1 回で終わったところまで
+  const saveWithoutPhoto = async () => {
+    api.createMemory.mockResolvedValue({ ...memory, body: saidBody });
+    api.getFacts.mockResolvedValue({ pending: false, items: [textFact] });
+    api.getRecalls.mockResolvedValue({ pending: false, items: [] });
+    const { App, shown } = host();
+    const mounted = mount(App);
+    await settle();
+    await typeBody(mounted.container, saidBody);
+    button(mounted.container, "保存する")!.click(1);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(1);
+    expect(mounted.container.querySelector('li[data-fact-id="t1"]')).toBeTruthy();
+    return { ...mounted, shown };
+  };
+  const expectPhotoFact = (root: FakeElement) => {
+    const li = root.querySelector('li[data-fact-id="p1"]')!;
+    expect(li).toBeTruthy();
+    expect(li.textContent).toContain("桜でしょうか");
+    expect(li.textContent).toContain("写真から");
+  };
+
+  it("保存から 31 秒たって S3 で写真を添え、候補が届く前に戻ると、写真の pending のあいだ取り直して写真候補を控えに並べる", async () => {
+    const { container, errors, shown } = await saveWithoutPhoto();
+    // 記憶カードから S3 へ。保存から 31 秒たって写真を添える（PUT の 200 の前に写真の処理が走り始め、facts の pending は true）
+    shown.value = "other";
+    await settle();
+    clock += 31_000;
+    photoFromS3("mem_new", "k");
+    await settle();
+    // S1 を離れている間は取り直さない（S3 が取り直す）
+    expect(api.getFacts).toHaveBeenCalledTimes(1);
+    // 写真の候補が届く前に S1 へ戻る
+    api.getMemory.mockResolvedValue(detail({ photo_key: "k", factsPending: true }));
+    api.getFacts.mockResolvedValueOnce({ pending: true, items: [textFact] }).mockResolvedValue({ pending: false, items: [textFact, photoFact] });
+    clock += 1_000;
+    shown.value = "today";
+    await settle();
+    expect(api.getMemory).toHaveBeenCalledTimes(1);
+    // 保存からは 32 秒。写真を添えた時刻から数えるので、まだ取り直す
+    expect(api.getFacts).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('li[data-fact-id="p1"]')).toBeNull();
+    await vi.advanceTimersByTimeAsync(2000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(3);
+    expectPhotoFact(container);
+    const ids = container.findAll((el) => el.tagName === "LI" && el.hasAttribute("data-fact-id")).map((el) => el.getAttribute("data-fact-id"));
+    expect(ids).toEqual(["t1", "p1"]);
+    // 届いたら止まる
+    await vi.advanceTimersByTimeAsync(4000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(3);
+    expect(errors).toEqual([]);
+  });
+
+  it("S3 で写真を添えている途中に S1 へ戻り、戻ったあとで添え終わると、そこから写真の pending のあいだ取り直す", async () => {
+    const { container, errors, shown } = await saveWithoutPhoto();
+    shown.value = "other";
+    await settle();
+    clock += 31_000;
+    // 写真を上げている途中で戻る。戻ったときの取り直しは PUT より先に終わり、写真も写真の処理もまだ無い
+    api.getMemory.mockResolvedValue(detail({ photo_key: null, factsPending: false }));
+    shown.value = "today";
+    await settle();
+    expect(api.getMemory).toHaveBeenCalledTimes(1);
+    expect(api.getFacts).toHaveBeenCalledTimes(1);
+    // 添え終わった（PUT の 200。写真の処理はもう走っている）
+    api.getFacts.mockResolvedValueOnce({ pending: true, items: [textFact] }).mockResolvedValue({ pending: false, items: [textFact, photoFact] });
+    clock += 1_000;
+    photoFromS3("mem_new", "k");
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(3);
+    expectPhotoFact(container);
+    await vi.advanceTimersByTimeAsync(4000);
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(3);
+    expect(errors).toEqual([]);
+  });
+
+  it("戻ったときの取り直しが遅れ、写真を添え終わったあとに写真より前の中身で届いても、届いた写真候補を控えから消さない", async () => {
+    const { container, errors, shown } = await saveWithoutPhoto();
+    shown.value = "other";
+    await settle();
+    clock += 31_000;
+    // 写真を上げている途中で戻る。戻ったときの取り直し（GET /memories/:id）がなかなか返らない
+    let late!: (v: ReturnType<typeof detail>) => void;
+    api.getMemory.mockImplementation(() => new Promise((r) => (late = r)));
+    shown.value = "today";
+    await settle();
+    expect(api.getMemory).toHaveBeenCalledTimes(1);
+    // 添え終わり、知らせを受けたところからの取り直しで写真候補まで届いて止まる
+    api.getFacts.mockResolvedValue({ pending: false, items: [textFact, photoFact] });
+    clock += 1_000;
+    photoFromS3("mem_new", "k");
+    await settle();
+    expect(api.getFacts).toHaveBeenCalledTimes(2);
+    expectPhotoFact(container);
+    // そのあとで、写真より前に読んだ中身（写真なし、写真候補なし、pending でない）が届く
+    late(detail({ photo_key: null, factsPending: false }));
+    await settle();
+    expectPhotoFact(container);
     await vi.advanceTimersByTimeAsync(4000);
     await settle();
     expect(api.getFacts).toHaveBeenCalledTimes(2);

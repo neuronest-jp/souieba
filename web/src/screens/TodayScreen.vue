@@ -113,7 +113,8 @@ onUnmounted(() => window.removeEventListener("resize", onResize));
 
 // 保存直後: 候補と札が届くまで静かに待つ（両方の pending が false で止まる）。
 // S1 を離れている間は止め（S3 を開いていれば S3 が自分で取り直す）、戻って取り直した記憶がまだ pending なら残りの回数だけ続ける。
-// 30 秒の打ち切り（requirements N-2）は、離れて戻ったあとも保存した時刻（savedAt）から数える
+// 30 秒の打ち切り（requirements N-2）は、離れて戻ったあとも保存した時刻（savedAt）から数える。
+// ただし S3 であとから写真を添えたときは、写真からの気づき候補（F7）がそこから走り始めるので、添えた時刻（photoAddedAt）から数える
 const facts = ref<Fact[]>([]);
 const recalls = ref<Recall[]>([]);
 // 札の pending（最後に読んだ値）。null はまだ読んでいない
@@ -182,10 +183,12 @@ onUnmounted(() => {
 });
 
 let savedAt = 0;
+// S3 で写真を添えた時刻（useMemoryPhoto の知らせを受けた時刻。S3 は PUT の 200 のあとに知らせる）。0 はまだ添えていない
+let photoAddedAt = 0;
 // S1 が表に出ているか（KeepAlive の onActivated / onDeactivated）。離れている間に保存が終わっても、そこではポーリングを始めない
 let shown = true;
 const resumePolling = () => {
-  if (alive && shown && saved.value) polling.start(triesLeft(savedAt));
+  if (alive && shown && saved.value) polling.start(triesLeft(Math.max(savedAt, photoAddedAt)));
 };
 
 const MAX = 2000;
@@ -278,6 +281,7 @@ const save = async () => {
   recalls.value = [];
   recallPending.value = null;
   savedAt = Date.now();
+  photoAddedAt = 0;
   hapticSaved();
   const id = memory.id;
   void loadToday().then((t) => {
@@ -292,6 +296,7 @@ const save = async () => {
 const another = () => {
   polling.stop();
   saved.value = null;
+  photoAddedAt = 0;
   facts.value = [];
   recalls.value = [];
   recallPending.value = null;
@@ -326,12 +331,16 @@ const onVisible = () => {
 };
 
 // 保存した記憶を S3 で開いて戻ってきたとき、S3 で決めた候補・添え直した写真・届いた札を映す。
-// まだ届いていない候補や札があれば、取り直しを映したあとで、保存から 30 秒の残りだけポーリングを続ける。
+// まだ届いていない候補や札があれば、取り直しを映したあとで、保存から（S3 で写真を添えていれば添えてから）30 秒の残りだけポーリングを続ける。
 // 記憶が消えていたら（404）入力に戻す。ほかの失敗では表示は今のまま、届いたか分からないので残りの回数だけポーリングを続ける
 const recheckSaved = async (id: string) => {
+  const addedBefore = photoAddedAt;
   try {
     const d = await api.getMemory(id);
     if (saved.value?.id !== id) return;
+    // 読んでいる間に S3 から写真の知らせを受け、応答に写真が無ければ、応答は写真を添えるより前の中身。
+    // 知らせを受けたところで取り直しを始めているので（表に出ていなければ次に戻ったときに読み直す）、古い候補や札で控えを戻さない
+    if (photoAddedAt !== addedBefore && !d.memory.photo_key) return;
     // 写真は外せないので、取り直しの間に S3 からの知らせ（useMemoryPhoto）で足した写真を、それより前に読んだ応答で消さない
     const cur = saved.value;
     saved.value = d.memory.photo_key || !cur.photo_key ? d.memory : { ...d.memory, photo_key: cur.photo_key, photo_content_type: cur.photo_content_type };
@@ -376,11 +385,15 @@ useMemoryDeleted((id) => {
   else recalls.value = recalls.value.filter((r) => r.related_memory.id !== id);
 });
 
-// S3 で添え直した写真を映す（非アクティブの間に届く）。添えている途中に戻ると、戻ったときの取り直しが PUT より先に終わるため
+// S3 で添え直した写真を映す（非アクティブの間に届く）。添えている途中に戻ると、戻ったときの取り直しが PUT より先に終わるため。
+// 写真からの気づき候補（F7）はこの知らせより前（PUT の 200 の前）に走り始めている。添えた時刻を残し、戻ったときの取り直しはそこから数える。
+// 添えている途中に戻っていて S1 が表に出ているなら、ここから取り直す（戻ったときの取り直しは写真の処理より前に読んでいる）
 useMemoryPhoto((id, photo_key, photo_content_type) => {
   if (saved.value?.id !== id) return;
   saved.value = { ...saved.value, photo_key, photo_content_type };
   photoNote.value = "";
+  photoAddedAt = Date.now();
+  resumePolling();
 });
 </script>
 
