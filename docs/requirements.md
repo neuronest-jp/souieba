@@ -28,7 +28,7 @@
 | ID と日時 | ID は UUID 文字列。日時は ISO 8601（UTC）。起きた日は `YYYY-MM-DD`。「今日」は `Asia/Tokyo` の今日（日本語のみのアプリ、第3.2節） |
 | エラー形式 | `{ "error": { "code": string, "message": string } }`。`code` は `validation`（400）、`unauthorized`（401）、`not_found`（404）、`too_large`（413）、`unsupported_media`（415）、`too_many`（429。ログインの回数制限）、`internal`（500。D1・R2 の失敗や想定外の例外。詳細は返さない）、`auth_unavailable`（503。`INVITE_CODE` / `JWT_SECRET` が未設定）のいずれか |
 | Claude の出力形式 | ADR-0005 に従う。JSON Schema の強制は Structured Outputs（`output_config.format`）で行い、`tool_choice` の強制（`any` / `tool`）は使わない（現行モデルは 400 を返す）。スキーマ名は `extract_facts` / `recall` / `photo_hints` / `retrospect` |
-| AI 処理の状態 | `ai_runs` は Claude を呼ぶ処理の「予約票」でもある。`POST /api/memories` のハンドラ内（201 を返す前）に `status='running'` の行を同期的に INSERT し、`ctx.waitUntil` の中で `succeeded` / `empty` / `failed` に更新する。`kind='facts'` は常に、`kind='recall'` は過去記憶が 1 件以上あるときだけ、`kind='photo'` は `PUT /api/memories/:id/photo` のハンドラ内で作る。`GET /facts` `GET /recalls` の `status` は「当該 `memory_id`・`kind` に `running` の行があれば `pending`、それ以外（行なしを含む）は `done`」。`running` のまま `created_at` から 60 秒を超えた行は GET 時に `done` 扱いにする（画面は何も出さない）。`waitUntil` の中は全体を try/catch で包み、例外時は `failed` に更新する |
+| AI 処理の状態 | `ai_runs` は Claude を呼ぶ処理の「予約票」でもある。`POST /api/memories` のハンドラ内（201 を返す前）に `status='running'` の行を同期的に INSERT し、`ctx.waitUntil` の中で `succeeded` / `empty` / `failed` に更新する。`kind='facts'` は常に、`kind='recall'` は過去記憶が 1 件以上あるときだけ、`kind='photo'` は `PUT /api/memories/:id/photo` のハンドラ内で作る。`GET /facts` `GET /recalls` の `status` は「当該 `memory_id`・`kind` に `running` の行があれば `pending`、それ以外（行なしを含む）は `done`」（`GET /facts` は `kind='facts'` と `kind='photo'` のどちらかが `running` なら `pending`。F7）。`running` のまま `created_at` から 60 秒を超えた行は GET 時に `done` 扱いにする（画面は何も出さない）。`waitUntil` の中は全体を try/catch で包み、例外時は `failed` に更新する |
 | 文字数の扱い | 文字数は JS の `Array.from(s).length` で数える。Claude の出力の `reason`（80 文字）、`text`（200 文字）を超えた場合は末尾を切り詰めて保存する（破棄しない）。引用 `evidence` は切り詰めない（切ると部分文字列でなくなり得る。長くてもそのまま X-7 の検証に回す） |
 | 画面の言葉 | 「AI」「生成」「送信」を画面に出さない（ADR-0004）。エラーは短い日本語で静かに。例「うまく保存できませんでした。もう少ししてから、もう一度」 |
 | 検証方法 | 受け入れ条件の「検証」列は次のいずれか。**単体**: vitest（Claude は必ずモック。`worker/test/`）。**API**: ローカル Worker（`pnpm dev:worker`）に curl。**画面**: ブラウザで目視。**通し**: 実 API を呼んで目視（Claude の実出力に依存するため自動テストにしない。期待値は実出力の細部に依存しない形で書く） |
@@ -135,7 +135,7 @@ S0 ようこそ はログイン画面そのもの。保存したトークンが�
 | 入力 | 出力 |
 |---|---|
 | Claude（Structured Outputs、スキーマ名 `extract_facts`。ADR-0005）へ: `body` のみ | `[{ kind, value, evidence }]`。`evidence` は `body` の逐語引用 |
-| `GET /api/memories/:id/facts` | `{ pending: boolean, items: [{ id, kind, value, status, source, evidence }] }`。`pending` の導出は第2節「AI 処理の状態」 |
+| `GET /api/memories/:id/facts` | `{ pending: boolean, items: [{ id, kind, value, status, source, evidence }] }`。`pending` の導出は第2節「AI 処理の状態」（写真からの気づき候補 F7 の実行中も `pending`） |
 | `PATCH /api/facts/:id` JSON `{ status: "confirmed" \| "rejected" }` | 200、更新後の fact。`decided_at` を設定 |
 
 Worker の検証と保存（この順に適用する）: (1) `evidence` が空、または `body` の部分文字列でないもの（X-6, X-7）、`kind` が 4 種以外のもの、`date` 以外で `value` が `body` の部分文字列でないもの（F4-9）を捨てる → (2) `(kind, value)` が同じものは最初の 1 件を残して除く → (3) 残りを `source='ai'`, `status='candidate'` で保存。0 件なら `ai_runs.status='empty'`。`value` も照合するのは、引用は本文にあっても値が推測（「はると（息子）」「祖母」）だと、根拠付きの候補に見えたまま「そう」で確定事実になり、想起の入力に入るため（原則 1・3）。`date` は相対表現を解いた値（「先月」→ `2026-10`）が正しいので、形と実在だけを見る。
@@ -206,6 +206,8 @@ Worker の検証と保存（この順に適用する）: (1) `evidence` が空�
 エラー時: 更新失敗（`internal` を含む）は印を元に戻し「記録できませんでした」。
 
 ### F7 写真からの気づき候補（P1、C3）
+
+状態: 実装済み（11/7、ADR-0012。worker/src/ai/photo.ts、web/src/components/FactChips.vue）。実際の Claude と実機での確認は未了。
 
 概要: 写真から、写っている物事・場所の種類の候補を「〜でしょうか」の形で出す。人物の同定、年齢、感情は断定しない。季節は「桜」「紅葉」「雪」のように写っている物事（`thing`）として表す（`date` は精度を決められないため写真からは出さない）。
 
@@ -349,7 +351,7 @@ X-6 / X-7 の引用検証は本文由来の候補（`evidence` が `photo:` で�
 | 1 | 第7節 `users` に `last_seen_at` が無いがスキーマにはある。`memories.photo_content_type` も同様 | スキーマに従う（F1-1, F2-5） |
 | 2 | 第9節は失敗時 `failed` のみ記すが、スキーマは `empty` を持つ | 0 件は `empty`、検証で全件破棄も `empty`（X-4） |
 | 3 | C2 は日付候補に精度を付けるが `memory_facts` に精度の列が無い | `value` の長さ（10/7/4 文字）で表し、画面は「〜ごろ」で精度を見せる（F4）。確定しても起きた日には反映しない（X-3）。日付候補の確定時に起きた日へ反映するかは開発者判断（反映するなら P2 の編集と同じ扱い） |
-| 4 | C3 写真候補は本文の引用を持てないが、スキーマは `source='ai'` に `evidence` 必須 | 写真候補も `memory_facts` に `source='ai'`, `status='candidate'` で保存し、`evidence` に `photo:<photo_key>` を入れる（F7）。引用検証（X-6/X-7）は本文由来だけに限定する。これにより候補 → PATCH で確定の流れが F4 と共通になり、AI 由来の痕跡が残る（原則 1）。Worker はステートレスで、D1 以外に候補を置く場所がない（KV/DO はスタック外）ための判断。ADR を書いて開発者に報告する |
+| 4 | C3 写真候補は本文の引用を持てないが、スキーマは `source='ai'` に `evidence` 必須 | 写真候補も `memory_facts` に `source='ai'`, `status='candidate'` で保存し、`evidence` に `photo:<photo_key>` を入れる（F7）。引用検証（X-6/X-7）は本文由来だけに限定する。これにより候補 → PATCH で確定の流れが F4 と共通になり、AI 由来の痕跡が残る（原則 1）。Worker はステートレスで、D1 以外に候補を置く場所がない（KV/DO はスタック外）ための判断。ADR-0012 に記録した（11/7、F7 実装済み） |
 | 5 | F2「HEIC 変換済み」の変換主体が不明。ブラウザで HEIC を JPEG に変換するには依存追加が要る | 受け付けるのは JPEG/PNG のみ、HEIC は端末側で変換済みの前提（F2-7）。ネイティブでは `@capacitor/camera` が JPEG で返す（#17）。Web の `<input type="file">` フォールバックでは iPhone の Safari が `accept="image/jpeg,image/png"` で自動変換することが多い。画面の縮小（Canvas）も JPEG/PNG だけを対象にする |
 | 6 | 精度 month/year のときの `happened_on` の値が未定義 | `YYYY-MM-01` / `YYYY-01-01` を置く（F2 既定値）。並び順の都合 |
 | 7 | 第8節 F8 の API は `POST /api/memories/:id/retrospect` だが、語りの軸は人物/期間で記憶単位ではない | `POST /api/retrospects` に変更を提案（F8）。語りは保存しない（保存先のテーブルが無い） |

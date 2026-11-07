@@ -49,6 +49,7 @@
 - 画面は facts と recalls を 2 秒間隔でポーリングし、両方の `pending` が false になるか 30 秒（15 回）経ったら止める（requirements N-2）
 - 30 秒以内に終わらなかった分は、次に詳細画面を開いたときに表示される（再試行はしない。仕様 9 章）
 - 過去記憶が 0 件のときは C1 を起動せず、`ai_runs(kind=recall)` の行も作らない（requirements N-5。6.2）
+- 写真を添えたときは、画面は POST の 201 のあとに `PUT /photo` を送り、その 200 の前に Worker が `ai_runs(kind=photo, running)` を作って `waitUntil` で C3（写真からの気づき候補）を走らせる（5.7、6.3a、ADR-0012）。画面のポーリングは PUT が返ってから始めるので、最初の取り直しから photo の `running` が見える
 
 ## 2. リポジトリ構成と責務
 
@@ -215,8 +216,8 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 | kind | `person` / `place` / `date` / `thing` |
 | value | 正規化した値。`date` は `YYYY-MM-DD` / `YYYY-MM` / `YYYY` のいずれか（精度に対応） |
 | status | 下記の状態遷移 |
-| source | `user`（写真候補 F7 を確定したとき。requirements 第8節 #4）/ `ai`（C2 の候補） |
-| evidence | 本文からの逐語引用。`source = 'ai'` では必須（CHECK） |
+| source | `ai`（C2 の本文の候補と、C3 の写真候補。確定しても `ai` のまま）/ `user`（利用者が自分で入れた事実。今回の画面には入口が無い）。requirements 第8節 #4、ADR-0012 |
+| evidence | 本文からの逐語引用。写真候補（C3）は引用の代わりに `photo:<photo_key>`（根拠は写真そのもの。ADR-0012）。`source = 'ai'` では必須（CHECK） |
 | decided_at | confirmed / rejected にした時刻 |
 
 状態遷移:
@@ -365,6 +366,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 
 - `recalls` はこの記憶が新しい側（`memory_id`）の札、`recalled_by` はこの記憶が思い出された側（`related_memory_id`）の札。仕様 6 章 S3「関連する『そういえば。』の履歴」は両方を並べる
 - `recalled_by` の `memory` は札が付いた新しい方の記憶。`pending` は持たない（他の記憶の想起が進行中かどうかはこの画面に関係しない）
+- `facts.pending` は 5.9 と同じ（`facts` か `photo` のどちらかが running なら true）
 
 ### 5.6 DELETE /api/memories/:id
 
@@ -378,6 +380,7 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 
 - 許可する MIME: `image/jpeg`、`image/png`。サイズ 10MB 以下。`Content-Length` と実体の両方で確認
 - キーは `photos/<user_id>/<memory_id>/<uuid>.<jpg|png>`。前の写真があれば R2 から削除してから差し替える
+- 保存できたら、写真が 6,291,456 バイト以下で、その記憶に `ai_runs(kind='photo')` がまだ無いときだけ、200 を返す前に `running` で作り、`waitUntil` で C3 を 1 回走らせる（6.3a。requirements F7、N-5。差し替えでは 2 回目を走らせない）。この起動で失敗しても 200 を返す（`routes/photos.ts` の `afterPhoto`）
 - R2 `put` に `httpMetadata.contentType` を付ける
 - HEIC は受け付けない。ネイティブでは `@capacitor/camera` が JPEG（品質 85、長辺 1600px）で返す。Web のフォールバック `<input type="file" accept="image/jpeg,image/png">` は iOS の Safari が JPEG に変換して渡す
 
@@ -401,7 +404,8 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 }
 ```
 
-- `pending` は `ai_runs(kind='facts', memory_id=?)` の最新が `running` のとき true。記録が無いとき（seed データなど）は false
+- `pending` は `ai_runs(memory_id=?)` の `kind='facts'` か `kind='photo'`（写真からの気づき候補、ADR-0012）のどちらかが `running` のとき true（60 秒を過ぎた `running` は数えない）。記録が無いとき（seed データなど）は false
+- 写真候補は `evidence` が `photo:<photo_key>` の行（`kind` は `thing` / `place`）。本文の候補と同じ並び（`created_at, id`）で返す
 - 読む順は `pending` が先、`items` が後（5.5 の詳細と 5.11 も同じ）。裏の処理は候補の INSERT → `ai_runs` の更新の順にコミットするので、この順なら `pending=false` のとき `items` はそろっている。並行に読むと `pending=false`・`items=[]` を返し得て、画面のポーリングがそこで止まる
 - `rejected` も返す（画面は出さない）。画面は candidate を「候補」、confirmed を「事実」として描く
 
@@ -575,6 +579,34 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 ```
 
 入力: `<memory happened_on="2026-11-04" precision="day">本文</memory>`。「昨日」「先月」のような相対表現は `happened_on` を基準に解く。`happened_on` が「不明」で年が本文からも決まらないときは `date` を出さない（6.5 でも捨てる）。
+
+### 6.3a C3 写真からの気づき候補: スキーマ `photo_hints`（ADR-0012）
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind":  {"type": "string", "enum": ["thing", "place"]},
+          "value": {"type": "string", "description": "短い日本語の名詞（例: 桜、紅葉、公園、海辺）。語尾や説明は付けない"}
+        },
+        "required": ["kind", "value"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["items"],
+  "additionalProperties": false
+}
+```
+
+入力: R2 から読んだ写真を base64 の画像ブロック（`image/jpeg` / `image/png`）にして先に置き、後ろに `<memory>本文</memory>`。`effort` は `low`、ほかは 6.1 と同じ（`maxRetries: 0`、20 秒）。system は `PHOTO_SYSTEM`（6.4 の共通文は「写真から補わない」本文の係の決まりなので使わない）: はっきり見えるものだけ、季節は物事（thing）で、場所は種類だけ（店名・地名を推測しない）、人については何も出さない（誰か・年齢・性別・表情や感情・人数）、最大 5 件。
+
+Worker の検証（`verifyPhotoHints`）: `kind` が thing / place 以外を捨てる → `value` の前後の空白を除き空なら捨てる → `(kind, value)` の重複を除く → 先頭 5 件。引用の照合はしない。同じ記憶に同じ写真候補が既にあれば足さない（本文の候補とは比べない。requirements F7-7）。0 件なら `empty`、失敗は `failed`（6.6）。
 
 ### 6.4 システムプロンプトの要点（両方に共通、日本語）
 
