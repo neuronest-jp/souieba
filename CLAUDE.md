@@ -1,6 +1,6 @@
 # CLAUDE.md — そういえば。
 
-Built with Claude: Japan 2026 ハッカソン向けの個人開発。提出 2026-11-10 14:00 JST。
+Built with Claude: Japan 2026 ハッカソン向けの個人開発。提出締切は 2026-11-08（日）20:00 JST（第 1 ラウンドの審査が 11/9、最終審査は 11/10 13:00〜14:30）。提出物と審査基準は docs/submission.md。
 
 ## 最初に読む
 
