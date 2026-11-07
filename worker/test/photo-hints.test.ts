@@ -286,7 +286,7 @@ describe("PUT /photo から写真候補まで", () => {
     expect(await getFacts(app, id)).toEqual({ pending: false, items: [] });
   });
 
-  it("結果が届く前に記憶が消されていたら failed（外部キー）。写真の PUT は 200 のまま", async () => {
+  it("結果が届く前に記憶が消されていたら、写真候補は入らず ai_runs の記録も残らない（外部キーで失敗。記録は削除と一緒に消える、原則 5）。写真の PUT は 200 のまま", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => (release = r));
     const call = fakeCall(() => ({ items: [{ kind: "thing", value: "桜" }] }), undefined, gate);
@@ -297,7 +297,8 @@ describe("PUT /photo から写真候補まで", () => {
     expect((await app.request(`/api/memories/${id}`, { method: "DELETE", headers: H }, env)).status).toBe(204);
     release();
     await ctx.settle();
-    expect(photoRuns(id)[0]!.status).toBe("failed");
+    // 裏の処理は外部キーで失敗して failed を書こうとするが、記録は記憶の削除と一緒にもう消えているので何も戻らない
+    expect(photoRuns(id)).toHaveLength(0);
     expect(db.raw.prepare("SELECT count(*) AS n FROM memory_facts").get()).toEqual({ n: 0 });
   });
 
