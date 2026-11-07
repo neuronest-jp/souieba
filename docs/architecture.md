@@ -58,12 +58,12 @@
 |---|---|
 | `wrangler.toml` | ルートに置く。Worker 名 `souieba`、D1 / R2 バインディング、`[assets]`、`[vars]` |
 | `vite.config.ts` | ルートに置く。`root: "web"`、`build.outDir: "dist"`（= `web/dist`）、`server.proxy` |
-| `capacitor.config.ts` | ルートに置く。appId `jp.neuronest.souieba`、appName「そういえば。」、`webDir: "web/dist"`、地の色 `#FAF5EC`、SplashScreen / StatusBar の設定 |
+| `capacitor.config.ts` | ルートに置く。appId `jp.neuronest.souieba`、appName「そういえば。」、`webDir: "web/dist"`、地の色 `#FAF5EC`、SplashScreen / StatusBar / Keyboard（`resize: native`、`style: LIGHT`、`autoBackdropColor: auto`）の設定、`ios.allowsLinkPreview: false`（ADR-0011） |
 | `ios/` `android/` | `cap add` が生成したネイティブプロジェクト。git にコミットする（`Pods/`、`build/`、`public/`、署名ファイルは除く。.gitignore とフックで保護） |
 | `web/index.html` | SPA の入口。Google Fonts の link と `#app`。`viewport-fit=cover` |
-| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアント。`VITE_API_BASE`、Bearer、401 で `souieba:unauthorized`）、`auth.ts`（トークンの保持。`@capacitor/preferences`）、`camera.ts`（写真の取得。ネイティブは `@capacitor/camera`、Web は `<input type="file">`）、`native.ts`（ステータスバーとスプラッシュ。Web では何もしない）、`photo.ts`（縮小）、`date.ts`、`screens/`（S0〜S3、S5）、`components/`、`composables/` |
+| `web/src/` | Vue 3 + TS。`main.ts`、`App.vue`、`style.css`、`api.ts`（API クライアント。`VITE_API_BASE`、Bearer、401 で `souieba:unauthorized`）、`auth.ts`（トークンの保持。`@capacitor/preferences`）、`camera.ts`（写真の取得。ネイティブは `@capacitor/camera`、Web は `<input type="file">`）、`native.ts`（ステータスバーとスプラッシュ、鍵盤の出入り（`setKeyboard`）と付属バー。Web では何もしない）、`haptics.ts`（触覚を手ざわりの名前で呼ぶ。`@capacitor/haptics`。ADR-0011）、`keyboard.ts`（鍵盤の出入りを `<html data-keyboard>` と `--keyboard-height` で画面に知らせる）、`motion.ts`（動きの時間、`prefersMotion`、届いた札の触覚、離れていく画面の留め方）、`season.ts`（季節・時間帯・日替わりの種。Asia/Tokyo）、`photo.ts`（縮小）、`date.ts`、`styles/`（受け持ちごとの CSS: `platform.css`・`today.css`・`season.css`・`connections.css`。`style.css` が `@import`）、`screens/`（S0〜S3、S5）、`components/`（`components/today/` は S1 の問いかけ・このごろ・あの日のひとこと・待つ間の糸・✓）、`composables/`（`useEdgeSwipe` は S3 を左端からなぞって戻る、`useSheetDrag` は下からのシートの手ざわり） |
 | `web/.env.example` | `VITE_API_BASE` の見本。実際の値は `web/.env.production` / `web/.env.local`（git に入れない） |
-| `worker/src/` | Hono。`index.ts`（app とルート登録）、`jwt.ts`（HS256 の署名と検証、定数時間比較。純粋ロジック）、`auth.ts`（認証ミドルウェア。Bearer と `X-Dev-User` の振り分け）、`cors.ts`（許可オリジン）、`routes/auth.ts`（`POST /api/auth/login`）、`env.ts`、`errors.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts` |
+| `worker/src/` | Hono。`index.ts`（app とルート登録）、`jwt.ts`（HS256 の署名と検証、定数時間比較。純粋ロジック）、`auth.ts`（認証ミドルウェア。Bearer と `X-Dev-User` の振り分け）、`cors.ts`（許可オリジン）、`routes/auth.ts`（`POST /api/auth/login`）、`routes/today.ts`（`GET /api/today`。5.15）、`env.ts`、`errors.ts`、`routes/`、`ai/`（prompt・schema・検証）、`db/`、`r2.ts` |
 | `worker/migrations/` | D1 マイグレーション。`0001_init.sql`（記憶のスキーマ。変更しない）と `0002_login_attempts.sql`（ログインのレート制限） |
 | `worker/test/` | vitest（Node 環境）の単体テスト |
 | `demo/fixtures/` | デモ 4 シナリオの JSON と seed SQL |
@@ -462,6 +462,33 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
 - ユーザーの絞り込みは札の両端の `memories.user_id` でかける（X-11）。2 つの読みは `db.batch` で 1 往復（1 トランザクション）。マイグレーションは要らない
 - 反応は 5.12 をそのまま使う
 
+### 5.15 GET /api/today（きょう。ADR-0011、wireframes 2.1）
+
+S1 の書く画面の「このごろ」（7 日分の書いた日）と「あの日のひとこと」（0〜1 件）と、記憶の総数（保存後の「N こめのひとこと」）を 1 往復で返す。11/7 のブラッシュアップで足した。`worker/src/routes/today.ts`、DB は `worker/src/db/memories.ts` の `listWrittenAt` / `listThatDayNear` / `listThatDayMonth` / `countMemories`。
+
+```json
+200 {
+  "today": "2026-11-07",
+  "week": [{"date": "2026-11-01", "wrote": false}, … , {"date": "2026-11-07", "wrote": true}],
+  "that_day": {
+    "memory": {"id": "…", "body": "…全文…", "happened_on": "2025-11-05", "happened_on_precision": "day", "photo_key": null},
+    "years": 1,
+    "match": "near"
+  },
+  "total": 12
+}
+```
+
+- 日付はすべて Asia/Tokyo（requirements 第8節 #14。`validate.ts` の `todayInTokyo` と同じ日）。端末の時計がずれていても並びはずれない
+- `week` はきょうを右端にした 7 日分（古い順）。書いた日 = `created_at` の Asia/Tokyo の日付。読みは `created_at` がきょうの 6 日前の 0 時（JST）以上・あすの 0 時（JST）未満（500 件まで）
+- `that_day` は無い日は `null`（画面は何も出さない。原則 2）。`years` は何年まえか（1 以上）、`match` は `day`（同じ月日）/ `near`（前後 3 日）/ `month`（同じ月）
+  - 日の候補: `happened_on_precision = 'day'`、月日がきょうの前後 3 日の `MM-DD` のどれか（年末年始をまたぐ。うるう年でない年に 2/28 と 3/1 が両方入るときは 2/29 も）、`happened_on` ≤ 1 年まえのきょう + 3 日。並びは ずれの小ささ → 新しい年 → id
+  - 日の候補が無ければ月の候補: `happened_on_precision IN ('day','month')`、月がきょうと同じ、年が去年以前。並びは 新しい年 → 日のずれ（day 精度。month 精度はその後）→ id
+  - どちらも `created_at` がきょうの 0 時（JST）より前のものだけ（きょう書いた記憶を、その場で「あの日」として返さない）。それぞれ 50 件まで読み、Worker で 1 つ選ぶ。乱数は使わないので、その日のうちは（消さない限り）変わらない
+- `total` は自分の記憶の数（`COUNT(*)`）
+- ユーザーの絞り込みは `memories.user_id`（X-11）。4 つの読みは `db.batch` で 1 往復（1 トランザクション）。マイグレーションは要らない（`created_at` と `happened_on` の既存の列だけ）
+- 画面は失敗しても何も出さない（書く画面を邪魔しない）。保存の直後と、戻ってきたとき・アプリが表に戻ったときに読み直す。古い応答が新しい応答を上書きしないよう、画面の側で番号を付ける
+
 ## 6. AI 呼び出し（仕様 2 章、9 章）
 
 ### 6.1 方式: JSON Schema による形の固定
@@ -598,7 +625,8 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
 | 代わりにハッシュ | `#today`（S1、既定）/ `#past`（S2）/ `#connections`（S5）/ `#memory/<id>[?from=today\|connections][&recall=<recall id>]`（S3。`from` は戻り先と下部ナビの現在地、既定は past）。`composables/useScreen.ts` が `location.hash` を ref に写し、`hashchange` で戻るボタンに追従する。20 行程度 |
 | S0 | ログイン画面（招待コードとメールアドレス、「はじめる」。wireframes 1 節）。起動時に `loadToken()` → `GET /api/me` を試し、トークンが無いか 401 なら S0。他のエラーでトークンがあれば「いま、うまくつながりません」+「もう一度」。ログイン成功で `saveToken` → S1 |
 | 401 | どの画面でも `api.ts` が 401 を受けたら `clearToken()` して `souieba:unauthorized` を dispatch。`App.vue` が `signed_out` に戻す |
-| ネイティブだけの処理 | `native.ts` の `setupNative()`（ステータスバーを明るい地に濃い文字、Android は背景 `#FAF5EC`）と `hideSplash()`（起動の判定が終わってから隠す）。`Capacitor.isNativePlatform()` が false なら何もしない |
+| ネイティブだけの処理 | `native.ts` の `setupNative()`（ステータスバーを明るい地に濃い文字。鍵盤の出入り（`keyboardWillShow` → `setKeyboard(高さ > 0, 高さ)`、`keyboardWillHide` → `setKeyboard(false, 0)`）を `keyboard.ts` に知らせ、付属バー（「完了」）を出す）と `hideSplash()`（起動の判定が終わってから隠す）。`haptics.ts` の触覚もネイティブだけ。`Capacitor.isNativePlatform()` が false なら何もしない。相手は iPhone だけで、Android はビルドが通る状態を保つだけ（ADR-0011） |
+| 画面の移り変わり | `App.vue` の `<Transition name="screen-<motion>">` で `KeepAlive` ごと包む。`motion` は `useScreen.ts` の `motionBetween` が hashchange のたびに画面より先に決める（下部ナビの左右 `forward` / `backward`、S3 の `push` / `pop`、なぞって戻る `swipe`、最初の表示 `none`）。離れていく画面は `motion.ts` の `pinLeaving` で見ていた位置のまま `position: fixed` に留め、`inert` / `aria-hidden` / `data-leaving` を付ける。動きを減らす設定では `css` を切る（wireframes 6 節、ADR-0011 の 7 節） |
 | 写真の取得 | `camera.ts` の `pickPhoto()`。ネイティブは `@capacitor/camera`（撮る / ライブラリから選ぶ を OS のシートで。文言「写真を添える」「撮る」「ライブラリから選ぶ」「やめる」）。Web は `<input type="file" accept="image/jpeg,image/png">`。どちらも `File` を返し、`photo.ts` で縮小してから PUT |
 | セーフエリア | `App.vue` の `.safe-area` が `env(safe-area-inset-*)` を padding にする。`index.html` は `viewport-fit=cover` |
 
@@ -610,13 +638,22 @@ web/src/
   api.ts             fetch ラッパと 5 章のレスポンス型。VITE_API_BASE、Authorization: Bearer、401 で souieba:unauthorized。ローカルの X-Dev-User は Vite の proxy が付けるため画面側では触らない
   auth.ts            loadToken / getTokenSync / saveToken / clearToken（@capacitor/preferences）
   camera.ts          pickPhoto（@capacitor/camera、Web は input type=file）
-  native.ts          isNative / setupNative / hideSplash（status-bar、splash-screen）
+  native.ts          isNative / setupNative / hideSplash（status-bar、splash-screen、keyboard）
+  haptics.ts         tap / select / stamp / saved / arrive / failed（@capacitor/haptics。Web では何もしない）
+  keyboard.ts        setKeyboard / useKeyboard（<html data-keyboard="open"> と --keyboard-height）
+  motion.ts          DURATION / prefersMotion / arriveSoon / pinLeaving
+  season.ts          seasonOf / timeOfDayOf / daySeed / applyTimeOfDay（Asia/Tokyo）
+  styles/            platform.css / today.css / season.css / connections.css（style.css が @import）
   photo.ts           shrinkPhoto（長辺 1600px、JPEG 0.85）
   date.ts            happened_on と精度の表示（「2024年6月」「いつだったか」）、ローカル日付の今日
-  composables/useScreen.ts    ハッシュ ⇄ 画面
+  composables/useScreen.ts    ハッシュ ⇄ 画面、移り変わりの向き（motionBetween）
+  composables/useEdgeSwipe.ts S3 を左端からなぞって戻る
+  composables/useSheetDrag.ts 下からのシート（なぞって閉じる、後ろをスクロールさせない）
   composables/usePolling.ts   2 秒間隔・最大 30 秒（15 回）
   screens/WelcomeScreen.vue / TodayScreen.vue / TimelineScreen.vue / MemoryDetailScreen.vue / ConnectionsScreen.vue
   components/BottomNav.vue / MemoryCard.vue / FactChips.vue / RecallCard.vue / PhotoPicker.vue
+  components/today/prompts.ts / DayLeaves.vue / ThatDayLetter.vue / WaitingThread.vue / SavedCheck.vue   S1 の問いかけ、このごろ、あの日のひとこと、札を待つ間、✓
+  components/motifs/Seal.vue / Leaf.vue / Ribbon.vue   封蝋・押し葉（季節で替わる）・栞
   components/connections/PairCard.vue / PairSheet.vue / ThreadLoom.vue / Stitch.vue   S5 の一組、シート、糸の帯、糸と結び目
   connections/loom.ts / pair.ts / excerpt.ts   糸の帯の並べ方（純粋関数）、一組の言い方、引用の切り分け
 ```
@@ -626,7 +663,7 @@ web/src/
 - 保存直後、`usePolling(() => Promise.all([getFacts(id), getRecalls(id)]))` を開始。2 秒間隔、両方の `pending` が false になった時点で止める。30 秒（15 回目）で打ち切る（requirements N-2、tasks T-1106-08。API の timeout 20 秒と保存の遅延を吸収できる長さ）
 - S1 は `KeepAlive` で残すが、離れている間（`onDeactivated`）はポーリングを止める（S3 で同じ記憶を開くと S3 も取り直すので、二重にしない）。戻ったとき（`onActivated`）は保存した記憶を `GET /api/memories/:id` で取り直し、まだ `pending` なら（取り直しに失敗したときも）残りの回数だけ続ける。30 秒は保存した時刻から数える（`triesLeft`）
 - S3 は開いた記憶の `pending` の間だけ同じ間隔・打ち切りで `GET /api/memories/:id` を取り直す。画面が外れたあと（`onUnmounted` のあと）の `start` は何もしない（読み込み中に離れたとき、外れた画面のポーリングを残さない）
-- 札（RecallCard）は結果が初めて届いたときに ADR-0004 の 600ms フェードで現れる。0 件なら何も描かない。「読み込み中」の表示も出さない（静かに待つ）
+- 札（RecallCard）は結果が初めて届いたときに現れる（一筆箋が 18px・460ms ですべり込み、360ms 遅れて封蝋が押され、560ms に `arrive` の触覚。ADR-0011 の 7 節）。0 件なら何も描かない。「読み込み中」の表示は出さないが、S1 は待つ間だけ控えの下に「思い出しています」としつけ糸の動きを出し、届かずに終わったら何も言わずに消す（wireframes 2.6）
 - 候補（FactChips）は届き次第、本文の下に並ぶ。「そう」「ちがう」はその場で PATCH し、楽観更新する
 
 ### 7.3 エラーの見せ方
@@ -674,7 +711,7 @@ web/src/
 ```
 
 - これで `bg-paper` `text-ink-soft` `border-line` `font-display` `text-body` `rounded-card` `shadow-card` などのユーティリティが生える。コンポーネントは色を直書きしない
-- 札の出現: `@keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }` と `.rise { animation: rise 600ms ease-out both }` を `@layer components` に置く。`prefers-reduced-motion: reduce` ではアニメーションを無効化
+- 札の出現: `@keyframes rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }` と `.rise { animation: rise 600ms ease-out both }` を `@layer components` に置く。`prefers-reduced-motion: reduce` ではアニメーションを無効化（実装は `.appear`。札は 11/7 から `.note.appear` の 18px・460ms。動きのトークン `--ease-spring` / `--ease-out-soft` / `--duration-quick|base|slow` と `.press` は ADR-0011 の 6 節。上の `@theme` は ADR-0004 のときの値で、いまの値は ADR-0010 と `web/src/style.css`）
 - ダークモードは作らない（ADR-0004）
 
 ### 8.2 Google Fonts（web/index.html）

@@ -80,7 +80,7 @@ A の芯は、製品原則を文字を読まなくても形で見せること。
   - 31px の固定にしなかったのは、文字だけが拡大されると行送りが追いつかず、罫が文字に重なるため
   - `1lh` にしなかったのは、iOS 16.4 より前の WebKit で効かないため（em なら同じことがどこでも効く）
   - ブラウザで `.letter-text` の文字を 22px にして撮り、7 行の本文で罫と行がそろうことを確かめた
-- 入力欄（`textarea`）は 5 行分の罫を最初から引き（`min-height` も同じ em から）、罫は文字と一緒に流れる（`background-attachment: local`）
+- 入力欄（`textarea`）は 4 行分の罫を最初から引き（`min-height` も同じ em から。はじめは 5 行だったが、書く前の画面が iPhone でスクロールになったため 11/7 に 4 行にした）、罫は文字と一緒に流れる（`background-attachment: local`）
 
 ### 形
 
@@ -125,9 +125,9 @@ A の芯は、製品原則を文字を読まなくても形で見せること。
 
 - WKWebView（Safari の WebKit）での `line-clamp-3` と、「」をぶら下げる `text-indent: -1em` の組み合わせ（札の引用）
 - `mark` の `box-decoration-break: clone`（2 行にまたがる印の角）
-- `textarea` の `field-sizing: content`（使えない WebKit では `rows` と `min-height` の 5 行分で止まる）
+- `textarea` の `field-sizing: content`（使えない WebKit では `rows` と `min-height` の 4 行分で止まる。iOS 27 の WebKit では効き、10 行まで伸びることを Simulator で確かめた）
 - `feTurbulence` 入りの背景の描画の重さ（古い Android の WebView）と、Android で明朝が角ゴシックで出たときの見え方
-- 5 行以上の本文で罫と行がずれないか
+- 4 行を超える本文で罫と行がずれないか
 
 ## 影響
 
@@ -136,3 +136,14 @@ A の芯は、製品原則を文字を読まなくても形で見せること。
 - `web/src/components/motifs/`（`Seal.vue`、`Leaf.vue`、`Ribbon.vue`）と、それを使う部品・画面（ふるまいは変えない）
 - `docs/wireframes.md` の冒頭と 0 節、2.1、2.3、2.4、3.2、4.1、4.2、6 節のコントラスト、第8節 #27
 - 形の区別（判・封蝋・鉛筆・栞の有無、区切りの線の種類、ナビの帯の高さの作り）は `web/test/letterDesign.dom.test.ts` で固定した
+
+## 追記: ブラッシュアップ（11/7、ADR-0011）
+
+- **地の色**: 「地の色を変えなかった理由」の #FAF5EC は朝と昼の地として残し、夕方（17〜20 時）は `paper-evening` #FFF4E7、夜（21〜4 時）は `paper-night` #FEF5E0 に `--color-paper` を差し替える（`styles/season.css`）。
+  相対輝度を #FAF5EC 以上に保ち、色相だけを動かしたので、上のコントラストの表の `paper` の列は下がらない。スプラッシュ・起動画面・`backgroundColor` は #FAF5EC のまま。便箋・一筆箋・控えは変えない（ADR-0011 の 9 節。`applyTimeOfDay` を `main.ts` から呼ぶまでは効かない）
+- **押し葉と封蝋**: 形を季節で替える（春 桜の小枝 / 夏 青もみじ / 秋 紅葉 / 冬 南天。封蝋は浮き出しの線画だけ）。色は `styles/season.css` の季節のトークン。置き場所と大きさ、「模様は封蝋・押し葉・栞の 3 つだけ」「回転も散らした飾りも入れない」は変えない
+- **動き**: 「押せる所と動き」の札の値（600ms のフェードと 8px、380ms 遅れて 420ms、scale 1.25 → 1）は、札（`.note.appear`）では 18px・460ms のすべり込みと、360ms 遅れて 400ms（scale 1.4 → 0.94 → 1）に変えた。札以外の `.appear` は 600ms・8px のまま。
+  動きのトークン（quick 160 / base 280 / slow 460ms、`ease-spring` / `ease-out-soft`）と押したときの沈み（`.press`）は ADR-0011 の 6 節
+- **打ち消し線**: 却下した候補の打ち消し線を 1px から 1.5px にした（細いと漢字の上でほとんど見えない）
+- **時間が無いときに削る順**の 2「封蝋の押される動き」は、いまは `style.css` の `.appear .seal`（`seal-press`）を外す（`arrive` の触覚は `motion.ts` の `arriveSoon` が鳴らすので、動きを外しても残る）
+

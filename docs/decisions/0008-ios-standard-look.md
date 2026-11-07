@@ -49,3 +49,10 @@ iOS の起動画面とスプラッシュ（Capacitor の SplashScreen は `Launc
 ## まだのこと
 
 - アプリのアイコンが Capacitor の既定のまま（青い X）。ホーム画面と Android 12 以降の起動画面に出る。素材は開発者が権利を持つものだけ（setup-capacitor 4 節）なので、案を作るかどうかは開発者の判断
+
+## 追記: ブラッシュアップ（11/7、ADR-0011）
+
+- 上の「まだのこと」のアイコンは、ADR-0011 の 10 節で A「封蝋」に決めた（iOS の `AppIcon.appiconset` だけ。Android は既定のまま）
+- 地の色 `#FAF5EC` は、ネイティブの起動画面・`capacitor.config.ts` の `backgroundColor`・`SplashOverlay` の起動の絵では変えない。画面の地（`--color-paper`）だけ、夕方と夜に灯りの色へ少し寄せる（ADR-0011 の 9 節。起動の絵は `paper-day` に固定し、消えるときに時間帯の地へ溶ける）
+- 「iOS の作法は守る」に、鍵盤（`resize: native`、鍵盤の間は下部ナビを隠す、付属バーの「完了」）、長押しのリンクの下見を出さない、明るい表示と縦だけ、を足した（ADR-0011 の 4・5 節）。iOS の部品の見た目は引き続き真似ない
+

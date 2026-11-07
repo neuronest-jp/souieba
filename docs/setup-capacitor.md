@@ -2,6 +2,7 @@
 
 対象: そういえば。（appId `jp.neuronest.souieba`、表示名「そういえば。」。ADR-0007）
 前提: 画面は `web/`（Vite）で作り、`web/dist` を Capacitor が各プラットフォームにコピーする。API は Cloudflare Workers。
+相手は iPhone だけ（11/7、ADR-0011）。Android はビルドが通る状態を保つが、Android 向けの調整（アイコン、鍵盤、ステータスバー、戻るボタン）はしない。
 
 クラウド（Linux）の Claude Code のセッションでは `cap add` と `cap sync` までしかできない（`dl.google.com` に出られず Android SDK も入らない）。
 iOS のビルド・シミュレータ・実機、Android のビルドは開発者の Mac で行う。Mac の Claude Code のセッションなら、2.1 節のコマンドで実機へのインストールまで通る（2026-11-05 に iPhone 16 Pro で確認）。
@@ -100,7 +101,8 @@ xcrun devicectl device process launch --device <UDID> jp.neuronest.souieba
 - チーム ID は `project.pbxproj` に書かず、引数で渡す。証明書名の括弧の中（`Apple Development: 名前 (XXXXXXXXXX)`）は個人の ID で、チーム ID ではない。
   チーム ID は Xcode の Signing で選んだチーム、またはプロファイルの `TeamIdentifier`
 - 初回の起動で「信頼されていないデベロッパ」と出たら、端末の 設定 → 一般 → VPN とデバイス管理 で信頼する
-- 初回ビルドで `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` ができる。SPM の版を固定するためにコミットしている（11/6。capacitor-swift-pm 8.6.0、ion-ios-camera 2.0.0）。プラグインを足したり版を上げたら、更新された Package.resolved もコミットする
+- 初回ビルドで `ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` ができる。SPM の版を固定するためにコミットしている（11/6。capacitor-swift-pm 8.6.0、ion-ios-camera 2.0.0）。プラグインを足したり版を上げたら、更新された Package.resolved もコミットする。
+  11/7 に足した `@capacitor/haptics` と `@capacitor/keyboard` は `ios/App/CapApp-SPM/Package.swift` に `node_modules` の中の場所で入る（`cap sync` が書く）。外から取ってくる依存は増えないので、Package.resolved が変わらなくてよい
 
 ## 3. Android
 
@@ -118,11 +120,22 @@ cd android && ./gradlew assembleDebug
 
 `android/local.properties`（SDK の場所）は Android Studio が作る。git には入れない。
 
-## 4. 見た目
+Android はビルドが通ることだけを保つ（ADR-0011）。`@capacitor/haptics` と `@capacitor/keyboard` も `cap sync android` で入るが、付属バーの「完了」は iOS だけの機能で、Android では使えない（`native.ts` が失敗を無視する）。`Keyboard.resize` などの設定も iOS の分だけ。
+
+## 4. 見た目と手ざわり
 
 - ステータスバー: `web/src/native.ts` が文字色を `Style.Light`（明るい地に濃い文字）にする。Android 16（API 36）以降ではステータスバーは常に画面に重なり、背景色の指定は効かない。上の余白は `web/src/style.css` の `.safe-area` が `env(safe-area-inset-top)` で取る
 - スプラッシュ: 地の色 `#FAF5EC` に「そういえば。」（Zen Maru Gothic の太字、句点は ember。ADR-0008）。iOS は `ios/App/App/Assets.xcassets/Splash.imageset`（2732px 四方、`LaunchScreen.storyboard` も同じ画像なので起動画面から一続き）、Android は `res/drawable*/splash.png`（解像度ごと）と `values/styles.xml` の `windowSplashScreenBackground`（Android 12 以降はシステムの起動画面にアイコンが出る）。`capacitor.config.ts` の `SplashScreen` は 3 秒の保険と `androidScaleType: "CENTER_CROP"`、`web/src/native.ts` の `hideSplash` が少なくとも 0.9 秒見せてから 0.3 秒で消す。動きは画面側の `web/src/components/SplashOverlay.vue`（起動画像を 1 字ずつ切った `web/src/assets/splash/` と位置の `web/src/splashMark.ts`。起動画像を作り直したら、この 2 つも作り直す）
-- アイコン: Capacitor の既定のまま。`ios/App/App/Assets.xcassets/AppIcon.appiconset` と `android/app/src/main/res/mipmap-*` を差し替える。素材は開発者が権利を持つものだけ
+- アイコン（iOS。ADR-0011 の 10 節）: A「封蝋」（紙の地に朱の封蝋と押した葉）。`ios/App/App/Assets.xcassets/AppIcon.appiconset/` に 3 枚と `Contents.json`:
+  `AppIcon.png`（1024 × 1024 の不透明な RGB。透明があると App Store に断られる）、`AppIcon-dark.png` と `AppIcon-tinted.png`（地が透明。iOS 18 以降の暗い表示と色付きの表示。`appearances` の `luminosity` が `dark` / `tinted`）。
+  素材は使わず、SVG を書いて headless Chrome で描いた PNG。描き直すときも 1024 × 1024 で同じ 3 つのファイル名にする（`web/test/platform.test.ts` が大きさ・不透明・ファイルの有無を見張る）。
+  Android（`android/app/src/main/res/mipmap-*`）は Capacitor の既定のまま（Android の調整はしない）。素材は開発者が権利を持つものだけ
+- 表示と向き（`ios/App/App/Info.plist`）: `UIUserInterfaceStyle = Light`（端末が暗い表示でも明るい紙。鍵盤・日付の選択・写真の選択も明るい）、`UIStatusBarStyle = UIStatusBarStyleDarkContent`（起動画面の間の時計も濃い文字）、iPhone は縦だけ（`UISupportedInterfaceOrientations` は `Portrait` だけ。iPad の項目はそのまま）。`web/index.html` も `color-scheme: light` と `format-detection`（数字を電話のリンクにしない）
+- 鍵盤（`@capacitor/keyboard`。ADR-0011 の 4 節）: `capacitor.config.ts` の `Keyboard` は `resize: KeyboardResize.Native`（鍵盤のぶん WKWebView の枠を縮める。`none` / `body` にすると書いている行が鍵盤の下に隠れる）、`style: KeyboardStyle.Light`、`autoBackdropColor: "auto"`（鍵盤の脇の窓を `backgroundColor` の紙の色に）。
+  `web/src/native.ts` が `keyboardWillShow` / `keyboardWillHide` を `web/src/keyboard.ts` の `setKeyboard` に渡し、`<html data-keyboard="open">` の間は `web/src/styles/platform.css` が下部ナビを隠す。付属バー（∧ ∨ 完了）は `Keyboard.setAccessoryBarVisible({ isVisible: true })` で出す（プラグインは既定で消す）。
+  入力欄の文字は 16px 以上（16px 未満だと iOS が入力欄を拡大する。`web/test/platform.test.ts` が `.vue` を見張る。いまは全部 17px）
+- 触覚（`@capacitor/haptics`。ADR-0011 の 3 節）: 画面からは `web/src/haptics.ts` の `tap` / `select` / `stamp` / `saved` / `arrive` / `failed` だけを呼ぶ。Web では何もしない。**Simulator には Taptic Engine が無いので鳴らない**（確かめるのは実機だけ）
+- 長押しと拡大: `ios.allowsLinkPreview: false`（札を長押ししても `capacitor://localhost/#memory/…` の下見を出さない）。拡大と弾む動きは Capacitor の既定で切れている（`zoomEnabled = false`、`scrollView.bounces = false`）。ダブルタップの拡大と、押すもの・絵・写真の選択と長押しのメニューは `styles/platform.css` で止める（本文は選べる）
 - セーフエリア: `web/src/style.css` の `.safe-area` と下部ナビの `env(safe-area-inset-bottom)`。iOS は `capacitor.config.ts` の `ios.contentInset` を `"never"`（Capacitor の既定）にして、セーフエリアを CSS の `env()` だけで取る。`"automatic"` にすると、ページがスクロールできるときだけ WKWebView がずらして `env()` が 0 になり、画面ごとに下部ナビの高さが変わる（wireframes 第8節 #23）。ステータスバーの下の地は `App.vue` の固定の `div`
 
 ## 5. 更新の流れ
@@ -144,4 +157,21 @@ Worker の変更は `pnpm run deploy`（docs/setup-cloudflare.md）。
 | Xcode でシミュレータ起動 → ログイン → S1 | | |
 | Android `assembleDebug` が通る | JDK 21 で通る（11/6。app-debug.apk 7.9MB。JDK 25 では Gradle 8.14.3 が動かない） | 済 |
 | 実機で写真の撮影とライブラリ選択 | | |
-| アイコン / スプラッシュ画像 | | |
+| アイコン / スプラッシュ画像 | iOS のアイコンは A「封蝋」（11/7。ADR-0011）。スプラッシュは ADR-0008 | 済（iOS） |
+
+### 7.1 実機で確かめること（11/7 のブラッシュアップ。ADR-0011）
+
+11/7 は iPhone 17（iOS 27.0）の Simulator と headless Chrome でしか見ていない。Simulator で確かめたもの: 鍵盤で WebView が 874 → 470pt に縮み `keyboardHeight` が 404、下部ナビが消えて閉じると 96px に戻る、「完了」で閉じる、書いている行と S1 の「保存する」が鍵盤の上に出る、
+ナビと S2 の行を長押ししても下見が出ない、S3 の本文が選べてコピーできる、端末が暗い表示でも鍵盤とステータスバーが明るい。前に起きた「WebView が白いまま」は 4 回入れ直して起きなかった。
+
+| 項目 | 見ること | 済 |
+|---|---|---|
+| 触覚 6 つ | 押した直後に鳴るか、強さ（`stamp` が強すぎないか）、届いた札の `arrive` が封蝋の沈みと合うか。ナビの同じ項目・組を開くときに鳴らないこと | |
+| S3 を左端からなぞって戻る | 指に付いてくるか、縦のスクロールと取り合わないか、半分より右・速く払ったときに戻るか | |
+| シートをなぞって閉じる | DateSheet・「消しますか」・S5 のシートで、下へなぞると閉じる、中身のスクロールと取り合わない、開いている間に後ろがスクロールしない | |
+| 画面の移り変わり | 下部ナビの左右、S3 の push / pop が滑らかか（60fps）、離れていく画面が 1 フレーム透けないか | |
+| 押したときの沈み | 行・札・ボタンが指で沈むか（`:active`） | |
+| 鍵盤 | 実機の鍵盤（かな・英字・音声・外付け・ほかの会社の鍵盤）で下部ナビが消えて戻る、「保存する」が鍵盤の上、「完了」で閉じる | |
+| 長押し | 札で下見が出ない、本文は選べる、写真は「画像を保存」が出ない | |
+| アイコン | ホーム画面の明るい表示・暗い表示・色付きの表示、29pt（設定の一覧）でも朱の丸と葉が残る | |
+| 時間帯の紙 | `applyTimeOfDay` を `main.ts` から呼んだあと、17 時・21 時に地と下部ナビ・シートの継ぎ目が出ない、起動の絵から地へ溶ける（いまは呼んでいないので効かない） | |
