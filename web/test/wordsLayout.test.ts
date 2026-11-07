@@ -38,6 +38,64 @@ const MAP: KeywordMap = {
 
 const overlaps = (a: PlacedWord, b: PlacedWord) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
+// 線の上の点を拾う（layout.ts が出す形だけ: M / C / H / L と、中心が (始点の x, 終点の y) の楕円の 4 分の 1 の A）
+const samplePath = (d: string): Array<[number, number]> => {
+  const pts: Array<[number, number]> = [];
+  const tokens = d.match(/[MCHLVAQ]|-?\d+(?:\.\d+)?/g) ?? [];
+  let i = 0;
+  let x = 0;
+  let y = 0;
+  const num = () => Number(tokens[i++]);
+  while (i < tokens.length) {
+    const c = tokens[i++];
+    if (c === "M") {
+      x = num();
+      y = num();
+    } else if (c === "H") {
+      const x1 = num();
+      for (let t = 0; t <= 1; t += 0.02) pts.push([x + (x1 - x) * t, y]);
+      x = x1;
+    } else if (c === "V") {
+      const y1 = num();
+      for (let t = 0; t <= 1; t += 0.02) pts.push([x, y + (y1 - y) * t]);
+      y = y1;
+    } else if (c === "L") {
+      const x1 = num();
+      const y1 = num();
+      for (let t = 0; t <= 1; t += 0.02) pts.push([x + (x1 - x) * t, y + (y1 - y) * t]);
+      x = x1;
+      y = y1;
+    } else if (c === "C") {
+      const [ax, ay, bx, by, x1, y1] = [num(), num(), num(), num(), num(), num()];
+      for (let t = 0; t <= 1; t += 0.01) {
+        const u = 1 - t;
+        pts.push([u * u * u * x + 3 * u * u * t * ax + 3 * u * t * t * bx + t * t * t * x1, u * u * u * y + 3 * u * u * t * ay + 3 * u * t * t * by + t * t * t * y1]);
+      }
+      x = x1;
+      y = y1;
+    } else if (c === "Q") {
+      const [ax, ay, x1, y1] = [num(), num(), num(), num()];
+      for (let t = 0; t <= 1; t += 0.05) {
+        const u = 1 - t;
+        pts.push([u * u * x + 2 * u * t * ax + t * t * x1, u * u * y + 2 * u * t * ay + t * t * y1]);
+      }
+      x = x1;
+      y = y1;
+    } else if (c === "A") {
+      i += 5; // rx ry 回転 大きい弧 向き
+      const x1 = num();
+      const y1 = num();
+      for (let t = 0; t <= 1; t += 0.01) {
+        const a = (t * Math.PI) / 2;
+        pts.push([x + (x1 - x) * Math.sin(a), y1 + (y - y1) * Math.cos(a)]);
+      }
+      x = x1;
+      y = y1;
+    }
+  }
+  return pts;
+};
+
 describe("layoutWords", () => {
   for (const width of [362, 335]) {
     it(`幅 ${width}px: どの言葉も 1 回だけ置かれ、画面の内に収まり、ほかの言葉にも年の札にも重ならない`, () => {
@@ -107,7 +165,7 @@ describe("layoutWords", () => {
 
   // bridge の糸の描き方（a 糸 / b 弧 / c 控えめ / lane 11/7 の形）は開発の間だけ比べる。どれを選んでも、言葉の置き場と線の数は同じ
   for (const lines of LINE_STYLES) {
-    it(`描き方 ${lines}: 言葉の置き場は描き方で変わらず、bridge の線はつなぐ年の数だけ。線の端の印は背骨と言葉のあいだにある`, () => {
+    it(`描き方 ${lines}: 言葉の置き場は描き方で変わらず、bridge の線はつなぐ年の数だけ。線は言葉の箱に入らず、線の端の印は背骨と言葉のあいだにある`, () => {
       for (const width of [362, 335]) {
         const base = layoutWords(MAP, width);
         const l = layoutWords(MAP, width, lines);
@@ -115,6 +173,10 @@ describe("layoutWords", () => {
         expect(l.words.map((w) => [w.id, w.x, w.y])).toEqual(base.words.map((w) => [w.id, w.x, w.y]));
         const threads = MAP.keywords.filter((k) => k.role === "bridge").reduce((n, k) => n + k.years.length, 0);
         expect(l.links.filter((x) => x.role === "bridge")).toHaveLength(threads);
+        // 線は言葉の箱（縁から 1px 内側）に入らない
+        for (const link of l.links)
+          for (const [px, py] of samplePath(link.d))
+            for (const w of l.words) expect(px > w.x + 1 && px < w.x + w.w - 1 && py > w.y + 1 && py < w.y + w.h - 1, `${link.id} が ${w.id} に入る`).toBe(false);
         for (const k of l.knots) {
           const off = Math.abs(k.x - l.spineX);
           expect(off).toBeGreaterThanOrEqual(WORDS.pillW / 2);
