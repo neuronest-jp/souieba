@@ -14,7 +14,7 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 
 | 年月でたどる | ことばの地図 | ことばを押すと |
 |---|---|---|
-| <img src="docs/images/past.jpg" width="220" alt="これまで。2023年11月へたどり、年月の札が左上に浮かぶ"> | <img src="docs/images/words.jpg" width="220" alt="ことばの地図。年を縦に並べ、年ごとの言葉と、年をまたぐ言葉を細い糸で結ぶ"> | <img src="docs/images/words-sheet.jpg" width="220" alt="「山の上の展望台」を押すと、2020年・2021年・2023年の一文が原文のまま並ぶ"> |
+| <img src="docs/images/past.jpg" width="220" alt="これまで。2023年11月へたどり、年月の札が左上に浮かぶ"> | <img src="docs/images/words.jpg" width="220" alt="ことばの地図。年を縦に並べ、年ごとの言葉と、年をまたぐ言葉を細い糸で結ぶ"> | <img src="docs/images/words-sheet.jpg" width="220" alt="「展望台」を押すと、2020年・2021年・2023年の一文が原文のまま並ぶ"> |
 
 写っているのは撮影用の架空のデータ（demo/fixtures/story.sql）。iPhone 17 の Simulator で撮った。
 
