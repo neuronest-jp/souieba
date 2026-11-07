@@ -70,7 +70,7 @@ Xcode で:
 1. 左のツリーで `App` → Targets `App` → Signing & Capabilities。シミュレータだけなら Team は空でよい。実機ならチームを選ぶ（Bundle Identifier は `jp.neuronest.souieba`）
 2. 上部の実行先で iPhone のシミュレータを選び、▶ で実行
 3. ログイン画面で招待コードとメールアドレスを入れ、「はじめる」→ S1「きょう」が出れば到達
-4. 「写真を添える」で撮影 / ライブラリの選択肢が出る（`Info.plist` の `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` は設定済み）
+4. 「写真を添える」で撮影 / ライブラリの選択肢が出る（`Info.plist` の `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` / `NSPhotoLibraryAddUsageDescription` は設定済み。`@capacitor/camera` の iOS は 3 つの 1 つでも欠けると選択肢を出さずに断る。保存はしないが 3 つめも要る）
 
 コマンドラインで通すなら:
 

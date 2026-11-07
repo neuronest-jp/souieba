@@ -2,7 +2,18 @@
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { isNative } from "./native";
 
-export type PickedPhoto = { file: File } | { error: "denied" };
+// denied: 許可が無い（設定で変えられる）。failed: それ以外で開けなかった（黙って何もしないと「押しても何も起きない」に見えるので、画面で知らせる）
+export type PickedPhoto = { file: File } | { error: "denied" | "failed" };
+
+// プラグインの失敗の文を、やめた / 許可が無い / それ以外 に分ける。
+// iOS のプラグインは Info.plist の利用目的（NSCameraUsageDescription、NSPhotoLibraryUsageDescription、
+// NSPhotoLibraryAddUsageDescription）が 1 つでも欠けると、選択肢を出す前に "You are missing … in your Info.plist" で断る。
+// 以前は 3 つめが無く、その断りをここで捨てていたため、押しても何も起きなかった（11/7 実機）
+export const classifyPickError = (msg: string): "cancelled" | "denied" | "failed" => {
+  if (/cancel/i.test(msg)) return "cancelled";
+  if (/denied|permission/i.test(msg)) return "denied";
+  return "failed";
+};
 
 const pickWithInput = (): Promise<PickedPhoto | null> =>
   new Promise((resolve) => {
@@ -39,12 +50,11 @@ export async function pickPhoto(source: "prompt" | "camera" | "photos" = "prompt
       promptLabelPicture: "撮る",
       promptLabelCancel: "やめる",
     });
-    if (!photo.dataUrl) return null;
+    if (!photo.dataUrl) return { error: "failed" };
     return { file: await dataUrlToFile(photo.dataUrl, `photo.${photo.format || "jpeg"}`) };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (/cancel/i.test(msg)) return null; // やめた
-    if (/denied|permission/i.test(msg)) return { error: "denied" };
-    return null;
+    const kind = classifyPickError(e instanceof Error ? e.message : String(e));
+    if (kind === "cancelled") return null; // やめた
+    return { error: kind };
   }
 }

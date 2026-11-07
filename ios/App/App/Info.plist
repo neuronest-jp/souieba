@@ -10,6 +10,8 @@
 	<string>きょうのひとことに添える写真を撮るために使います。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>きょうのひとことに添える写真を選ぶために使います。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>写真ライブラリに写真を保存することはありません。写真を撮る機能の決まりで記しています。</string>
 	<key>CFBundleDisplayName</key>
         <string>そういえば。</string>
 	<key>CFBundleExecutable</key>

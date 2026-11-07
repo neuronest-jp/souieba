@@ -13,7 +13,8 @@ const choose = async () => {
   const picked = await pickPhoto("prompt");
   if (!picked) return;
   if ("error" in picked) {
-    message.value = "写真を使う許可が必要です（端末の設定から変えられます）";
+    message.value =
+      picked.error === "denied" ? "写真を使う許可が必要です（端末の設定から変えられます）" : "写真を開けませんでした。もう一度押してみてください";
     return;
   }
   const f = picked.file;
