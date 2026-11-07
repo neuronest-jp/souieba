@@ -10,7 +10,13 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 
 | 書く | そういえば。 | つながり |
 |---|---|---|
-| 【スクリーンショット: 書く画面】 | 【スクリーンショット: 札】 | 【スクリーンショット: つながり】 |
+| <img src="docs/images/today.jpg" width="220" alt="書く画面。1年まえの、きょうのころ（そらがつかまり立ちした）と、このごろの押し葉"> | <img src="docs/images/recall.jpg" width="220" alt="保存すると浮かんだ「そういえば。」の札。2024年12月24日の「みさきに手袋をあげた。」の引用"> | <img src="docs/images/connections.jpg" width="220" alt="つながり。今日のひとことと、10か月まえのマフラーの日を糸で結んだ組"> |
+
+| 年月でたどる | ことばの地図 | ことばを押すと |
+|---|---|---|
+| <img src="docs/images/past.jpg" width="220" alt="これまで。2023年11月へたどり、年月の札が左上に浮かぶ"> | <img src="docs/images/words.jpg" width="220" alt="ことばの地図。年を縦に並べ、年ごとの言葉と、年をまたぐ言葉"> | <img src="docs/images/words-sheet.jpg" width="220" alt="「山の上の展望台」を押すと、2020年と2023年の一文が原文のまま並ぶ"> |
+
+写っているのは撮影用の架空のデータ（demo/fixtures/story.sql）。iPhone 17 の Simulator で撮った。
 
 > **In English** — *Souieba* ("Oh, that reminds me.") is an iPhone app for keeping one line and one photo about your day.
 > When you write something new, Claude reads your own past entries and brings back at most three that are truly related, each with the reason and a verbatim quote of what you wrote back then.
