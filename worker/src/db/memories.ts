@@ -108,8 +108,14 @@ export async function getMemory(db: D1Database, userId: string, id: string): Pro
 
 // 消した行の photo_key を返す（消す行が無ければ null）。RETURNING で削除した時点の値を受け取るので、
 // 直前に写真が差し替わっていても新しい方のキーが返る。
+// 候補と札は ON DELETE CASCADE で消える。ai_runs（Claude 呼び出しの記録）は外部キーを持たないので、同じ batch で消す
+// （原則 5「削除は即時」。batch は 1 トランザクションなので、記憶の削除が失敗すれば記録も残る）
 export async function deleteMemory(db: D1Database, userId: string, id: string): Promise<{ photo_key: string | null } | null> {
-  return db.prepare("DELETE FROM memories WHERE id = ?1 AND user_id = ?2 RETURNING photo_key").bind(id, userId).first<{ photo_key: string | null }>();
+  const [, deleted] = await db.batch([
+    db.prepare("DELETE FROM ai_runs WHERE memory_id = ?1 AND user_id = ?2").bind(id, userId),
+    db.prepare("DELETE FROM memories WHERE id = ?1 AND user_id = ?2 RETURNING photo_key").bind(id, userId),
+  ]);
+  return ((deleted?.results ?? []) as Array<{ photo_key: string | null }>)[0] ?? null;
 }
 
 export async function listFacts(db: D1Database, memoryId: string): Promise<FactRow[]> {

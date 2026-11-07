@@ -24,7 +24,7 @@
     "test:watch": "vitest",
     "check:hook": "node scripts/check-hook.mjs",
     "check:words": "node scripts/check-words.mjs",
-    "cap:sync": "pnpm build:web && cap sync",
+    "cap:sync": "node scripts/check-api-base.mjs && pnpm build:web && cap sync",
     "cap:ios": "pnpm cap:sync && cap open ios",
     "cap:android": "pnpm cap:sync && cap open android"
   },

@@ -2,7 +2,7 @@
 # Worker に対するスモークテスト（T-1104-17）。
 #
 # ローカル: pnpm dev:worker を起動してから  bash scripts/smoke.sh [http://localhost:8787]
-#   開発用の招待コード dev でログイン → Bearer で 記憶の登録 → 詳細 → 写真の PUT / GET → 別のユーザーで 404 → 削除 → 削除後 404。
+#   開発用の招待コード dev でログイン → Bearer で きょう・つながりの GET → 記憶の登録 → 詳細 → 写真の PUT / GET → 別のユーザーで 404 → 削除 → 削除後 404。
 #   別のユーザーは X-Dev-User で作る（development だけ有効）。
 #
 # 本番: EXPECT_PRODUCTION=1 bash scripts/smoke.sh https://souieba.<account>.workers.dev
@@ -95,6 +95,16 @@ else
 fi
 
 curl -sf -H "$A1" "$BASE/api/me" | grep -q "\"user_id\":\"$ME\"" || fail "JWT で /api/me が通らない"
+
+echo "== きょう・つながり: Bearer で GET /api/today と /api/connections が 200"
+out=$(curl -s -w '\n%{http_code}' -H "$A1" "$BASE/api/today")
+code="${out##*$'\n'}"
+[ "$code" = "200" ] || fail "GET /api/today が 200 でない: $code"
+printf '%s' "${out%$'\n'*}" | grep -q '"week"' || fail "GET /api/today の形が違う（week が無い）"
+out=$(curl -s -w '\n%{http_code}' -H "$A1" "$BASE/api/connections")
+code="${out##*$'\n'}"
+[ "$code" = "200" ] || fail "GET /api/connections が 200 でない: $code"
+printf '%s' "${out%$'\n'*}" | grep -q '"beads"' || fail "GET /api/connections の形が違う（beads が無い）"
 
 # 途中で失敗しても、作った記憶は消してから終わる
 id="" key="" png="" gif=""

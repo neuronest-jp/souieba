@@ -7,10 +7,10 @@ dist/
 !.env.example
 *.log
 .DS_Store
-# iOS
-apps/mobile/**/xcuserdata/
-apps/mobile/**/DerivedData/
 web/dist/
+# デモの写真は手元だけに置く（位置情報を持ちうる）。置き方の README だけをコミットする
+demo/photos/*
+!demo/photos/README.md
 
 # Capacitor（ios/ と android/ はコミットする。生成物と署名ファイルは除く）
 ios/App/Pods/

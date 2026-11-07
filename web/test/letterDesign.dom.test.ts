@@ -168,6 +168,14 @@ describe("下部ナビ", () => {
     const other = links.find((el) => el !== current)!;
     expect(other.findAll((el) => el.hasClass("fill-card"))).toEqual([]);
   });
+
+  it("きょうの絵は万年筆。選ぶと軸とペン先を白く抜き、割れ目と空気穴は線のまま残す", async () => {
+    const { container } = mount(BottomNav, { current: "today" });
+    await nextTick();
+    const today = container.findAll((el) => el.tagName === "A" && el.getAttribute("href") === "#today")[0]!;
+    const shapes = today.findAll((el) => el.tagName === "PATH" || el.tagName === "CIRCLE");
+    expect(shapes.map((el) => el.hasClass("fill-card"))).toEqual([true, true, false, false]);
+  });
 });
 
 describe("S3 の便箋の栞", () => {

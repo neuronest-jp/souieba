@@ -42,9 +42,9 @@ export function createTestD1(): TestD1 {
         const rows = raw.prepare(sql).all(...(args as never[])) as Record<string, unknown>[];
         return { results: rows.map((r) => ({ ...r })) as T[], success: true, meta: {} };
       },
-      // batch 用の同期版。SELECT なら results、それ以外は changes を返す
+      // batch 用の同期版。SELECT と RETURNING 付きの文なら results（本物の D1 も RETURNING の行を返す）、それ以外は changes を返す
       runSync: () => {
-        if (/^\s*select/i.test(sql)) {
+        if (/^\s*select/i.test(sql) || /\breturning\b/i.test(sql)) {
           const rows = raw.prepare(sql).all(...(args as never[])) as Record<string, unknown>[];
           return { results: rows.map((r) => ({ ...r })), success: true, meta: {} };
         }

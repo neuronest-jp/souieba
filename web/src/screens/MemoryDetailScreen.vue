@@ -282,7 +282,8 @@ watch(() => props.id, load);
         <div ref="confirmPanel" class="sheet-paper tex-sheet relative w-full max-w-[560px] rounded-t-[20px] bg-card px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] shadow-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
           <div class="sheet-grip" aria-hidden="true"></div>
           <h2 id="delete-title" class="text-[22px]">この記憶を消しますか</h2>
-          <p class="mt-2 text-sm text-ink-soft">写真も、この記憶から浮かんだ「そういえば。」も一緒に消えます。</p>
+          <!-- 札はこの記憶から浮かんだ側も、この記憶が思い出された側も消える（recalls の 2 つの外部キーの ON DELETE CASCADE）ので「つながった」と言う -->
+          <p class="mt-2 text-sm text-ink-soft">写真も、この記憶につながった「そういえば。」も一緒に消えます。</p>
           <div class="mt-5 flex flex-col items-center gap-3">
             <button type="button" class="btn btn-primary press px-10" :disabled="deleting" @click="remove">消す</button>
             <button ref="cancelButton" type="button" class="press min-h-11 px-4 text-ink-soft" @click="closeConfirm">やめる</button>

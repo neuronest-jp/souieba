@@ -363,6 +363,24 @@ describe("GET / DELETE /api/memories/:id", () => {
     expect((await app().request(`/api/memories/${oldId}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(200);
   });
 
+  it("原則 5: 削除でその記憶の ai_runs の記録も消える（ほかの記憶・ほかの人・記憶に結びつかない記録は残る）", async () => {
+    const { id: keepId } = await create("残す記憶");
+    const { id } = await create("消す記憶");
+    const { id: otherId } = (await (await post({ body: "ほかの人の記憶" }, H_OTHER)).json()) as { id: string };
+    db.raw.exec("DELETE FROM ai_runs"); // 登録のときに走った記録は外して、ここで置いた行だけを見る
+    const run = db.raw.prepare("INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, created_at) VALUES (?, ?, ?, ?, 'm', 'succeeded', 'now')");
+    run.run("gone-facts", ME, id, "facts");
+    run.run("gone-recall", ME, id, "recall");
+    run.run("keep-mine", ME, keepId, "facts");
+    run.run("keep-other", OTHER, otherId, "facts");
+    run.run("keep-retro", ME, null, "retrospect");
+
+    const d = await app().request(`/api/memories/${id}`, { method: "DELETE", headers: { [DEV_USER_HEADER]: ME } }, env);
+    expect(d.status).toBe(204);
+    const left = db.raw.prepare("SELECT id FROM ai_runs ORDER BY id").all() as Array<{ id: string }>;
+    expect(left.map((r) => r.id)).toEqual(["keep-mine", "keep-other", "keep-retro"]);
+  });
+
   // 写真付きの記憶を 1 件作り、R2 にも置く
   const withPhoto = async () => {
     const { id } = await create("写真のある記憶");
@@ -373,9 +391,12 @@ describe("GET / DELETE /api/memories/:id", () => {
     return { id, key, r2 };
   };
 
-  it("F3 エラー時: D1 の削除が失敗したら 500 で、記憶も R2 の写真も残る", async () => {
+  it("F3 エラー時: D1 の削除が失敗したら 500 で、記憶も R2 の写真も ai_runs の記録も残る", async () => {
     const { id, key, r2 } = await withPhoto();
-    // DELETE FROM memories の実行だけを失敗させる（ほかの SQL はそのまま）
+    db.raw.prepare("INSERT INTO ai_runs (id, user_id, memory_id, kind, model, status, created_at) VALUES ('a1', ?, ?, 'facts', 'm', 'succeeded', 'now')").run(ME, id);
+    const runsOf = () => db.raw.prepare("SELECT id FROM ai_runs WHERE memory_id = ? ORDER BY id").all(id);
+    const runsBefore = runsOf();
+    // DELETE FROM memories の実行だけを失敗させる（ほかの SQL はそのまま。batch の中で走る runSync も失敗させる）
     const failing = {
       ...db,
       prepare: (sql: string) => {
@@ -384,12 +405,18 @@ describe("GET / DELETE /api/memories/:id", () => {
         const fail = async () => {
           throw new Error("D1_ERROR: network connection lost");
         };
-        return { ...stmt, bind: () => ({ first: fail, run: fail, all: fail }) };
+        const failSync = () => {
+          throw new Error("D1_ERROR: network connection lost");
+        };
+        return { ...stmt, bind: () => ({ first: fail, run: fail, all: fail, runSync: failSync }) };
       },
     } as unknown as D1Database;
     const d = await app().request(`/api/memories/${id}`, { method: "DELETE", headers: { [DEV_USER_HEADER]: ME } }, { ...env, DB: failing });
     expect(d.status).toBe(500);
     expect(r2.store.has(key)).toBe(true);
+    // 同じ batch（1 トランザクション）なので、先に流した ai_runs の削除も戻る
+    expect(runsOf()).toEqual(runsBefore);
+    expect(runsBefore).toContainEqual({ id: "a1" });
     expect((await app().request(`/api/memories/${id}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(200);
     expect((await app().request(`/api/photos/${key}`, { headers: { [DEV_USER_HEADER]: ME } }, env)).status).toBe(200);
   });

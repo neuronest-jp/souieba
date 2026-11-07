@@ -301,7 +301,7 @@ describe("失敗の静かな扱い", () => {
     expect(runs(memory.id)[0]!.error).toContain("not_configured");
   });
 
-  it("結果が届く前に記憶が消されていたら failed（外部キー）", async () => {
+  it("結果が届く前に記憶が消されていたら、候補は入らず ai_runs の記録も残らない（外部キーで失敗。記録は削除と一緒に消える、原則 5）", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => (release = r));
     const call = fakeCall(async () => {
@@ -314,8 +314,8 @@ describe("失敗の静かな扱い", () => {
     release();
     await ctx.settle();
     expect(db.raw.prepare("SELECT count(*) AS n FROM memory_facts").get()).toEqual({ n: 0 });
-    const run = db.raw.prepare("SELECT status FROM ai_runs WHERE memory_id = ?").get(memory.id) as { status: string };
-    expect(run.status).toBe("failed");
+    // 裏の処理は外部キーで失敗して failed を書こうとするが、記録はもう消えているので何も戻らない
+    expect(db.raw.prepare("SELECT count(*) AS n FROM ai_runs WHERE memory_id = ?").get(memory.id)).toEqual({ n: 0 });
   });
 
   it("古い running（61 秒前）は pending=false として扱う", async () => {

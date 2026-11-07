@@ -368,6 +368,8 @@ describe("S3 の札の手ざわり（ブラッシュアップ 11/7）", () => {
     del.click(0);
     await settle();
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    // 消える札は、この記憶から浮かんだ側も、この記憶が思い出された側も（recalls の両方の外部キーが CASCADE）。片側だけを言わない
+    expect(container.querySelector('[role="dialog"]')!.textContent).toContain("写真も、この記憶につながった「そういえば。」も一緒に消えます。");
     expect(focused()).toBe("BUTTON:やめる");
     button(container, "やめる")!.click(0);
     await settle();
