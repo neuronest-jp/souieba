@@ -1,14 +1,15 @@
 <script setup lang="ts">
 // つながりの一組をひらいたとき（S5 のシート。wireframes 9 節）。DateSheet と同じ、下からのシート（div の role="dialog"、aria-modal）。
-// 上から 見出し「そういえば。」（と封蝋を 1 つ）/ 新しい紙片（全文と「ひらく ›」）/ 大きめの結び（隔たりと 17px の理由）/
-// 昔の紙片（全文と印、「ひらく ›」）/「そうだった」「関係ないかも」/「とじる」。
+// 上から 見出し「そういえば。」（と封蝋を 1 つ）/ 後の日の紙片（全文と「ひらく ›」）/ 大きめの結び（隔たりと 17px の理由）/
+// 前の日の紙片（全文と「ひらく ›」）/「そうだった」「関係ないかも」/「とじる」。上下は起きた日の順（pair.ts の sidesOf）で、
+// 思い出した一文の印と、S3 を札の形（?recall=）で開くリンクは、思い出された側（上下どちらでも）に付ける。
 // シートの地は机と同じ紙（bg-paper）にして、便箋と一筆箋が一覧と同じ紙として見えるようにする（便箋の地 card の上に便箋を置かない）。
 // 開いたら見出しにフォーカスを置く。閉じ方は「とじる」・地を押す・Esc の 3 つで、どれも close を出すだけ（閉じる動きと
 // フォーカスを返すのは ConnectionsScreen）。反応の記録も親が持つ（RecalledByCard と同じ）。
 // 「関係ないかも」にした組は、一筆箋を地の紙に退かせ（.note-quiet）、封蝋を外し、糸をほどく（色だけでなく形で）
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { markEvidence } from "../../connections/excerpt";
-import { gapOf, newDateOf, oldDateOf, stitchOf, type Pair } from "../../connections/pair";
+import { markEvidence, type ExcerptPart } from "../../connections/excerpt";
+import { dateOf, gapOf, sidesOf, stitchOf, type Pair, type Side } from "../../connections/pair";
 import { hrefFor } from "../../composables/useScreen";
 import Seal from "../motifs/Seal.vue";
 import Stitch from "./Stitch.vue";
@@ -21,13 +22,17 @@ const emit = defineEmits<{ react: [feedback: "helpful" | "not_related"]; close: 
 
 const titleId = computed(() => `${props.sheetId}-title`);
 const gapId = computed(() => `${props.sheetId}-gap`);
-const newDate = computed(() => newDateOf(props.pair));
-const oldDate = computed(() => oldDateOf(props.pair));
+const sides = computed(() => sidesOf(props.pair));
+const upperDate = computed(() => dateOf(sides.value.upper));
+const lowerDate = computed(() => dateOf(sides.value.lower));
 const gap = computed(() => gapOf(props.pair));
-const oldParts = computed(() => markEvidence(props.pair.related_memory.body, props.pair.evidence));
-const newHref = computed(() => hrefFor({ name: "memory", id: props.pair.memory.id, from: "connections" }));
-// 昔の側は札から開いた S3 と同じ形（4.2）。その札が本文のすぐ下に反応ボタン付きで出る
-const oldHref = computed(() => hrefFor({ name: "memory", id: props.pair.related_memory.id, from: "connections", recall: props.pair.id }));
+const partsOf = (side: Side): ExcerptPart[] =>
+  side.recalled ? markEvidence(side.memory.body, props.pair.evidence) : [{ text: side.memory.body, hit: false }];
+const upperParts = computed(() => partsOf(sides.value.upper));
+const lowerParts = computed(() => partsOf(sides.value.lower));
+// 思い出された側は札から開いた S3 と同じ形（4.2）。その札が本文のすぐ下に反応ボタン付きで出る
+const hrefOf = (side: Side) =>
+  hrefFor({ name: "memory", id: side.memory.id, from: "connections", ...(side.recalled ? { recall: props.pair.id } : {}) });
 
 // 後ろの画面は ConnectionsScreen が inert にする。シートは body の直下に出す（inert の外）。
 // 文字列の "body" ではなく要素を渡す（テストの最小の DOM は querySelector を持たない）
@@ -90,12 +95,17 @@ onUnmounted(() => {
         </div>
 
         <div class="mt-3.5">
-          <!-- 新しい日: 書いたひとこと（便箋、全文） -->
-          <section class="card relative z-[1] px-5 pt-3.5 pb-0.5" :aria-labelledby="`${sheetId}-new`">
-            <p :id="`${sheetId}-new`" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ newDate }}のひとこと</p>
-            <p class="letter-text mt-1 whitespace-pre-wrap text-ink">{{ pair.memory.body }}</p>
+          <!-- 後の日（便箋、全文） -->
+          <section class="card relative z-[1] px-5 pt-3.5 pb-0.5" :aria-labelledby="`${sheetId}-upper`">
+            <p :id="`${sheetId}-upper`" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ upperDate }}のひとこと</p>
+            <p class="letter-text mt-1 whitespace-pre-wrap text-ink">
+              <template v-for="(part, i) in upperParts" :key="i">
+                <mark v-if="part.hit">{{ part.text }}</mark>
+                <template v-else>{{ part.text }}</template>
+              </template>
+            </p>
             <div class="flex justify-end">
-              <a :href="newHref" class="-mr-1 flex min-h-11 items-center px-1 text-sm tracking-[.06em] text-ink-soft" :aria-label="`${newDate}のひとことをひらく`">ひらく ›</a>
+              <a :href="hrefOf(sides.upper)" class="-mr-1 flex min-h-11 items-center px-1 text-sm tracking-[.06em] text-ink-soft" :aria-label="`${upperDate}のひとことをひらく`">ひらく ›</a>
             </div>
           </section>
           <!-- 大きめの結び: 理由が主役なので 17px -->
@@ -106,17 +116,17 @@ onUnmounted(() => {
               <p class="mt-1 text-[17px] leading-[1.8] text-ink-soft">{{ pair.reason }}</p>
             </div>
           </div>
-          <!-- 昔の日: 思い出したひとこと（一筆箋、全文と印） -->
-          <section class="note z-[1] pt-3.5 pr-5 pb-0.5" :class="pair.feedback === 'not_related' ? 'note-quiet' : ''" :aria-labelledby="`${sheetId}-old`">
-            <p :id="`${sheetId}-old`" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ oldDate }}のひとこと</p>
+          <!-- 前の日（一筆箋、全文） -->
+          <section class="note z-[1] pt-3.5 pr-5 pb-0.5" :class="pair.feedback === 'not_related' ? 'note-quiet' : ''" :aria-labelledby="`${sheetId}-lower`">
+            <p :id="`${sheetId}-lower`" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ lowerDate }}のひとこと</p>
             <p class="letter-text mt-1 whitespace-pre-wrap text-ink">
-              <template v-for="(part, i) in oldParts" :key="i">
+              <template v-for="(part, i) in lowerParts" :key="i">
                 <mark v-if="part.hit">{{ part.text }}</mark>
                 <template v-else>{{ part.text }}</template>
               </template>
             </p>
             <div class="flex justify-end">
-              <a :href="oldHref" class="-mr-1 flex min-h-11 items-center px-1 text-sm tracking-[.06em] text-ink-soft" :aria-label="`${oldDate}のひとことをひらく`">ひらく ›</a>
+              <a :href="hrefOf(sides.lower)" class="-mr-1 flex min-h-11 items-center px-1 text-sm tracking-[.06em] text-ink-soft" :aria-label="`${lowerDate}のひとことをひらく`">ひらく ›</a>
             </div>
           </section>
         </div>

@@ -104,11 +104,38 @@ describe("S5 つながりの一覧", () => {
     const { container, errors } = await open([]);
     expect(byTag(container, "H1").map((el) => el.textContent)).toEqual(["つながり"]);
     expect(container.textContent).toContain("まだ、つながっていません。");
-    expect(container.textContent).not.toContain("書いたひとことと、そのとき浮かんだ昔のひとこと");
+    expect(container.textContent).not.toContain("そういえば、で結ばれたふたつの日");
     const link = container.querySelector('a[href="#today"]');
     expect(link?.textContent).toBe("きょうのひとことから");
     expect(byTag(container, "OL")).toEqual([]);
     expect(byTag(container, "FIGURE")).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+
+  it("昔のことを書いて、後の日の記憶を思い出した組は、起きた日の順に上下を入れ替える（印と札の形のリンクは思い出された側に付いたまま）", async () => {
+    // 11/7 実機: 2019 年の引っ越しを書き、2026 年 7 月の冷蔵庫を思い出した組が、上に 2019 年・「7年3か月あとの」と逆に見えた
+    const flipped = pair("r9", {
+      evidence: "冷蔵庫が壊れた。",
+      memory: { id: "moved", body: "アパートに引っ越した。家電を買った。", happened_on: "2019-04-07", happened_on_precision: "day", photo_key: null },
+      related_memory: { id: "fridge", body: "冷蔵庫が壊れた。新しいのを注文したけど、届くのは来週。", happened_on: "2025-07-19", happened_on_precision: "day", photo_key: null },
+    });
+    const { container, errors } = await open([flipped]);
+    const row = rowOf(container, "r9")!;
+    const article = row.querySelector("article")!;
+    const label = row.findAll((el) => el.getAttribute("id") === article.getAttribute("aria-labelledby"))[0];
+    expect(label?.textContent).toBe("2025年7月19日のひとこと");
+    expect(row.textContent).toContain("6年3か月まえの、あのとき");
+    expect(row.textContent).not.toContain("あとの");
+    // 印は上の紙片（思い出された側）に付く
+    const upper = row.findAll((el) => el.hasClass("card"))[0]!;
+    expect(upper.findAll((el) => el.tagName === "MARK").map((el) => el.textContent)).toEqual(["冷蔵庫が壊れた。"]);
+    expect(row.findAll((el) => el.hasClass("note"))[0]!.findAll((el) => el.tagName === "MARK")).toEqual([]);
+    expect(openButtonOf(container, "r9").getAttribute("aria-label")).toBe("ひらく、2025年7月19日と2019年4月7日のつながり");
+    // シート: 上の「ひらく ›」が札の形（?recall=）、下は書いた方の S3
+    openButtonOf(container, "r9").click();
+    await settle();
+    const links = dialog()!.findAll((el) => el.tagName === "A").map((el) => el.getAttribute("href"));
+    expect(links).toEqual(["#memory/fridge?from=connections&recall=r9", "#memory/moved?from=connections"]);
     expect(errors).toEqual([]);
   });
 
@@ -130,7 +157,7 @@ describe("S5 つながりの一覧", () => {
 
   it("1 組: 新しい日付 → 本文 → 隔たり → 理由 → 昔の日付 → 本文（引用は mark）→ ひらく の順。帯は図として読み上げから外し、弧は 1 本", async () => {
     const { container, errors } = await open([pair("r1")]);
-    expect(container.textContent).toContain("書いたひとことと、そのとき浮かんだ昔のひとこと");
+    expect(container.textContent).toContain("そういえば、で結ばれたふたつの日");
     const ol = container.querySelector("ol")!;
     expect(ol.getAttribute("role")).toBe("list");
     expect(ol.getAttribute("aria-label")).toBe("つながりの一覧");

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// S5 つながり（「ふたつの日」。ADR-0009、wireframes 9 節）。書いたひとことと、そのとき浮かんだ昔のひとことを一組にして、新しい順に並べる。
+// S5 つながり（「ふたつの日」。ADR-0009、wireframes 9 節）。「そういえば。」の札の両端（書いたひとことと、そのとき浮かんだひとこと）を一組にし、
+// 札の新しい順に並べる。組の中の上下は起きた日の順（上 = 後の日）。
 // 上端の糸の帯（ThreadLoom）で、いつといつが結ばれたかを一目で見せる（読み上げは下の一覧が受け持つ）。
 // 一組を押すとシート（PairSheet）が開き、そこで「そうだった」「関係ないかも」を返せる（S3 の札と同じ PATCH /api/recalls/:id）。
 // App.vue の KeepAlive で残すので、S3 を開いて戻っても位置はそのまま。戻ったときは裏で取り直して入れ替えるだけで動かさない。
@@ -216,7 +217,7 @@ useMemoryDeleted((id) => {
     <header class="rule-double pb-3">
       <h1 ref="heading" class="text-[24px] tracking-[.04em] [font-feature-settings:'palt'] focus:outline-none">つながり</h1>
       <p v-if="state === 'ready' && visible.length > 0" class="mt-0.5 text-sm leading-[1.7] tracking-[.02em] text-ink-soft">
-        書いたひとことと、そのとき浮かんだ昔のひとこと
+        そういえば、で結ばれたふたつの日
       </p>
     </header>
 

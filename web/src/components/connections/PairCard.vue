@@ -1,23 +1,30 @@
 <script setup lang="ts">
-// つながりの一組（S5。wireframes 9 節）。上に新しい日の紙片、下に昔の日の紙片を置き、あいだを一本の糸と
-// 「2年5か月まえの、あのとき」、つながった理由で結ぶ。読む順は見た目と同じ（新しい日付 → 本文 → 隔たり → 理由 → 昔の日付 → 本文 → そうだった → ひらく）。
-// 紙は「便箋と押し葉」（ADR-0010）の言葉: 書いたひとことは便箋（.card）、思い出した昔のひとことは一筆箋（.note の朱の二重罫。
-// 封蝋は一覧では付けない）。どちらも本文は罫の上の明朝で、昔の側は思い出した一文（evidence）に蛍光ペンの印（mark）を引く。
+// つながりの一組（S5。wireframes 9 節）。上に後の日の紙片、下に前の日の紙片を置き（起きた日の順。書いた順ではない。pair.ts の sidesOf）、
+// あいだを一本の糸と「2年5か月まえの、あのとき」、つながった理由で結ぶ。読む順は見た目と同じ（上の日付 → 本文 → 隔たり → 理由 → 下の日付 → 本文 → そうだった → ひらく）。
+// 紙は「便箋と押し葉」（ADR-0010）の言葉: 上は便箋（.card）、下は一筆箋（.note の朱の二重罫。封蝋は一覧では付けない）。
+// どちらも本文は罫の上の明朝。思い出された側（上下どちらでも）は、思い出した一文（evidence）に蛍光ペンの印（mark）を引く。
 // 「ひらく ›」の ::after を組いっぱいに広げ、組のどこを押してもシート（PairSheet）が開く（RecallCard と同じ作り）
 import { computed } from "vue";
-import { markEvidence } from "../../connections/excerpt";
-import { gapOf, newDateOf, oldDateOf, stitchOf, type Pair } from "../../connections/pair";
+import { markEvidence, type ExcerptPart } from "../../connections/excerpt";
+import { dateOf, gapOf, sidesOf, stitchOf, type Pair, type Side } from "../../connections/pair";
 import Stitch from "./Stitch.vue";
 
 const props = defineProps<{ pair: Pair; swing: 0 | 1; sheetId: string }>();
 const emit = defineEmits<{ open: [id: string] }>();
 
-const newDate = computed(() => newDateOf(props.pair));
-const oldDate = computed(() => oldDateOf(props.pair));
+const sides = computed(() => sidesOf(props.pair));
+const upperDate = computed(() => dateOf(sides.value.upper));
+const lowerDate = computed(() => dateOf(sides.value.lower));
 const gap = computed(() => gapOf(props.pair));
-// 一覧では、80 字を超える昔の本文は引用の前後 24 字だけにする（4 行で切る前に、印が見える所まで寄せる）
-const oldParts = computed(() => markEvidence(props.pair.related_memory.body, props.pair.evidence, { limit: 80, context: 24 }));
-const labelId = computed(() => `pair-${props.pair.id}-new`);
+// 一覧では、80 字を超える思い出された側の本文は引用の前後 24 字だけにする（行で切る前に、印が見える所まで寄せる）。
+// 書いた側は本文のまま（印は無い）
+const partsOf = (side: Side): ExcerptPart[] =>
+  side.recalled ? markEvidence(side.memory.body, props.pair.evidence, { limit: 80, context: 24 }) : [{ text: side.memory.body, hit: false }];
+const upperParts = computed(() => partsOf(sides.value.upper));
+const lowerParts = computed(() => partsOf(sides.value.lower));
+// 思い出された側は印が見えるよう 4 行まで、書いた側は 2 行まで
+const clampOf = (side: Side) => (side.recalled ? "line-clamp-4" : "line-clamp-2");
+const labelId = computed(() => `pair-${props.pair.id}-upper`);
 </script>
 
 <template>
@@ -25,10 +32,15 @@ const labelId = computed(() => `pair-${props.pair.id}-new`);
     class="relative rounded-card has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[6px] has-[:focus-visible]:outline-ember"
     :aria-labelledby="labelId"
   >
-    <!-- 新しい日: 書いたひとこと（便箋） -->
+    <!-- 後の日（便箋） -->
     <div class="card relative z-[1] px-5 pt-3 pb-3.5">
-      <p :id="labelId" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ newDate }}のひとこと</p>
-      <p class="letter-text mt-1 line-clamp-2 text-ink">{{ pair.memory.body }}</p>
+      <p :id="labelId" class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ upperDate }}のひとこと</p>
+      <p class="letter-text mt-1 text-ink" :class="clampOf(sides.upper)">
+        <template v-for="(part, i) in upperParts" :key="i">
+          <mark v-if="part.hit">{{ part.text }}</mark>
+          <template v-else>{{ part.text }}</template>
+        </template>
+      </p>
     </div>
     <!-- 結び: 左に糸（読み上げない）、右に隔たりと理由（本物の文字） -->
     <div class="relative grid min-h-[88px] grid-cols-[56px_1fr] pt-[13px] pr-0.5 pb-[15px]">
@@ -38,11 +50,11 @@ const labelId = computed(() => `pair-${props.pair.id}-new`);
         <p class="mt-[3px] line-clamp-3 text-sm leading-[1.7] text-ink-soft">{{ pair.reason }}</p>
       </div>
     </div>
-    <!-- 昔の日: 思い出したひとこと（一筆箋）。思い出した一文に印 -->
+    <!-- 前の日（一筆箋） -->
     <div class="note z-[1] pt-3 pr-5 pb-3.5">
-      <p class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ oldDate }}のひとこと</p>
-      <p class="letter-text mt-1 line-clamp-4 text-ink">
-        <template v-for="(part, i) in oldParts" :key="i">
+      <p class="text-sm leading-[1.6] tracking-[.02em] text-ink-soft">{{ lowerDate }}のひとこと</p>
+      <p class="letter-text mt-1 text-ink" :class="clampOf(sides.lower)">
+        <template v-for="(part, i) in lowerParts" :key="i">
           <mark v-if="part.hit">{{ part.text }}</mark>
           <template v-else>{{ part.text }}</template>
         </template>
@@ -77,7 +89,7 @@ const labelId = computed(() => `pair-${props.pair.id}-new`);
         class="ml-auto flex min-h-11 items-center pr-0.5 pl-3 text-sm tracking-[.06em] text-ink-soft after:absolute after:inset-0 after:z-[3] after:rounded-card focus-visible:outline-none"
         aria-haspopup="dialog"
         :aria-controls="sheetId"
-        :aria-label="`ひらく、${newDate}と${oldDate}のつながり`"
+        :aria-label="`ひらく、${upperDate}と${lowerDate}のつながり`"
         @click="emit('open', pair.id)"
       >ひらく ›</button>
     </div>

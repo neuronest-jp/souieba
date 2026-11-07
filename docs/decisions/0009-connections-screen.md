@@ -37,15 +37,15 @@
 
 | 見本 | 実装 |
 |---|---|
-| 新しい日の紙片（card、角丸 16） | 便箋 `.card`（角丸 `radius-card` 14px）。本文は罫の上の明朝（`letter-text`）。自分の言葉なので朱罫を引く |
-| 昔の日の紙片（同じ card） | 一筆箋 `.note`（`bg-letter`、`border-note-edge`、角丸 `radius-note` 8px、`shadow-note`、左の朱の二重罫）。本文は罫の上の明朝。封蝋は一覧では付けない（組の数だけ並ぶと多すぎる） |
+| 新しい日の紙片（card、角丸 16） | 上（後の日）の紙片は便箋 `.card`（角丸 `radius-card` 14px）。本文は罫の上の明朝（`letter-text`）。自分の言葉なので朱罫を引く |
+| 昔の日の紙片（同じ card） | 下（前の日）の紙片は一筆箋 `.note`（`bg-letter`、`border-note-edge`、角丸 `radius-note` 8px、`shadow-note`、左の朱の二重罫）。本文は罫の上の明朝。封蝋は一覧では付けない（組の数だけ並ぶと多すぎる） |
 | `evidence` の `<mark>`（ember-soft、角丸 4） | S3 と同じ蛍光ペンの `mark`（`style.css`） |
 | 糸（ember の実線と破線） | 同じ ember。確かめる前は **しつけ糸**（破線と中空の結び目）、「そうだった」で **本縫い**（実線と塗った結び目）、「関係ないかも」は **ほどけた糸**（`line-strong` の破線。見本の `line` は地の上で見えにくい）。状態は `data-stitch` |
 | 結び目の 2.5px のふち（card） | その紙の色（上は便箋の `card`、下は一筆箋の `letter`、退いたら `paper`）。糸が紙に通っているように見せる |
 | 「✓ そうだった」（moss-soft + moss の縁） | A の判（`border-moss-deep` + `bg-moss-soft` + `shadow-stamp` の二重の輪と ✓ の線画。S3 の「✓ そう」と同じ形） |
 | 見出し h1（Zen Maru 22px） | 他の画面と同じ 24px の `font-display`。見出しと添え書きの下に S2 と同じ天の二重罫（`rule-double`） |
 | シート（`bg-card` の上に `bg-paper` の紙片） | シートの地を机と同じ紙（`bg-paper` + 手ざわり）にし、便箋と一筆箋を一覧と同じ紙として載せる（便箋の地の上に便箋を置くと紙に見えない）。見出し「そういえば。」の右に封蝋を 1 つだけ置き、「関係ないかも」にしたら外す（RecalledByCard と同じ） |
-| 「関係ないかも」の昔の紙片 | `.note-quiet`（地の紙に退き、二重罫が `line` に）。文字は薄くしない |
+| 「関係ないかも」の下の紙片 | `.note-quiet`（地の紙に退き、二重罫が `line` に）。文字は薄くしない |
 
 新しい色は足していない（`@theme` のトークンだけ）。糸と帯の状態の CSS は `style.css` の「S5 つながり」の節にまとめた。
 
@@ -95,3 +95,15 @@
 - `worker/src/routes/connections.ts`、`worker/src/db/recalls.ts`、`worker/src/index.ts`（土台のコミット ad64896）
 - `docs/wireframes.md`（0 節、第9節 S5、6 節、7 節、第8節 #28）、`docs/architecture.md`（5.14、7.1）。`docs/spec.md` は元の仕様なので変えず、この ADR で変更を記録する
 - テスト: `web/test/ConnectionsScreen.dom.test.ts`、`web/test/excerpt.test.ts`、`web/test/loom.test.ts`、`web/test/date.test.ts`（`gapPhrase`）、`worker/test/connections.test.ts`、`useScreen*.test.ts` の追従
+
+## 追記: 組の上下は起きた日の順（11/7、実機）
+
+開発者が 2019 年の引っ越しを今日書き、2026 年 7 月の「冷蔵庫が壊れた」が思い出された。見本と最初の実装は「上 = 書いた方、下 = 思い出した方」だったので、上に 2019 年・下に 2026 年が来て「7年3か月あとの、あのとき」と出た。開発者の言葉は「なんかつながり逆になってない？」。
+
+見本は「思い出した方はいつも昔の日」と考えていたが、昔のことを後から書くと逆になる。そこで次のように変えた（`web/src/connections/pair.ts` の `sidesOf`）。
+- 上下は起きた日の順（上 = 後の日、下 = 前の日）。隔たりはいつも「〜まえの」か「おなじ〜の」になる
+- どちらかが「いつだったか」か、同じ日・同じころなら、書いた方を上に置く
+- 紙は位置で決める（上は便箋、下は一筆箋）。思い出した一文の印と、S3 を札の形（`?recall=`）で開くリンクは、上下ではなく思い出された側に付ける
+- 添え書きを「書いたひとことと、そのとき浮かんだ昔のひとこと」から「そういえば、で結ばれたふたつの日」に変えた（思い出された方が昔とは限らないため）
+- 組の並び（札の新しい順）と帯の弧（日付の位置で決まり、向きを持たない）は変えない
+
