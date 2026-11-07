@@ -16,7 +16,20 @@ const run = (fn: () => Promise<void>): void => {
 export const tap = (): void => run(() => Haptics.impact({ style: ImpactStyle.Light }));
 
 /** 選ぶものを切り替えたとき（下部ナビ、日付の精度など） */
-export const select = (): void => run(() => Haptics.selectionChanged());
+// @capacitor/haptics 8.0.2 の iOS は、selectionStart で作る UISelectionFeedbackGenerator が無いと
+// selectionChanged が何もしない（Haptics.swift。Promise は成功で終わるので、黙って鳴らない）。Android も
+// selectionStarted の旗で同じ形。そこで呼ぶたびに selectionStart → selectionChanged の順に呼ぶ:
+// - selectionStart は呼ぶたびに generator を作り直すだけなので軽い。起動時に一度だけ作って持ち続ける形
+//   （setupNative で呼ぶ）は、main.ts が待たずに走らせるので最初の 1 回に間に合う保証が無く、
+//   間に合わなければ同じく黙って鳴らない。プラグインの中の generator が残り続けることにも頼らずに済む
+// - どちらのメソッドも、直列の bridge の queue から main queue へ積む順で動く。await で並べれば、
+//   generator ができてから selectionChanged が動く。selectionStart が失敗したら selectionChanged は呼ばない
+// - selectionEnd は呼ばない（次の selectionStart が generator を置き換える）
+export const select = (): void =>
+  run(async () => {
+    await Haptics.selectionStart();
+    await Haptics.selectionChanged();
+  });
 
 /** 判を押したとき（候補を「そう」と確かめた、札に「そうだった」と返した） */
 export const stamp = (): void => run(() => Haptics.impact({ style: ImpactStyle.Medium }));

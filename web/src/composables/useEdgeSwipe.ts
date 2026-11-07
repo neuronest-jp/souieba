@@ -1,7 +1,8 @@
 // S3 を左端からなぞって戻る（iPhone の戻る手ざわり。ブラッシュアップ 11/7、motion の受け持ち）。
 //   - 画面の左端 edge px の中で触れ、横へ（右へ）動いたときだけ拾う。縦が先なら縦のスクロールに任せる（取り合わない）
 //   - 拾ったら S3 の紙が指に付いて右へ動く（下には机の地が見える。前の画面は KeepAlive に仕舞われていて、ここでは描けない）
-//   - 離した位置と速さ（swipeDecision）で、戻るか元に戻るかを決める。戻るときは select の触覚を鳴らし、紙は指の位置から右へ出ていく
+//   - 離した位置と速さ（swipeDecision）で、戻るか元に戻るかを決める。戻るときは select の触覚を鳴らし、紙は指の位置から右へ出ていく。
+//     速さは離したときのもの（払ってから指を止めて離したら、迷って止めたとみなして戻らない）
 //   - 動きを減らす設定では紙を動かさず、reduceCommit px 右へなぞった時点で、すぐに戻る
 // 紙の地と左の影は style.css の main[data-dragging]（画面の移り変わりの紙と同じ）
 import { onMounted, onUnmounted, type Ref } from "vue";
@@ -102,7 +103,8 @@ export function useEdgeSwipe(target: Ref<HTMLElement | null>, opts: { onBack: ()
     el.style.transform = `translate3d(${Math.max(0, dx)}px, 0, 0)`;
   };
 
-  const onEnd = () => {
+  // e は touchend / touchcancel。timeStamp で離したときの速さを出す（無ければ最後の touchmove までの速さ）
+  const onEnd = (e?: TouchEvent) => {
     const el = target.value;
     const from = start;
     const was = mode;
@@ -111,7 +113,7 @@ export function useEdgeSwipe(target: Ref<HTMLElement | null>, opts: { onBack: ()
     if (was !== "drag" || !el || !from) return;
     const dx = (samples[samples.length - 1]?.v ?? from.x) - from.x;
     const width = typeof window !== "undefined" ? window.innerWidth : el.offsetWidth;
-    if (swipeDecision({ dx, vx: velocityOf(samples), width }) === "back") commit(el);
+    if (swipeDecision({ dx, vx: velocityOf(samples, e?.timeStamp), width }) === "back") commit(el);
     else cancel(el);
   };
 

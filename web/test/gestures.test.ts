@@ -1,12 +1,20 @@
 // なぞりの決め方（S3 の左端から戻る / シートを下へ閉じる）と、画面の移り変わりで離れていく画面の留め方。
 // 指の動きそのものと見た目は headless Chrome（タッチの再現）と iPhone の実機で確かめる。ここは決め方の数だけを固定する
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SWIPE, swipeDecision } from "../src/composables/useEdgeSwipe";
+import { defineComponent, h, ref } from "vue";
+import { SWIPE, swipeDecision, useEdgeSwipe } from "../src/composables/useEdgeSwipe";
 import { SHEET, sheetDecision, velocityOf } from "../src/composables/useSheetDrag";
 import { pinLeaving, prefersMotion, unpinLeaving } from "../src/motion";
+import { mount, resetFakeDocument } from "./fakeDom";
+
+// 触覚は鳴らした回数だけを見る（motion.ts が読む arrive も置いておく）
+const { haptic } = vi.hoisted(() => ({ haptic: { select: vi.fn(), arrive: vi.fn() } }));
+vi.mock("../src/haptics", () => haptic);
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.useRealTimers();
+  haptic.select.mockClear();
 });
 
 describe("S3 の左端からなぞって戻る（swipeDecision）", () => {
@@ -48,6 +56,71 @@ describe("指の速さ（velocityOf）", () => {
     expect(velocityOf([{ t: 0, v: 10 }])).toBe(0);
     // 0ms〜200ms はゆっくり、最後の 80ms で 80px 動いた
     expect(velocityOf([{ t: 0, v: 0 }, { t: 120, v: 20 }, { t: 160, v: 60 }, { t: 200, v: 100 }])).toBeCloseTo(80 / 80);
+  });
+  it("離した時刻が最後の記録から 80ms より後なら、指は止まっていたので 0（iPhone は止まっている間 touchmove を出さない）", () => {
+    const samples = [{ t: 0, v: 0 }, { t: 120, v: 20 }, { t: 160, v: 60 }, { t: 200, v: 100 }];
+    expect(velocityOf(samples, 200 + 81)).toBe(0);
+    expect(velocityOf(samples, 200 + 80)).toBeCloseTo(1);
+    expect(velocityOf(samples, undefined)).toBeCloseTo(1); // 離した時刻の分からないとき（timeStamp の無いイベント）は今までどおり
+  });
+});
+
+describe("useEdgeSwipe（左端からなぞって戻る。指の動きを最小の要素で再現）", () => {
+  type Handler = (e: unknown) => void;
+  const setup = async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }), innerWidth: 402 });
+    const handlers: Record<string, Handler> = {};
+    vi.stubGlobal("document", { addEventListener: (type: string, fn: Handler) => void (handlers[type] = fn), removeEventListener: vi.fn() });
+    const attrs = new Map<string, string>();
+    const el = {
+      style: {} as Record<string, string>,
+      offsetWidth: 402,
+      isConnected: true,
+      setAttribute: (k: string, v: string) => void attrs.set(k, v),
+      removeAttribute: (k: string) => void attrs.delete(k),
+      hasAttribute: (k: string) => attrs.has(k),
+    };
+    const onBack = vi.fn();
+    resetFakeDocument();
+    const target = ref<HTMLElement | null>(el as unknown as HTMLElement);
+    const { unmount } = mount(
+      defineComponent({
+        setup() {
+          useEdgeSwipe(target, { onBack });
+          return () => h("div");
+        },
+      }),
+    );
+    return { handlers, el, onBack, unmount };
+  };
+  const touch = (x: number, t: number) => ({ touches: [{ clientX: x, clientY: 400 }], timeStamp: t, cancelable: true, preventDefault: vi.fn() });
+  // 左端（x=5）から 48ms で 60px 右へ速く払う
+  const flick = (handlers: Record<string, Handler>) => {
+    handlers.touchstart!(touch(5, 0));
+    handlers.touchmove!(touch(20, 16));
+    handlers.touchmove!(touch(40, 32));
+    handlers.touchmove!(touch(65, 48));
+  };
+
+  it("速く払ってすぐ離せば、短くても戻る", async () => {
+    const { handlers, el, onBack, unmount } = await setup();
+    flick(handlers);
+    expect(el.style.transform).toBe("translate3d(60px, 0, 0)");
+    handlers.touchend!({ timeStamp: 56 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(haptic.select).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("速く払ってから 200ms 止めて離したら、迷って止めたとみなして戻らない（元の位置へ戻す）", async () => {
+    const { handlers, el, onBack, unmount } = await setup();
+    flick(handlers);
+    handlers.touchend!({ timeStamp: 48 + 200 });
+    expect(onBack).not.toHaveBeenCalled();
+    expect(haptic.select).not.toHaveBeenCalled();
+    expect(el.style.transform).toBe("");
+    unmount();
   });
 });
 
@@ -175,5 +248,78 @@ describe("useSheetDrag（指の動きを最小の要素で再現）", () => {
     vi.advanceTimersByTime(300);
     expect(onClose).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+
+  // 掴み手から 48ms で 48px 下へ速く払う（離したときの下げ幅は 40px。高さ 260px の 30% には届かない）
+  const flickDown = (handlers: Record<string, Handler>, el: unknown) => {
+    handlers.touchstart!(touch(600, 0, el));
+    handlers.touchmove!(touch(616, 16, el));
+    handlers.touchmove!(touch(632, 32, el));
+    handlers.touchmove!(touch(648, 48, el));
+  };
+  const setupSheet = async (reduce: boolean) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: reduce }) });
+    const { nextTick } = await import("vue");
+    const { useSheetDrag } = await import("../src/composables/useSheetDrag");
+    const onClose = vi.fn();
+    const { panel, backdrop } = useSheetDrag({ onClose });
+    const { el, handlers } = fakePanel();
+    const bd = { style: {} as Record<string, string> };
+    backdrop.value = bd as unknown as HTMLElement;
+    panel.value = el as unknown as HTMLElement;
+    await nextTick();
+    return { el, bd, handlers, onClose };
+  };
+
+  it("下へ速く払ってすぐ離せば、短くても閉じる", async () => {
+    const { el, handlers, onClose } = await setupSheet(false);
+    flickDown(handlers, el);
+    expect(el.style.transform).toBe("translate3d(0, 40px, 0)");
+    handlers.touchend!({ timeStamp: 56 });
+    expect(el.style.transform).toBe("translate3d(0, calc(100% + 24px), 0)");
+    vi.advanceTimersByTime(300);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("下へ速く払ってから 200ms 止めて離したら、閉じずに戻す", async () => {
+    const { el, handlers, onClose } = await setupSheet(false);
+    flickDown(handlers, el);
+    handlers.touchend!({ timeStamp: 48 + 200 });
+    expect(el.style.transform).toBe("");
+    vi.advanceTimersByTime(1000);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("動きを減らす設定では、なぞっても紙と地は指に付いてこず、下へ一定の距離を越えた時点で待たずに 1 回閉じる", async () => {
+    const { el, bd, handlers, onClose } = await setupSheet(true);
+    handlers.touchstart!(touch(600, 0, el));
+    handlers.touchmove!(touch(620, 16, el));
+    handlers.touchmove!(touch(600 + SHEET.reduceCommit, 32, el));
+    expect(el.style.transform ?? "").toBe("");
+    expect(el.style.transition ?? "").toBe("");
+    expect(bd.style.opacity ?? "").toBe("");
+    expect(onClose).not.toHaveBeenCalled();
+    handlers.touchmove!(touch(600 + SHEET.reduceCommit + 1, 48, el));
+    expect(onClose).toHaveBeenCalledTimes(1); // タイマーを進めなくても閉じている
+    handlers.touchmove!(touch(720, 64, el));
+    handlers.touchend!({ timeStamp: 72 });
+    vi.advanceTimersByTime(1000);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(el.style.transform ?? "").toBe("");
+  });
+
+  it("動きを減らす設定で少しだけなぞって離したら、ばねで戻さず、inline の動きを残さない", async () => {
+    const { el, bd, handlers, onClose } = await setupSheet(true);
+    // ゆっくり 30px（閾値の手前）
+    handlers.touchstart!(touch(600, 0, el));
+    handlers.touchmove!(touch(615, 150, el));
+    handlers.touchmove!(touch(630, 300, el));
+    expect(el.style.transform ?? "").toBe("");
+    handlers.touchend!({ timeStamp: 310 });
+    for (const k of ["transform", "transition"]) expect(el.style[k] ?? "").toBe("");
+    for (const k of ["opacity", "transition"]) expect(bd.style[k] ?? "").toBe("");
+    vi.advanceTimersByTime(1000);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
