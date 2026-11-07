@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "./styles/platform.css";
+@import "./styles/today.css";
+@import "./styles/season.css";
 
 /* デザイン基盤（docs/decisions/0004-design-foundation.md）と、11/7 に選んだ「便箋と押し葉」（docs/decisions/0010-letter-design.md）。
    コンポーネントは色を直書きしない。手ざわりの data URI の %23 の色は、検査（check:words）の対象外のこのファイルにだけ置く */
