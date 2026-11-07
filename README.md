@@ -10,13 +10,13 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 
 | 書く | そういえば。 | つながり |
 |---|---|---|
-| <img src="docs/images/today.jpg" width="220" alt="書く画面。1年まえの、きょうのころ（そらがつかまり立ちした）と、このごろの押し葉"> | <img src="docs/images/recall.jpg" width="220" alt="保存すると浮かんだ「そういえば。」の札。2024年12月24日の「みさきに紺色の毛糸の手袋をあげた。前になくしたと言っていたのと同じ色。」の引用"> | <img src="docs/images/connections.jpg" width="220" alt="つながり。上の糸の帯に 50 の組、下に干し柿のお礼と 2 年 1 か月まえの新米の日を結んだ組"> |
+| <img src="docs/images/today.jpg" width="220" alt="書く画面。1年まえの、きょうのころ（そらがつかまり立ちした）と、このごろの押し葉"> | <img src="docs/images/recall.jpg" width="220" alt="保存すると浮かんだ「そういえば。」の札。2024年12月24日の「みさきに紺色の毛糸の手袋をあげた。前になくしたと言っていたのと同じ色。」の引用"> | <img src="docs/images/connections.jpg" width="220" alt="つながり。一覧を縦に送っても糸の帯が上に残り、いま読んでいる枝豆の日と 11 か月まえの離乳食の日を結ぶ糸だけが濃く浮かぶ"> |
 
 | 年月でたどる | ことばの地図 | ことばを押すと |
 |---|---|---|
 | <img src="docs/images/past.jpg" width="220" alt="これまで。2023年11月へたどり、年月の札が左上に浮かぶ"> | <img src="docs/images/words.jpg" width="220" alt="ことばの地図。年を縦に並べ、年ごとの言葉と、年をまたぐ言葉を細い糸で結ぶ"> | <img src="docs/images/words-sheet.jpg" width="220" alt="「展望台」を押すと、2020年・2021年・2023年の一文が原文のまま並ぶ"> |
 
-写っているのは撮影用の架空のデータ（demo/fixtures/story.sql）。iPhone 17 の Simulator で撮った。
+写っているのは撮影用の架空のデータ（demo/fixtures/story.sql）。iPhone 17 の Simulator で撮った（つながりだけは iPhone 16 Pro の実機で撮り、上の時計の帯をほかの写しとそろえた）。
 
 > **In English** — *Souieba* ("Oh, that reminds me.") is an iPhone app for keeping one line and one photo about your day.
 > When you write something new, Claude reads your own past entries and brings back at most three that are truly related, each with the reason and a verbatim quote of what you wrote back then.
