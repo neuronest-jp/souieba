@@ -2,6 +2,7 @@
 @import "./styles/platform.css";
 @import "./styles/today.css";
 @import "./styles/season.css";
+@import "./styles/connections.css";
 
 /* デザイン基盤（docs/decisions/0004-design-foundation.md）と、11/7 に選んだ「便箋と押し葉」（docs/decisions/0010-letter-design.md）。
    コンポーネントは色を直書きしない。手ざわりの data URI の %23 の色は、検査（check:words）の対象外のこのファイルにだけ置く */
@@ -62,6 +63,15 @@
   --drop-shadow-wax: 0 1.5px 1px rgb(100 40 20 / 0.28); /* 封蝋と栞の落ち影 */
 
   --ease-gentle: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* 動きの共通の約束（ブラッシュアップ 11/7、ADR-0011）。どの受け持ちもこの名前で速さと曲線をそろえる。
+     動かすのは transform と opacity だけ（iPhone で 60fps を保つ）。prefers-reduced-motion: reduce では動きを止めて状態だけ切り替える
+     - ease-spring: 少し行きすぎて戻る（シート、届いた札、判）。ease-out-soft: すっと止まる（画面の出入り、一覧が現れる）
+     - 速さ: quick 160ms（押したときの沈み）、base 280ms（画面の出入り、切り替え）、slow 460ms（シート、届く動き） */
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-quick: 160ms;
+  --duration-base: 280ms;
+  --duration-slow: 460ms;
 }
 
 /* 手ざわり（その場で書いた SVG。画像素材なし）。粒は feTurbulence を 220px、繊維は二次曲線 18 本を 360px で繰り返す */
@@ -593,3 +603,22 @@
     }
   }
 }
+
+/* 押したときの沈み（ブラッシュアップ 11/7、ADR-0011）。カード・行・ボタンは class="press" を付けるだけでそろう。
+   指が触れている間だけ 0.97 に沈め、離すとばねで戻る。動きを減らす設定では沈めない（色の変化も付けない） */
+@utility press {
+  transition: transform var(--duration-base) var(--ease-spring);
+  -webkit-tap-highlight-color: transparent;
+  &:active {
+    transform: scale(0.97);
+    transition-duration: var(--duration-quick);
+    transition-timing-function: var(--ease-out-soft);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+    &:active {
+      transform: none;
+    }
+  }
+}
+
