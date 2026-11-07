@@ -1,1 +1,44 @@
 /* season の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ */
+
+/* 季節の押し葉と封蝋（components/motifs）、時間帯の地の紙の色。Tailwind v4 は @import した CSS の @theme も読むので、
+   ここに書いたトークンは fill-sakura、stroke-momiji-deep のような class でも使える。
+   押し葉の色は押し花らしく、明るさを地に近く・彩度を低く保つ（文字の横に置く飾りで、文字の後ろには敷かない） */
+@theme {
+  /* 春: 桜の小枝（花びらの面と、縁・花の芯） */
+  --color-sakura: #eed5d0;
+  --color-sakura-deep: #bc8a84;
+  /* 春と冬の枝 */
+  --color-bark: #9f8877;
+  /* 夏: 青もみじの面（縁と葉脈は moss） */
+  --color-aomomiji: #d2dfc4;
+  /* 秋: 紅葉の面と、縁・葉脈・葉柄 */
+  --color-momiji: #e4b5a0;
+  --color-momiji-deep: #a9644e;
+  /* 冬: 南天の実と、そのふち（葉は leaf と moss） */
+  --color-nanten: #c77b6f;
+  --color-nanten-deep: #97493f;
+
+  /* 地の紙（paper）の時間帯の色。夕方は夕焼けの色（少し赤み）に、夜は灯りのクリーム色に、ほんの少し寄せる
+     （OKLab の差 ×100 で 夕方 0.84 / 夜 1.62）。色相だけを動かし、相対輝度は #FAF5EC と同じか 0.1% 明るい側にそろえたので、
+     地の上の文字のコントラスト比は朝・昼から下がらない（ink 11.52、ink-soft 5.89、ember-ink 4.28、moss-deep 4.53 のまま）。
+     day は朝と昼の地（= paper の既定、スプラッシュの絵の地） */
+  --color-paper-day: #faf5ec;
+  --color-paper-evening: #fff4e7;
+  --color-paper-night: #fef5e0;
+}
+
+/* 時間帯の紙: season.ts の applyTimeOfDay() が <html data-time="morning|day|evening|night"> を付ける。
+   夕方（17〜20 時）と夜（21〜4 時）は地の紙のトークンそのものを差し替える（body の地だけでなく、ミシン目の切り欠き・下部ナビ・
+   シートなど paper を使う所がすべて同じ色になり、継ぎ目が出ない）。便箋（card）・一筆箋（letter）・控え（slip）は変えない。
+   色を動かす transition は付けない（動きは transform と opacity だけ）。@theme の変数は @layer theme に出るので、層の外のこの規則が勝つ */
+html[data-time="evening"] {
+  --color-paper: var(--color-paper-evening);
+}
+html[data-time="night"] {
+  --color-paper: var(--color-paper-night);
+}
+/* 起動の絵（SplashOverlay の .splash）は、ネイティブの起動画面（#FAF5EC の画像）と入れ替わる瞬間に色の段が出ないよう、
+   どの時間帯でも朝・昼の地のまま。消えるとき（opacity）に、下の時間帯の地へ溶けるように替わる */
+html[data-time] .splash {
+  --color-paper: var(--color-paper-day);
+}
