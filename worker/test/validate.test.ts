@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../src/errors";
-import { countChars, normalizeHappenedOn, parseMemoryInput, todayInTokyo } from "../src/validate";
+import { countChars, normalizeHappenedOn, parseListStart, parseMemoryInput, todayInTokyo, UNDATED_BOUND } from "../src/validate";
 
 const TODAY = "2026-11-05";
 const expectValidation = (fn: () => unknown) => {
@@ -91,5 +91,27 @@ describe("normalizeHappenedOn", () => {
     expect(normalizeHappenedOn(null, "day", TODAY)).toBe(TODAY);
     expect(parseMemoryInput({ body: "x", happened_on_precision: null }, TODAY).happened_on_precision).toBe("day");
     expectValidation(() => normalizeHappenedOn("2025-06-31", "month", TODAY));
+  });
+});
+
+describe("parseListStart（年月で探す。ADR-0015）", () => {
+  it("month は翌月の 1 日、12 月は翌年の 1 月 1 日", () => {
+    expect(parseListStart({ month: "2025-11" })).toBe("2025-12-01");
+    expect(parseListStart({ month: "2025-09" })).toBe("2025-10-01");
+    expect(parseListStart({ month: "2025-12" })).toBe("2026-01-01");
+  });
+  it("year は 1 月 2 日（年だけの行は 1 月 1 日に並ぶ）、undated は日付なしだけ", () => {
+    expect(parseListStart({ year: "2024" })).toBe("2024-01-02");
+    expect(parseListStart({ undated: "1" })).toBe(UNDATED_BOUND);
+    expect("" < UNDATED_BOUND && UNDATED_BOUND < "1900-01-01").toBe(true);
+  });
+  it("どれも無い（空の値も）なら null", () => {
+    expect(parseListStart({})).toBeNull();
+    expect(parseListStart({ month: "", year: "", undated: "" })).toBeNull();
+  });
+  it("形の誤りと 2 つ以上は 400", () => {
+    for (const q of [{ month: "2025-13" }, { month: "2025/11" }, { month: "2101-01" }, { year: "1899" }, { year: "20x5" }, { undated: "true" }, { month: "2025-11", undated: "1" }]) {
+      expectValidation(() => parseListStart(q));
+    }
   });
 });

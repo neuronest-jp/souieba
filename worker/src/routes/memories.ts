@@ -3,20 +3,23 @@ import { Hono } from "hono";
 import { decodeCursor, encodeCursor } from "../cursor";
 import {
   clampLimit,
+  countUndated,
   deleteMemory,
   getMemory,
   insertMemory,
   isPending,
   listFacts,
   listMemories,
+  listMonthCounts,
   listRecalledBy,
   listRecalls,
+  listYearOnlyCounts,
   type MemoryRow,
   type RecallWithMemory,
 } from "../db/memories";
 import type { Env, Variables } from "../env";
 import { ApiError } from "../errors";
-import { parseMemoryInput, todayInTokyo } from "../validate";
+import { parseListStart, parseMemoryInput, todayInTokyo } from "../validate";
 
 export type MemoryJson = Omit<MemoryRow, "user_id">;
 
@@ -80,12 +83,30 @@ export const memoriesRoutes = (deps: MemoriesDeps = {}) => {
     return c.json(toMemoryJson(memory), 201);
   });
 
+  // month / year / undated（年月で探す。ADR-0015）はその区切りのいちばん新しい行から始める。形の誤りは cursor があっても 400。
+  // cursor があれば cursor を優先する（続きの位置は cursor が持つ。画面は続きを読むとき始まりを付けない）
   app.get("/", async (c) => {
     const user = c.get("user");
     const cursor = decodeCursor(c.req.query("cursor"));
+    const before = parseListStart({ month: c.req.query("month"), year: c.req.query("year"), undated: c.req.query("undated") });
     const limit = clampLimit(c.req.query("limit"));
-    const { items, nextCursor } = await listMemories(c.env.DB, user.id, cursor, limit);
+    const { items, nextCursor } = await listMemories(c.env.DB, user.id, cursor, limit, cursor ? null : before);
     return c.json({ items: items.map(toMemoryJson), next_cursor: nextCursor ? encodeCursor(nextCursor) : null });
+  });
+
+  // 起きた日の年月ごとの件数（新しい順）。自分の記憶だけ。/:id より先に置く（months を id として読まない）
+  app.get("/months", async (c) => {
+    const user = c.get("user");
+    const [months, years, undated] = await c.env.DB.batch([
+      listMonthCounts(c.env.DB, user.id),
+      listYearOnlyCounts(c.env.DB, user.id),
+      countUndated(c.env.DB, user.id),
+    ]);
+    return c.json({
+      months: ((months?.results ?? []) as Array<{ month: string; n: number }>).map((r) => ({ month: r.month, count: Number(r.n) })),
+      years_only: ((years?.results ?? []) as Array<{ year: string; n: number }>).map((r) => ({ year: r.year, count: Number(r.n) })),
+      undated: Number(((undated?.results ?? []) as Array<{ n: number }>)[0]?.n ?? 0),
+    });
   });
 
   app.get("/:id", async (c) => {

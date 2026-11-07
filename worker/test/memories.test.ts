@@ -439,3 +439,124 @@ describe("GET / DELETE /api/memories/:id", () => {
     expect(db.raw.prepare("SELECT count(*) AS n FROM recalls").get()).toEqual({ n: 0 });
   });
 });
+
+// S2 の「年月で探す」（ADR-0015）。GET /api/memories/months と GET /api/memories?month= / year= / undated=
+describe("年月で探す", () => {
+  const add = (user: string, id: string, h: string | null, p: "day" | "month" | "year" | "unknown", c = "2026-11-01T00:00:00.000Z") =>
+    db.raw
+      .prepare("INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(id, user, id, h, p, c, c);
+  const get = async (url: string, headers: Record<string, string> = { [DEV_USER_HEADER]: ME }) => {
+    const res = await app().request(url, { headers }, env);
+    return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+  };
+  const ids = async (url: string) => {
+    const { status, json } = await get(url);
+    expect(status).toBe(200);
+    return { ids: (json.items as Array<{ id: string }>).map((m) => m.id), next: json.next_cursor as string | null };
+  };
+  // 精度ごとに 1 つずつ（2026-11 は day 2 と month 1、2025-12 は月末、2025 年だけ、2024-06 は month、日付なし 2）
+  const seedAll = () => {
+    add(ME, "nov3", "2026-11-03", "day", "2026-11-03T00:00:00.000Z");
+    add(ME, "nov1", "2026-11-01", "day", "2026-11-01T00:00:00.000Z");
+    add(ME, "nov-m", "2026-11-01", "month", "2026-11-02T00:00:00.000Z");
+    add(ME, "jan26", "2026-01-01", "day", "2026-01-01T00:00:00.000Z");
+    add(ME, "dec31", "2025-12-31", "day", "2025-12-31T00:00:00.000Z");
+    add(ME, "dec1", "2025-12-01", "day", "2025-12-01T00:00:00.000Z");
+    add(ME, "y2025", "2025-01-01", "year", "2025-03-01T00:00:00.000Z");
+    add(ME, "jun-m", "2024-06-01", "month", "2024-06-20T00:00:00.000Z");
+    add(ME, "unk1", null, "unknown", "2026-10-01T00:00:00.000Z");
+    add(ME, "unk2", null, "unknown", "2026-09-01T00:00:00.000Z");
+  };
+
+  it("months: 年月ごと（day と month）・年だけ・日付なしの件数を新しい順に。/:id と取り違えない", async () => {
+    seedAll();
+    const { status, json } = await get("/api/memories/months");
+    expect(status).toBe(200);
+    expect(json).toEqual({
+      months: [
+        { month: "2026-11", count: 3 },
+        { month: "2026-01", count: 1 },
+        { month: "2025-12", count: 2 },
+        { month: "2024-06", count: 1 },
+      ],
+      years_only: [{ year: "2025", count: 1 }],
+      undated: 2,
+    });
+  });
+
+  it("months: ほかの人の記憶は数えない。記憶が無ければ空", async () => {
+    seedAll();
+    add(OTHER, "o1", "2026-11-05", "day");
+    add(OTHER, "o2", "2023-04-01", "month");
+    add(OTHER, "o3", "2022-01-01", "year");
+    add(OTHER, "o4", null, "unknown");
+    const mine = await get("/api/memories/months");
+    expect((mine.json.months as Array<{ month: string }>).map((m) => m.month)).toEqual(["2026-11", "2026-01", "2025-12", "2024-06"]);
+    expect(mine.json.years_only).toEqual([{ year: "2025", count: 1 }]);
+    expect(mine.json.undated).toBe(2);
+    const fresh = await get("/api/memories/months", { [DEV_USER_HEADER]: "fresh@example.com" });
+    expect(fresh.json).toEqual({ months: [], years_only: [], undated: 0 });
+  });
+
+  it("month=: その月のいちばん新しい記憶から始まり、日付なしまで今の並びのまま続く", async () => {
+    seedAll();
+    expect((await ids("/api/memories?month=2025-12")).ids).toEqual(["dec31", "dec1", "y2025", "jun-m", "unk1", "unk2"]);
+    // 精度 month は 1 日に並ぶ（同じ日の day とは作成の降順）
+    expect((await ids("/api/memories?month=2026-11")).ids).toEqual(["nov3", "nov-m", "nov1", "jan26", "dec31", "dec1", "y2025", "jun-m", "unk1", "unk2"]);
+    // 記憶の無い月なら、それより前のいちばん新しい記憶から
+    expect((await ids("/api/memories?month=2025-06")).ids).toEqual(["y2025", "jun-m", "unk1", "unk2"]);
+    // 12 月は翌年の 1 月 1 日を含めない
+    expect((await ids("/api/memories?month=2025-12")).ids).not.toContain("jan26");
+  });
+
+  it("year=: 年だけの区切り（YYYY-01-01 に並ぶ）から。undated=1: 日付なしから", async () => {
+    seedAll();
+    add(ME, "jan1-25", "2025-01-01", "day", "2025-01-01T00:00:00.000Z");
+    // 同じ 1 月 1 日の day の行も前に入る（画面は 1 月の区切りを先に、年だけの区切りをその後に出す）
+    expect((await ids("/api/memories?year=2025")).ids).toEqual(["y2025", "jan1-25", "jun-m", "unk1", "unk2"]);
+    expect((await ids("/api/memories?undated=1")).ids).toEqual(["unk1", "unk2"]);
+  });
+
+  it("month= の続きは next_cursor のまま。cursor と month が両方あれば cursor を優先する", async () => {
+    for (let i = 0; i < 5; i += 1) add(ME, `may${i}`, `2025-05-0${i + 1}`, "day", `2025-05-0${i + 1}T00:00:00.000Z`);
+    add(ME, "jun", "2025-06-10", "day");
+    add(ME, "apr", "2025-04-10", "day");
+    const p1 = await ids("/api/memories?month=2025-05&limit=2");
+    expect(p1.ids).toEqual(["may4", "may3"]);
+    expect(p1.next).toBeTruthy();
+    const p2 = await ids(`/api/memories?cursor=${p1.next}&limit=2`);
+    expect(p2.ids).toEqual(["may2", "may1"]);
+    // 別の月を付けても、続きは cursor の位置から
+    const both = await ids(`/api/memories?cursor=${p1.next}&month=2025-06&limit=2`);
+    expect(both.ids).toEqual(["may2", "may1"]);
+    const p3 = await ids(`/api/memories?cursor=${p2.next}&limit=2`);
+    expect(p3.ids).toEqual(["may0", "apr"]);
+    expect(p3.next).toBeNull();
+  });
+
+  it("month=: ほかの人の記憶は混ぜない", async () => {
+    add(ME, "mine", "2025-05-01", "day");
+    add(OTHER, "theirs", "2025-05-02", "day");
+    add(OTHER, "theirs-old", "2025-04-02", "day");
+    expect((await ids("/api/memories?month=2025-05")).ids).toEqual(["mine"]);
+  });
+
+  it("形の誤りは 400（月の形・範囲、年の形、undated の値、2 つ以上）。空の値は付けないのと同じ", async () => {
+    for (const q of ["month=2025-13", "month=2025-00", "month=2025-5", "month=202505", "month=1899-12", "year=25", "year=2101", "undated=yes", "month=2025-05&year=2025", "year=2025&undated=1"]) {
+      const { status, json } = await get(`/api/memories?${q}`);
+      expect(status, q).toBe(400);
+      expect(json).toMatchObject({ error: { code: "validation" } });
+    }
+    add(ME, "a", "2025-05-01", "day");
+    expect((await ids("/api/memories?month=")).ids).toEqual(["a"]);
+  });
+
+  it("SQL: 始まりだけなら 3 バインド、cursor があれば始まりを使わない", () => {
+    const start = buildListSql(null, "2025-06-01");
+    expect(start.bindCount).toBe(3);
+    expect(start.sql).toContain("COALESCE(happened_on,'') < ?2");
+    expect(start.sql).toContain("ORDER BY COALESCE(happened_on,'') DESC, created_at DESC, id DESC");
+    expect(buildListSql({ h: "", c: "", i: "" }, "2025-06-01").bindCount).toBe(5);
+  });
+});
