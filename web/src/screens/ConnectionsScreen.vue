@@ -61,6 +61,45 @@ watch(dock, (el) => {
 const heading = ref<HTMLElement | null>(null);
 const list = ref<HTMLElement | null>(null);
 
+// いま読んでいる組（11/8）: 帯が上に貼り付いている間（一覧の頭が帯の裏へ入ったら）、帯の下から見える高さの FOCUS_LINE の所にある組。
+// 帯でその組の弧を濃くし、帯をその年のあたりへ送る（ThreadLoom の focus）。一番上へ戻ると null で、帯は今までの見た目に戻る
+const FOCUS_LINE = 0.3;
+const focusId = ref<string | null>(null);
+const findFocus = (): string | null => {
+  const d = dock.value?.getBoundingClientRect?.();
+  const l = list.value?.getBoundingClientRect?.();
+  if (!d || !l || !d.height || l.top >= d.bottom) return null;
+  const line = d.bottom + (window.innerHeight - d.bottom) * FOCUS_LINE;
+  let pick: string | null = null;
+  for (const el of list.value!.querySelectorAll<HTMLElement>("li[data-pair]")) {
+    const r = el.getBoundingClientRect();
+    if (r.top > line) break;
+    pick = el.dataset.pair ?? null; // 線より上で始まる組のうち、いちばん下（行の間のすき間にいるときは上の組のまま）
+  }
+  return pick;
+};
+// 1 コマに 1 回だけ測る（requestAnimationFrame の無い環境（テスト）では次の間に）
+const nextFrame = (fn: () => void): number =>
+  typeof requestAnimationFrame === "function" ? requestAnimationFrame(fn) : (setTimeout(fn, 16) as unknown as number);
+const cancelFrame = (h: number) => (typeof cancelAnimationFrame === "function" ? cancelAnimationFrame(h) : clearTimeout(h));
+let focusFrame = 0;
+const onWindowScroll = () => {
+  if (focusFrame) return;
+  focusFrame = nextFrame(() => {
+    focusFrame = 0;
+    focusId.value = findFocus();
+  });
+};
+const watchScroll = (on: boolean) => {
+  if (typeof window === "undefined") return;
+  if (on) window.addEventListener("scroll", onWindowScroll, { passive: true });
+  else {
+    window.removeEventListener("scroll", onWindowScroll);
+    if (focusFrame) cancelFrame(focusFrame);
+    focusFrame = 0;
+  }
+};
+
 const visible = computed(() => items.value.filter((p) => !gone.value.has(p.id)));
 const openPair = computed(() => (openId.value ? (items.value.find((p) => p.id === openId.value) ?? null) : null));
 // 糸の揺れの向きは組ごとに左右を入れ替える（読み込んだ順で決め、外しても隣の組の向きは変えない）
@@ -162,10 +201,15 @@ const catchUp = () => {
   if (owed && active && state.value === "ready" && !openId.value && busy.size === 0 && !leavingId.value) void refresh();
 };
 
-onMounted(load);
+onMounted(() => {
+  watchScroll(true);
+  void load();
+});
 // 初回（onMounted の load が動いている間）は何もしない。読めていれば裏で取り直し、読めていなければ読み直す
 onActivated(() => {
   active = true;
+  watchScroll(true);
+  onWindowScroll();
   if (state.value === "ready") void refresh();
   else if (state.value === "error") void load();
 });
@@ -327,6 +371,7 @@ const jump = (id: string) => {
 // 画面を離れるとき（シートの「ひらく ›」で S3 へ、戻るボタン、下部ナビ）は、シートと入ってくる動きを止める
 onDeactivated(() => {
   active = false;
+  watchScroll(false);
   stopWeave();
   glowToken += 1;
   glowId.value = null;
@@ -334,6 +379,7 @@ onDeactivated(() => {
   if (leavingId.value) unravel(leavingId.value, { quiet: true });
 });
 onUnmounted(() => {
+  watchScroll(false);
   dockObserver?.disconnect();
   setInert(false);
   timers.forEach((t) => clearTimeout(t));
@@ -373,7 +419,7 @@ useMemoryDeleted((id) => {
       <!-- 帯は一覧をスクロールしても上（ステータスバーの下）に貼り付ける（11/8）。地の紙を左右の余白まで敷き、組は帯の裏へ抜ける。
            帯の高さは --dock-h に入れ、帯から飛んだ組が帯の裏で止まらないよう行の scroll-margin に足す（connections.css の .pair-row） -->
       <div ref="dock" class="loom-dock tex-desk sticky top-[env(safe-area-inset-top,0px)] z-[4] -mx-[20px] -mt-1 bg-paper px-[20px]">
-        <ThreadLoom :beads="beads" :items="visible" :weave="weave" ref="loom" :glow="glowId" @pick="jump" />
+        <ThreadLoom :beads="beads" :items="visible" :weave="weave" ref="loom" :glow="glowId" :focus="focusId" @pick="jump" />
       </div>
       <ol ref="list" role="list" aria-label="つながりの一覧" class="flex flex-col gap-7">
         <li

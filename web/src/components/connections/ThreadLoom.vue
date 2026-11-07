@@ -13,20 +13,30 @@
 //   - 押した位置は、figure の左端からの量に送った量（scrollLeft）を足して帯の座標にする
 //   - 送っている途中や送った直後（scroll の知らせから 120ms 以内）に指が触れた押し、押している間に送れた押しは、弧を押したことにしない
 //   - 左右の端の薄いぼかしは、その向きに続きがあるときだけ（data-more-start / data-more-end。connections.css）
+//
+// いま読んでいる組（focus。11/8）: 一覧を縦に送っている間、画面の上の方にある組の弧と結び目を濃く太くし、ほかの弧は薄く退かせる。
+//   その弧が見えていなければ帯をその年のあたりまで送る（見える幅に入らない長い弧は、思い出した昔の端を左に見せる）。ただし指で帯を送った直後（FOLLOW_REST_MS の間）は勝手に送らない
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from "vue";
 import { layoutLoom, pickArc, type LoomArc, type LoomBead, type LoomItem } from "../../connections/loom";
 import { stitchOf } from "../../connections/pair";
 import { prefersMotion } from "../../motion";
 
 const props = withDefaults(
-  defineProps<{ beads: readonly LoomBead[]; items: readonly LoomItem[]; weave?: ReadonlySet<string>; glow?: string | null }>(),
-  { weave: () => new Set<string>(), glow: null },
+  defineProps<{
+    beads: readonly LoomBead[];
+    items: readonly LoomItem[];
+    weave?: ReadonlySet<string>;
+    glow?: string | null;
+    focus?: string | null;
+  }>(),
+  { weave: () => new Set<string>(), glow: null, focus: null },
 );
 const emit = defineEmits<{ pick: [id: string] }>();
 
 const SETTLE_MS = 120; // 送るのが止まってから、押しを受け付けるまで
 const SLIP = 3; // 押している間にこれより送れたら、押したことにしない（px）
 const REVEAL_MARGIN = 28; // 弧を見せるとき、端のぼかしの内側に収める余白
+const FOLLOW_REST_MS = 1500; // 指で帯に触れてから、いま読んでいる組へ帯を送るのを控える間
 
 // figure が横に送る入れ物（connections.css の .loom。touch-action: pan-x pan-y）
 const root = ref<HTMLElement | null>(null);
@@ -40,18 +50,27 @@ const weaveOrder = computed(() => {
   woven.forEach((a, i) => order.set(a.id, Math.min(i, 10)));
   return order;
 });
-// 弧の両端の結び目。確かめた糸の結び目を上に重ねる（後に描く）
+// いま読んでいる組（帯にその弧があるときだけ）
+const focusId = computed(() => (props.focus && layout.value.arcs.some((a) => a.id === props.focus) ? props.focus : null));
+// 弧は描く順が重なりの順なので、いま読んでいる組の弧を最後（いちばん上）に描く
+const arcs = computed(() => {
+  const f = focusId.value;
+  if (!f) return layout.value.arcs;
+  return [...layout.value.arcs.filter((a) => a.id !== f), ...layout.value.arcs.filter((a) => a.id === f)];
+});
+// 弧の両端の結び目。確かめた糸の結び目を上に重ね、いま読んでいる組の結び目をさらに上に重ねる（後に描く）
 const ends = computed(() =>
   layout.value.arcs
     .flatMap((a) => {
       const stitch = stitchOf(a.feedback);
       const i = weaveOrder.value.get(a.id);
+      const on = a.id === focusId.value;
       return [
-        { key: `${a.id}:old`, x: a.x1, stitch, i },
-        { key: `${a.id}:new`, x: a.x2, stitch, i },
+        { key: `${a.id}:old`, x: a.x1, stitch, i, on },
+        { key: `${a.id}:new`, x: a.x2, stitch, i, on },
       ];
     })
-    .sort((p, q) => Number(p.stitch === "sewn") - Number(q.stitch === "sewn")),
+    .sort((p, q) => Number(p.on) - Number(q.on) || Number(p.stitch === "sewn") - Number(q.stitch === "sewn")),
 );
 
 // ---- 横に送った位置 ----
@@ -89,13 +108,14 @@ const onScroll = () => {
 };
 
 // 組の弧が見える所まで送る（入るならその弧を真ん中に、入らなければ新しい端を右のぼかしの内側に）。もう見えていれば動かさない
-const showArc = (a: LoomArc, smooth: boolean) => {
+// past: 入らないとき、新しい端ではなく昔の端（思い出した日）を左のぼかしの内側に見せる（いま読んでいる組を追うとき）
+const showArc = (a: LoomArc, smooth: boolean, { past = false } = {}) => {
   const view = layout.value.view;
   const left = currentLeft();
   const lo = Math.min(a.x1, a.x2) - REVEAL_MARGIN;
   const hi = Math.max(a.x1, a.x2) + REVEAL_MARGIN;
   if (lo >= left && hi <= left + view) return;
-  scrollToLeft(hi - lo <= view ? (lo + hi - view) / 2 : hi - view, smooth);
+  scrollToLeft(hi - lo <= view ? (lo + hi - view) / 2 : past ? lo : hi - view, smooth);
 };
 const reveal = (id: string) => {
   const a = layout.value.arcs.find((x) => x.id === id);
@@ -103,6 +123,21 @@ const reveal = (id: string) => {
   showArc(a, prefersMotion());
 };
 defineExpose({ reveal });
+
+// いま読んでいる組が替わったら、その弧が見える所まで帯を送る（指で送った直後は控える。もう見えていれば動かさない）
+let touchedAt = Number.NEGATIVE_INFINITY;
+const onTouch = () => {
+  touchedAt = now();
+};
+watch(
+  focusId,
+  (id) => {
+    if (!id || !active || maxScroll.value <= 0 || now() - touchedAt < FOLLOW_REST_MS) return;
+    const a = layout.value.arcs.find((x) => x.id === id);
+    if (a) showArc(a, prefersMotion(), { past: true });
+  },
+  { flush: "post" },
+);
 
 // 戻ったときに新しく結ばれた組があれば、そのうち一番新しい端の弧が見える所まで送る（新しい糸が渡されるのが見えるように）
 watch(
@@ -126,6 +161,7 @@ watch(
 // ---- 押す ----
 let press: { left: number; at: number } | null = null;
 const onPointerDown = () => {
+  onTouch();
   press = { left: currentLeft(), at: now() };
 };
 const onPick = (e: MouseEvent) => {
@@ -154,6 +190,8 @@ const measure = () => {
 onMounted(() => {
   measure();
   root.value?.addEventListener("scroll", onScroll, { passive: true });
+  // 指で帯を横に送り始めたとき（pointerdown は送ると取り消されることがあるので、touchstart でも覚える）
+  root.value?.addEventListener("touchstart", onTouch, { passive: true });
   if (typeof ResizeObserver !== "undefined" && root.value) {
     observer = new ResizeObserver(measure);
     observer.observe(root.value);
@@ -173,6 +211,7 @@ onDeactivated(() => {
 onBeforeUnmount(() => {
   observer?.disconnect();
   root.value?.removeEventListener("scroll", onScroll);
+  root.value?.removeEventListener("touchstart", onTouch);
 });
 </script>
 
@@ -182,6 +221,7 @@ onBeforeUnmount(() => {
       <svg
         class="block overflow-visible"
         :class="layout.arcs.length > 0 ? 'loom-pickable' : ''"
+        :data-focus="focusId ? '' : null"
         :width="layout.width"
         :height="layout.height"
         :viewBox="`0 0 ${layout.width} ${layout.height}`"
@@ -193,10 +233,10 @@ onBeforeUnmount(() => {
         <text v-for="l in layout.labels" :key="l.text" class="loom-label" :x="l.x" :y="layout.labelY">{{ l.text }}</text>
         <circle v-for="(x, i) in layout.beads" :key="i" class="loom-bead" :cx="x" :cy="layout.baseline" r="2.25" />
         <g
-          v-for="a in layout.arcs"
+          v-for="a in arcs"
           :key="a.id"
           class="loom-arc"
-          :class="{ 'arc-weave': weaveOrder.has(a.id), 'arc-glow': glow === a.id }"
+          :class="{ 'arc-weave': weaveOrder.has(a.id), 'arc-glow': glow === a.id, 'arc-focus': focusId === a.id }"
           :data-stitch="stitchOf(a.feedback)"
           :data-pair="a.id"
           :style="{ '--i': weaveOrder.get(a.id) ?? 0 }"
@@ -209,7 +249,7 @@ onBeforeUnmount(() => {
           v-for="e in ends"
           :key="e.key"
           class="loom-end"
-          :class="e.i !== undefined ? 'end-weave' : ''"
+          :class="{ 'end-weave': e.i !== undefined, 'end-focus': e.on }"
           :data-stitch="e.stitch"
           :cx="e.x"
           :cy="layout.baseline"

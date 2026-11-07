@@ -98,6 +98,37 @@ mark.quote-mark {
   opacity: 0;
 }
 
+/* ---- 帯: いま読んでいる組（11/8）。一覧を縦に送っている間、その組の弧と結び目を濃く太くし、淡い光を後ろに敷く。
+   ほかの弧と結び目は薄く退く（g と circle の opacity だけ）。糸の状態（しつけ・本縫い・ほどけ）の見分けはそのまま ---- */
+.loom-arc,
+.loom-end {
+  transition: opacity 240ms var(--ease-out-soft);
+}
+svg[data-focus] .loom-arc:not(.arc-focus),
+svg[data-focus] .loom-end:not(.end-focus) {
+  opacity: 0.22;
+}
+.loom-arc.arc-focus path {
+  stroke-width: 2.5;
+}
+.loom-arc.arc-focus[data-stitch="basting"] .stitch-basting {
+  opacity: 1;
+  stroke-dasharray: 3.5 3.5;
+}
+.loom-arc.arc-focus .arc-halo {
+  stroke-width: 10;
+  opacity: 0.7;
+}
+.loom-end.end-focus {
+  stroke-width: 2.25;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loom-arc,
+  .loom-end {
+    transition: none;
+  }
+}
+
 /* ---- シートの紙（上がる動きとなぞりは style.css の .sheet-paper と useSheetDrag）。
    このシートは中身がスクロールするので、紙を下へ伸ばす .sheet-paper::after を使わない（スクロールの範囲が 64px 伸びる）。
    代わりに、ばねで少し行きすぎても下に地が見えないよう、紙の下に同じ地の色を影で敷く ---- */

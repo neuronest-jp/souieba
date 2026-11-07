@@ -847,6 +847,36 @@ describe("帯を押したとき", () => {
     expect(errors).toEqual([]);
   });
 
+  it("いま読んでいる組（focus）の弧と結び目を濃くして上に重ね、ほかを退かせる。帯が横に送れるなら、見えていない弧の昔の端の所まで送る。null で元に戻す", async () => {
+    const ThreadLoom = (await import("../src/components/connections/ThreadLoom.vue")).default;
+    const items = [pair("r1"), older];
+    const focus = ref<string | null>(null);
+    const Host = defineComponent(() => () => h(ThreadLoom, { beads, items, focus: focus.value }));
+    const { container, errors } = mount(Host);
+    await settle();
+    const figure = container.querySelector("figure")! as FakeElement & { scrollLeft: number };
+    const svg = figure.querySelector("svg")!;
+    const layout = layoutLoom({ beads, items, width: 362, scroll: true });
+    expect(layout.width).toBeGreaterThan(layout.view); // 2023 年からの帯は横に送れる
+    expect(svg.hasAttribute("data-focus")).toBe(false);
+    const startLeft = figure.scrollLeft; // 開いたときは右端
+    focus.value = "r2";
+    await settle();
+    expect(svg.hasAttribute("data-focus")).toBe(true);
+    expect(arcs(figure).filter((el) => el.hasClass("arc-focus")).map((el) => el.getAttribute("data-pair"))).toEqual(["r2"]);
+    expect(arcs(figure).at(-1)!.getAttribute("data-pair")).toBe("r2"); // 最後に描いていちばん上に重ねる
+    expect(figure.findAll((el) => el.hasClass("end-focus"))).toHaveLength(2);
+    const arc = layout.arcs.find((a) => a.id === "r2")!;
+    expect(arc.x2 - arc.x1).toBeGreaterThan(layout.view); // 見える幅に入らない長い弧
+    expect(figure.scrollLeft).toBeLessThan(startLeft);
+    expect(figure.scrollLeft).toBe(Math.max(0, Math.round(arc.x1 - 28))); // 思い出した昔の端を左のぼかしの内側に見せる
+    focus.value = null;
+    await settle();
+    expect(svg.hasAttribute("data-focus")).toBe(false);
+    expect(arcs(figure).some((el) => el.hasClass("arc-focus"))).toBe(false);
+    expect(errors).toEqual([]);
+  });
+
   it("一覧で組をひらくと、帯もその組の弧が見える所まで送る（reveal）", async () => {
     const { container, errors } = await open([pair("r1"), older]);
     const figure = container.querySelector("figure")! as FakeElement & { scrollLeft: number };
