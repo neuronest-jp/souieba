@@ -1,0 +1,70 @@
+/* words の受け持ちの CSS（S6 ことばの地図。ADR-0014、wireframes 第10節）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ。
+   約束（ADR-0011 の 6 節）: 動かすのは transform と opacity だけ。速さと曲線は style.css のトークン。prefers-reduced-motion: reduce では動かさない。
+   地図が現れるとき（.is-weaving。WordsScreen.vue が WEAVE_MS の間だけ付ける）: 背骨が上から伸び（460ms）、年の札が 120ms から 60ms ずつ、
+   言葉と線が 260ms から 35ms ずつ（30 こまで）浮かぶ。集めなおしている間（.is-collecting）は地図を少し薄くする */
+@layer components {
+  .words-map {
+    transition: opacity var(--duration-base) var(--ease-out-soft);
+  }
+  .words-map.is-collecting {
+    opacity: 0.55;
+  }
+  .words-map.is-weaving .words-spine {
+    transform-origin: top;
+    animation: words-spine var(--duration-slow) var(--ease-out-soft) both;
+  }
+  .words-map.is-weaving .words-year {
+    animation: words-rise var(--duration-slow) var(--ease-out-soft) both;
+    animation-delay: calc(120ms + var(--i, 0) * 60ms);
+  }
+  .words-map.is-weaving .words-word {
+    animation: words-rise var(--duration-slow) var(--ease-out-soft) both;
+    animation-delay: calc(260ms + var(--i, 0) * 35ms);
+  }
+  .words-map.is-weaving .words-link,
+  .words-map.is-weaving .words-thread {
+    animation: words-fade var(--duration-slow) var(--ease-out-soft) both;
+    animation-delay: calc(220ms + var(--i, 0) * 35ms);
+  }
+  /* シートのひとこと（便箋の小さな紙片）。押すと沈む（.press） */
+  .word-mention {
+    -webkit-tap-highlight-color: transparent;
+  }
+  @keyframes words-spine {
+    from {
+      transform: scaleY(0);
+    }
+    to {
+      transform: none;
+    }
+  }
+  @keyframes words-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 6px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes words-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .words-map,
+    .words-map.is-weaving .words-spine,
+    .words-map.is-weaving .words-year,
+    .words-map.is-weaving .words-word,
+    .words-map.is-weaving .words-link,
+    .words-map.is-weaving .words-thread {
+      animation: none;
+      transition: none;
+    }
+  }
+}

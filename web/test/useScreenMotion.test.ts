@@ -83,6 +83,29 @@ describe("motionBetween（前の画面 → 次の画面）", () => {
   });
 });
 
+describe("motionBetween（S6 ことばの地図。S3 と同じく push で入り、S2 へ pop で戻る）", () => {
+  it("S2 → S6 は push、S6 → S2 は pop（戻るボタンでも下部ナビの「これまで」でも）、なぞって戻ったら swipe", () => {
+    expect(motionBetween(S("#past"), S("#words"))).toBe("push");
+    expect(motionBetween(S("#words"), S("#past"))).toBe("pop");
+    expect(motionBetween(S("#words"), S("#past"), "pop")).toBe("pop");
+    expect(motionBetween(S("#words"), S("#past"), "swipe")).toBe("swipe");
+  });
+
+  it("S6 から S3 は push、S3 から S6 へ戻るのは pop。S6 から開いた S3 から下部ナビの「これまで」も pop", () => {
+    expect(motionBetween(S("#words"), S("#memory/a?from=words"))).toBe("push");
+    expect(motionBetween(S("#memory/a?from=words"), S("#words"), "pop")).toBe("pop");
+    expect(motionBetween(S("#memory/a?from=words"), S("#words"))).toBe("pop");
+    expect(motionBetween(S("#memory/a?from=words"), S("#past"))).toBe("pop");
+  });
+
+  it("S6 と、S6 から開いた S3 から下部ナビのほかの項目へは、S2 からの左右", () => {
+    expect(motionBetween(S("#words"), S("#today"))).toBe("backward");
+    expect(motionBetween(S("#words"), S("#connections"))).toBe("forward");
+    expect(motionBetween(S("#memory/a?from=words"), S("#today"))).toBe("backward");
+    expect(motionBetween(S("#memory/a?from=words"), S("#connections"))).toBe("forward");
+  });
+});
+
 describe("useScreen の motion", () => {
   it("最初は none。hashchange のたび、画面と同じ描き直しで読めるよう画面より先に書き換える", async () => {
     const { screen, motion } = useScreen();

@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { api, ApiError, type Me } from "./api";
 import { clearToken, loadToken } from "./auth";
 import BottomNav from "./components/BottomNav.vue";
-import { focusScreenHeading, leavingScrollY, useScreen, type From } from "./composables/useScreen";
+import { focusScreenHeading, leavingScrollY, tabOfScreen, useScreen, type Tab } from "./composables/useScreen";
 import { pinLeaving, prefersMotion, unpinLeaving } from "./motion";
 import SplashOverlay from "./components/SplashOverlay.vue";
 import { hideSplash, isNative, platform } from "./native";
@@ -11,6 +11,7 @@ import ConnectionsScreen from "./screens/ConnectionsScreen.vue";
 import MemoryDetailScreen from "./screens/MemoryDetailScreen.vue";
 import TimelineScreen from "./screens/TimelineScreen.vue";
 import TodayScreen from "./screens/TodayScreen.vue";
+import WordsScreen from "./screens/WordsScreen.vue";
 import WelcomeScreen from "./screens/WelcomeScreen.vue";
 
 type State = { kind: "loading" } | { kind: "signed_out" } | { kind: "ready"; me: Me } | { kind: "trouble" };
@@ -24,8 +25,8 @@ const splash = ref(isNative() || splashParam !== null);
 const splashSeamless = platform() === "ios" || splashParam?.startsWith("ios") === true;
 const splashHold = splashParam?.endsWith("-hold") === true; // ?splash=ios-hold は消さずに止める（動きの確認用）
 const { screen, motion } = useScreen();
-// 下部ナビの現在地。S3 は開いた元の画面（from）を示す（戻る先と同じ）
-const navCurrent = computed<From>(() => (screen.value.name === "memory" ? screen.value.from : screen.value.name));
+// 下部ナビの現在地。S3 は開いた元の画面（from）を示す（戻る先と同じ）。S6 ことばの地図と、そこから開いた S3 は「これまで」
+const navCurrent = computed<Tab>(() => tabOfScreen(screen.value));
 
 // 画面の移り変わり（ブラッシュアップ 11/7。動きの種類と時間は style.css の screen-*、向きは useScreen の motion）。
 // 動きを減らす設定と最初の表示では css を切り、待たずに入れ替える（位置とフォーカスの扱いは useScreen のまま）
@@ -119,7 +120,7 @@ onUnmounted(() => {
     </main>
 
     <template v-else>
-      <!-- S1（書きかけ・残しました・候補・札）、S2（読み込んだ一覧）、S5（つながりの一覧）は画面を行き来しても残す（wireframes 0 節）。
+      <!-- S1（書きかけ・残しました・候補・札）、S2（読み込んだ一覧）、S5（つながりの一覧）、S6（ことばの地図）は画面を行き来しても残す（wireframes 0 節・第10節）。
            S3 は開くたびに読み直す。401 で S0 に戻ると v-else ごと外れ、残した画面も捨てる -->
       <!-- 画面の移り変わり（style.css の screen-*）。S3 は記憶ごとに作り直す（:key。札の相手の S3 へも押し出しで移る） -->
       <Transition
@@ -132,10 +133,11 @@ onUnmounted(() => {
         @after-enter="onAfterEnter"
         @enter-cancelled="onAfterEnter"
       >
-        <KeepAlive include="TodayScreen,TimelineScreen,ConnectionsScreen">
+        <KeepAlive include="TodayScreen,TimelineScreen,ConnectionsScreen,WordsScreen">
           <TodayScreen v-if="screen.name === 'today'" />
           <TimelineScreen v-else-if="screen.name === 'past'" />
           <ConnectionsScreen v-else-if="screen.name === 'connections'" />
+          <WordsScreen v-else-if="screen.name === 'words'" />
           <MemoryDetailScreen v-else :key="`memory:${screen.id}`" :id="screen.id" :from="screen.from" :recall="screen.recall" />
         </KeepAlive>
       </Transition>

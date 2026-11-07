@@ -1,24 +1,33 @@
-// location.hash を画面に写す。#today（既定）/ #past / #connections / #memory/<id>[?from=today|connections][&recall=<recall_id>]。
+// location.hash を画面に写す。#today（既定）/ #past / #connections / #words / #memory/<id>[?from=today|connections|words][&recall=<recall_id>]。
+// #words は S6 ことばの地図（ADR-0014）。S2 から S3 と同じく push で入り、戻る先は S2。下部ナビの現在地は「これまで」。
 // 戻るボタンは hashchange で追従する。recall は S1 の札やつながりの組から開いたときの札の id（wireframes 4.2、5 節）。
 // from は S3 の戻り先と下部ナビの現在地（既定は past）。
 // 画面の移り変わりの向き（motion）もここで決め、App.vue の <Transition> がその名前の動きを付ける（ブラッシュアップ 11/7）。
 import { nextTick, onMounted, onUnmounted, readonly, ref } from "vue";
 
-// S3 を開いた元の画面（戻る先）。S1 / S2 / S5
-export type From = "today" | "past" | "connections";
+// 下部ナビの行き先。S1 / S2 / S5
+export type Tab = "today" | "past" | "connections";
+// S3 を開いた元の画面（戻る先）。S1 / S2 / S5 と S6（ことばの地図。シートの記憶から開く）
+export type From = Tab | "words";
 
 export type Screen =
   | { name: "today" }
   | { name: "past" }
   | { name: "connections" }
+  | { name: "words" }
   | { name: "memory"; id: string; from: From; recall?: string };
 
-const isFrom = (v: string): v is From => v === "today" || v === "past" || v === "connections";
+const isFrom = (v: string): v is From => v === "today" || v === "past" || v === "connections" || v === "words";
+
+// その画面を開いているときの下部ナビの現在地。S6 と、S6 から開いた S3 は「これまで」
+const tabOf = (f: From): Tab => (f === "words" ? "past" : f);
+export const tabOfScreen = (s: Screen): Tab => (s.name === "memory" ? tabOf(s.from) : s.name === "words" ? "past" : s.name);
 
 export const parseHash = (hash: string): Screen => {
   const h = hash.replace(/^#/, "");
   if (h === "past") return { name: "past" };
   if (h === "connections") return { name: "connections" };
+  if (h === "words") return { name: "words" };
   const q = h.indexOf("?");
   const m = /^memory\/([^/?]+)$/.exec(q < 0 ? h : h.slice(0, q));
   if (m && m[1]) {
@@ -40,6 +49,7 @@ export const parseHash = (hash: string): Screen => {
 export const hrefFor = (s: Screen): string => {
   if (s.name === "past") return "#past";
   if (s.name === "connections") return "#connections";
+  if (s.name === "words") return "#words";
   if (s.name === "memory") {
     // from=past で recall も無ければクエリを付けない（今までと同じ文字列）
     const params = new URLSearchParams();
@@ -57,12 +67,12 @@ export const go = (s: Screen) => {
 
 // 画面の移り変わりの動き（App.vue の <Transition> の名前 screen-<motion>）。
 //   forward / backward: 下部ナビの並び（きょう → これまで → つながり）で右の画面へ / 左の画面へ。短く滑らせて重ねる
-//   push: S3 をひらく（右から入り、前の画面は少し左へ下がって暗くなる）。pop: S3 から戻る（右へ出る）
+//   push: S3 をひらく（右から入り、前の画面は少し左へ下がって暗くなる）。pop: S3 から戻る（右へ出る）。S2 から S6 へも同じ
 //   swipe: S3 を左端からなぞって戻った（S3 は指の位置から右へ出ていく。前の画面はその下からふわっと出る）
 //   none: 最初の表示（動かさない）
 export type Motion = "none" | "forward" | "backward" | "push" | "pop" | "swipe";
-const TAB_ORDER: Record<From, number> = { today: 0, past: 1, connections: 2 };
-const lateral = (a: From, b: From): Motion =>
+const TAB_ORDER: Record<Tab, number> = { today: 0, past: 1, connections: 2 };
+const lateral = (a: Tab, b: Tab): Motion =>
   TAB_ORDER[b] > TAB_ORDER[a] ? "forward" : TAB_ORDER[b] < TAB_ORDER[a] ? "backward" : "none";
 
 /** 前の画面から次の画面への動き。hint は戻る操作（back）から来たときの pop / swipe */
@@ -71,7 +81,16 @@ export const motionBetween = (from: Screen, to: Screen, hint: "pop" | "swipe" | 
   if (from.name === "memory") {
     // S3 から開いた元の画面へ戻る（戻るボタン、なぞり、下部ナビの同じ項目）は pop。ほかの画面へは、元の画面からの左右
     if (hint || to.name === from.from) return hint ?? "pop";
-    return lateral(from.from, to.name);
+    // S6 から開いた S3 から、下部ナビの「これまで」で S2 へ: S6 を通って戻るのと同じ向き
+    if (from.from === "words" && to.name === "past") return "pop";
+    if (to.name === "words") return "push";
+    return lateral(tabOf(from.from), tabOfScreen(to));
+  }
+  // S6 ことばの地図: S3 と同じく push で入り、S2 へ戻るのは pop。ほかの画面へは S2 からの左右
+  if (to.name === "words") return from.name === "words" ? "none" : "push";
+  if (from.name === "words") {
+    if (hint || to.name === "past") return hint ?? "pop";
+    return lateral("past", tabOfScreen(to));
   }
   return lateral(from.name, to.name);
 };
@@ -117,7 +136,7 @@ export const focusHeading = (el: HTMLElement | null | undefined, { force = false
 export const focusScreenHeading = (opts: { force?: boolean } = {}) =>
   focusHeading(document.querySelector<HTMLElement>("main:not([data-leaving]) h1"), opts);
 
-// S1 / S2 / S5 は App.vue の KeepAlive で残すので、離れたときの位置を覚えて、戻ったときにそこへ戻す。S3 は毎回いちばん上。
+// S1 / S2 / S5 / S6 は App.vue の KeepAlive で残すので、離れたときの位置を覚えて、戻ったときにそこへ戻す。S3 は毎回いちばん上。
 const keptKey = (s: Screen): string | null => (s.name === "memory" ? null : s.name);
 
 export function useScreen() {

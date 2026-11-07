@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hrefFor, parseHash, type Screen } from "../src/composables/useScreen";
+import { hrefFor, parseHash, tabOfScreen, type Screen } from "../src/composables/useScreen";
 
 describe("parseHash", () => {
   it("空・未知のハッシュは S1 きょう", () => {
@@ -82,5 +82,20 @@ describe("hrefFor", () => {
     expect(hrefFor({ name: "connections" })).toBe("#connections");
     expect(hrefFor({ name: "memory", id: "x", from: "connections" })).toBe("#memory/x?from=connections");
     expect(hrefFor({ name: "memory", id: "x", from: "connections", recall: "rc_1" })).toBe("#memory/x?from=connections&recall=rc_1");
+  });
+});
+
+describe("S6 ことばの地図（#words、ADR-0014）", () => {
+  it("#words は S6。S3 の from=words と往復でき、下部ナビの現在地はどちらも「これまで」", () => {
+    expect(parseHash("#words")).toEqual({ name: "words" });
+    expect(parseHash("#words?x=1")).toEqual({ name: "today" });
+    expect(hrefFor({ name: "words" })).toBe("#words");
+    expect(hrefFor({ name: "memory", id: "m1", from: "words" })).toBe("#memory/m1?from=words");
+    const screens: Screen[] = [{ name: "words" }, { name: "memory", id: "m1", from: "words" }];
+    for (const s of screens) expect(parseHash(hrefFor(s))).toEqual(s);
+    expect(tabOfScreen({ name: "words" })).toBe("past");
+    expect(tabOfScreen({ name: "memory", id: "m1", from: "words" })).toBe("past");
+    expect(tabOfScreen({ name: "memory", id: "m1", from: "connections" })).toBe("connections");
+    expect(tabOfScreen({ name: "today" })).toBe("today");
   });
 });

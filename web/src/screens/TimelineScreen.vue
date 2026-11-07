@@ -115,7 +115,9 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
     <!-- 便箋の天（ADR-0010）: 見出しの下に朱の二重罫、右端に押し葉（綴じた帳面） -->
     <header class="rule-double flex items-end gap-3 pb-3">
       <h1 class="text-[24px] tracking-[.04em] [font-feature-settings:'palt'] focus:outline-none">これまで</h1>
-      <Leaf class="mb-0.5 ml-auto shrink-0" />
+      <!-- S6 ことばの地図への入口（ADR-0014）。見出しの行の右、押し葉の手前 -->
+      <a href="#words" class="press -mb-2 ml-auto inline-flex min-h-11 shrink-0 items-center px-1 text-sm tracking-[.06em] whitespace-nowrap text-ink-soft">ことばの地図 ›</a>
+      <Leaf class="mb-0.5 shrink-0" />
     </header>
 
     <p v-if="state === 'loading'" class="py-16 text-center text-sm text-ink-soft" role="status">よみこみ中</p>
