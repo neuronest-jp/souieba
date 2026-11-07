@@ -78,12 +78,13 @@ export async function runPhoto(env: Env, runId: string, memory: Pick<MemoryRow, 
     await insertCandidateFacts(env.DB, memory.id, fresh.map((h) => ({ kind: h.kind, value: h.value, evidence })), nowIso());
     await finishAiRun(env.DB, runId, { status: "succeeded", input_tokens: res.input_tokens, output_tokens: res.output_tokens, model: res.model, now: nowIso() });
   } catch (e) {
-    // 記憶が先に削除された場合の外部キー失敗なども、ここで握って failed にする
+    // 記憶が先に削除された場合の外部キー失敗なども、ここで握って failed を書こうとする。
+    // ただし記憶の削除は同じ batch でその記憶の ai_runs も消す（deleteMemory、原則 5）ので、その場合の UPDATE は 0 行で何も残らない
     console.error("runPhoto failed", memory.id, e);
     try {
       await finishAiRun(env.DB, runId, { status: "failed", error: e instanceof Error ? e.message : String(e), now: nowIso() });
     } catch {
-      /* ai_runs 自体が消えている等 */
+      /* D1 に届かない等。記録が消えているだけなら UPDATE が 0 行になるだけで、ここには来ない */
     }
   }
 }

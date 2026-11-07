@@ -26,7 +26,7 @@ tasks の T-1107-07 はこの ADR を「ADR-0006」として予定していた�
    Worker も kind でもう一度捨てる。prompt で、誰なのか・年齢・性別・表情や感情・人数を推測しないこと、人が写っていても
    「人」「子ども」「家族」のような候補にしないこと、店名や地名を推測しないことを決める。季節は「桜」「紅葉」「雪」のような物事（thing）で表す。
    value に年齢や感情の語が混ざった thing は prompt で禁じるだけで、Worker は kind でしか捨てない（F7-4）
-3. 失敗は静かに何も出さない。API の失敗・refusal・JSON の崩れ・記憶の削除は `ai_runs(kind='photo', status='failed')` に理由を残すだけで、
+3. 失敗は静かに何も出さない。API の失敗・refusal・JSON の崩れは `ai_runs(kind='photo', status='failed')` に理由を残すだけで（記憶の削除は、ADR-0013 で記録ごと同じ batch で消す形に改めた）、
    候補は増えず、画面には何も出さない（ポーリングは pending=false で止まる）。再試行しない（`maxRetries: 0`、タイムアウト 20 秒は C1 / C2 と同じ）
 4. 走らせ方: `PUT /api/memories/:id/photo` が保存に成功したら、R2 のオブジェクトが 6,291,456 バイト以下で、その記憶に `photo` の記録が
    まだ無いときだけ、200 を返す前に `ai_runs(kind='photo', status='running')` を作り、`waitUntil` で 1 回だけ Claude を呼ぶ

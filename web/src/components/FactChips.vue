@@ -129,7 +129,8 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
         class="flex items-center gap-1.5 font-body text-sm leading-[1.6] font-medium tracking-[.06em] text-ink-soft [font-feature-settings:'palt']"
         :class="variant === 'page' ? 'rule-double pb-2' : ''"
       >
-        <!-- 鉛筆の線画: ここに並ぶのは鉛筆書き（まだ候補）だという印。S1 の控えにだけ置く -->
+        <!-- 鉛筆の線画: ここに並ぶのは鉛筆書き（まだ候補）だという印。S1 の控えにだけ置く。
+             自前の絵（11/7）。下部ナビの万年筆と同じく斜めに置き、六角の軸（真ん中の稜線）・削った木（軸との境の弧）・塗った芯に分けて描く -->
         <svg
           v-if="variant === 'slip'"
           class="shrink-0"
@@ -144,8 +145,10 @@ const decide = async (f: Fact, status: "confirmed" | "rejected", e: MouseEvent) 
           aria-hidden="true"
           focusable="false"
         >
-          <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" />
-          <path d="M13.5 6.5l4 4" />
+          <path d="M3.65 20.35L11.22 17.17L19.56 8.82Q20.41 7.98 19.56 7.13L16.87 4.44Q16.02 3.59 15.18 4.44L6.83 12.78Z" />
+          <path d="M11.22 17.17Q10.72 13.28 6.83 12.78" />
+          <path d="M9.87 14.13L18.22 5.78" />
+          <path d="M3.65 20.35L6.84 19.01L4.99 17.16Z" class="fill-current" />
         </svg>
         <!-- 見出しの文字は span に入れ、前後に空白を混ぜない（見出しの文字をそのまま比べるテストがある） -->
         <span>{{ title ?? "ひとことに出てきたもの" }}</span>

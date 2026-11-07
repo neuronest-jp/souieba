@@ -252,17 +252,17 @@ ID は UUID 文字列（`crypto.randomUUID()`）。日時は ISO 8601 の UTC �
          ──▶ failed      （API エラー、タイムアウト、JSON 不正、stop_reason が refusal / max_tokens）
 ```
 
-`input_tokens` / `output_tokens` はレスポンスの `usage` から、`error` は例外メッセージの先頭 500 文字を入れる。`memory_id` は参照制約を持たないので、記憶削除後も記録は残る。
+`input_tokens` / `output_tokens` はレスポンスの `usage` から、`error` は例外メッセージの先頭 500 文字を入れる。`memory_id` は参照制約を持たない（CASCADE が効かない）ので、記憶を消すときに同じ batch でその記憶の記録も消す（4.6、原則 5。11/7 から）。`memory_id` が NULL の記録（`retrospect`）は消さない。
 
 ### 4.6 削除（F3、原則 5）
 
 `DELETE /api/memories/:id` の順序:
 
 1. 所有者確認（`user_id` 一致、無ければ 404）
-2. `DELETE FROM memories WHERE id = ? AND user_id = ? RETURNING photo_key`。失敗したら 500 で、記憶も写真も残る（requirements F3「削除失敗は記憶を残したまま」）
+2. 1 つの `db.batch`（1 トランザクション）で `DELETE FROM ai_runs WHERE memory_id = ? AND user_id = ?` と `DELETE FROM memories WHERE id = ? AND user_id = ? RETURNING photo_key` を流す（worker/src/db/memories.ts の `deleteMemory`）。失敗したら 500 で、記憶も写真も `ai_runs` の記録も残る（先に流した `ai_runs` の削除も戻る。requirements F3「削除失敗は記憶を残したまま」）
 3. 2 が返した `photo_key` があれば R2 の `delete(photo_key)`。失敗しても 204 を返し、`console.error` に残す（D1 の行はもう無いので、写真は誰からも参照されない孤児になる。キーは推測できない）。R2 を先に消すと、D1 の削除が失敗したときに写真だけが失われるため、この順にする。RETURNING で削除した時点のキーを受け取るので、1 と 2 の間に写真が差し替わっても新しい方を消す
 4. CASCADE で `memory_facts`、`recalls`（memory_id 側も related_memory_id 側も）が消える。他の記憶に付いていた札も、この記憶を指すものは消える
-5. 進行中の `waitUntil` が後から結果を保存しようとした場合、`memories` が無いので INSERT が外部キーで失敗する。例外は握りつぶして `ai_runs.status = failed` にする
+5. 進行中の `waitUntil`（候補・想起・写真候補）が後から結果を保存しようとした場合、`memories` が無いので INSERT が外部キーで失敗する。例外は握りつぶし、`failed` を書こうとするが、その記録は 2 で消えているので UPDATE は 0 行で何も残らない（候補も札も記録も残らない。worker/test/ai-flow.test.ts と photo-hints.test.ts）
 
 ### 4.7 login_attempts（0002_login_attempts.sql。認証のレート制限）
 

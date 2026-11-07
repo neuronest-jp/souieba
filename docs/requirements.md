@@ -1,6 +1,6 @@
 # そういえば。 機能要件と受け入れ条件
 
-- 根拠: docs/spec.md v0.3（再構成ドラフト、ADR-0001。v0.3 の変更点は ADR-0007）。章番号は同書のもの
+- 根拠: docs/spec.md v0.3（ADR-0001 で正本にした。v0.3 の変更点は ADR-0007）。章番号は同書のもの
 - 既定値: ADR-0003、デザイン基盤: ADR-0004、Claude の出力形式: ADR-0005、配布（Capacitor）と認証（招待コード + JWT）: ADR-0007
 - スキーマ: worker/migrations/0001_init.sql（本書はスキーマを変更しない。差異は第8節に列挙）
 - 書き方: 受け入れ条件は Given / When / Then / 検証。ID は `F5-3` のように「機能-連番」。横断条件は `X-`、非機能は `N-`、11/4 スコープは `S-`
@@ -120,7 +120,7 @@ S0 ようこそ はログイン画面そのもの。保存したトークンが�
 | F3-1 | 起きた日が 2026-06-15、2026-11-03、NULL、2024-01-01 の4件 | `GET /api/memories` | 順序は 2026-11-03, 2026-06-15, 2024-01-01, NULL（`happened_on DESC, created_at DESC`。不明は最後） | 単体 |
 | F3-2 | 同じ起きた日の2件（作成順 A, B） | 一覧 | B が A より上 | 単体 |
 | F3-3 | 25 件ある | 1ページ目、`next_cursor` で2ページ目 | 20 件 + 5 件。重複も欠落もない。2ページ目の `next_cursor` は null | 単体 |
-| F3-4 | 記憶 M（写真あり、確定事実2件、札1枚） | `DELETE /api/memories/M` | 204。`memories`, `memory_facts`, `recalls`（`memory_id` または `related_memory_id` が M）が消え、R2 のオブジェクトも消える。直後の `GET /api/memories/M` は 404、`GET /api/photos/:key` も 404 | 単体 |
+| F3-4 | 記憶 M（写真あり、確定事実2件、札1枚） | `DELETE /api/memories/M` | 204。`memories`, `memory_facts`, `recalls`（`memory_id` または `related_memory_id` が M）と、M の `ai_runs` の記録（同じ batch。11/7 から）が消え、R2 のオブジェクトも消える。直後の `GET /api/memories/M` は 404、`GET /api/photos/:key` も 404 | 単体 |
 | F3-5 | 記憶 M が他人のもの | `GET` / `DELETE /api/memories/M` | いずれも 404。削除されない | 単体 |
 | F3-6 | 記憶が 0 件 | S2 を開く | 空状態の一行「まだ何もありません。きょうのひとことから」。スピナーは出さず、読み込み中は薄い文字で「よみこみ中」 | 画面 |
 | F3-7 | S3 を開く | 「消す」を押す | 一度だけ確認（「この記憶を消しますか」「消す」「やめる」）。「消す」で即時削除し S2 へ戻る。元に戻す機能は提供しない | 画面 |

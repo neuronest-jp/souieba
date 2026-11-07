@@ -110,6 +110,9 @@ describe("候補（鉛筆書き）と確定（判）", () => {
     const h2 = page.container.querySelector("h2")!;
     expect(h1.textContent).toBe("ひとことに出てきたもの");
     expect(svgs(h1).length).toBe(1);
+    // 鉛筆は自前の絵: 軸の輪郭・削った木の境・六角の稜線は線のまま、芯だけを塗る
+    const pencil = svgs(h1)[0]!.findAll((el) => el.tagName === "PATH");
+    expect(pencil.map((el) => el.hasClass("fill-current"))).toEqual([false, false, false, true]);
     expect(h2.textContent).toBe("おぼえていること");
     expect(svgs(h2)).toEqual([]);
     expect(h2.hasClass("rule-double")).toBe(true);
