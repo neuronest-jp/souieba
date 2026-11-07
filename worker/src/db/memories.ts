@@ -45,9 +45,14 @@ export const LIST_LIMIT_MAX = 50;
 // 一覧の並び: 起きた日の降順、同じ日は作成の降順、不明（NULL）は最後。
 export const LIST_ORDER = "ORDER BY COALESCE(happened_on,'') DESC, created_at DESC, id DESC";
 
-export const buildListSql = (cursor: Cursor | null): { sql: string; bindCount: number } => {
+// before: 一覧の始まり（年月で探す。validate.ts の parseListStart）。COALESCE(happened_on,'') がこれより小さい行から始める。
+// cursor があれば cursor を優先する（続きの位置は cursor が持っている）
+export const buildListSql = (cursor: Cursor | null, before: string | null = null): { sql: string; bindCount: number } => {
   const base = `SELECT ${MEMORY_COLUMNS} FROM memories WHERE user_id = ?1`;
-  if (!cursor) return { sql: `${base} ${LIST_ORDER} LIMIT ?2`, bindCount: 2 };
+  if (!cursor) {
+    if (before !== null) return { sql: `${base} AND COALESCE(happened_on,'') < ?2 ${LIST_ORDER} LIMIT ?3`, bindCount: 3 };
+    return { sql: `${base} ${LIST_ORDER} LIMIT ?2`, bindCount: 2 };
+  }
   // (h, c, i) より「前」（降順なので小さい側）の行だけ
   const cond =
     "(COALESCE(happened_on,'') < ?2 OR (COALESCE(happened_on,'') = ?2 AND created_at < ?3)" +
@@ -89,11 +94,14 @@ export async function listMemories(
   userId: string,
   cursor: Cursor | null,
   limit: number,
+  before: string | null = null,
 ): Promise<{ items: MemoryRow[]; nextCursor: Cursor | null }> {
-  const { sql } = buildListSql(cursor);
+  const { sql } = buildListSql(cursor, before);
   const stmt = cursor
     ? db.prepare(sql).bind(userId, cursor.h, cursor.c, cursor.i, limit + 1)
-    : db.prepare(sql).bind(userId, limit + 1);
+    : before !== null
+      ? db.prepare(sql).bind(userId, before, limit + 1)
+      : db.prepare(sql).bind(userId, limit + 1);
   const { results } = await stmt.all<MemoryRow>();
   const rows = results ?? [];
   const items = rows.slice(0, limit);
@@ -209,4 +217,33 @@ export function listThatDayMonth(db: D1Database, userId: string, month: string, 
 
 export function countMemories(db: D1Database, userId: string): D1PreparedStatement {
   return db.prepare("SELECT COUNT(*) AS n FROM memories WHERE user_id = ?1").bind(userId);
+}
+
+// ---------------------------------------------------------------
+// GET /api/memories/months（S2 の「年月で探す」。ADR-0015）。起きた日の年月ごとの件数。どれも束ねた文で、呼ぶ側が db.batch で 1 往復にする。
+// 区切りは画面と同じ: 精度 day と month はその年月、year は年だけ、日付の無いもの（unknown）は日付なし。どの行もどれか 1 つに入る
+// ---------------------------------------------------------------
+
+export function listMonthCounts(db: D1Database, userId: string): D1PreparedStatement {
+  return db
+    .prepare(
+      "SELECT substr(happened_on, 1, 7) AS month, COUNT(*) AS n FROM memories WHERE user_id = ?1 " +
+        "AND happened_on IS NOT NULL AND happened_on_precision IN ('day','month') GROUP BY month ORDER BY month DESC",
+    )
+    .bind(userId);
+}
+
+export function listYearOnlyCounts(db: D1Database, userId: string): D1PreparedStatement {
+  return db
+    .prepare(
+      "SELECT substr(happened_on, 1, 4) AS year, COUNT(*) AS n FROM memories WHERE user_id = ?1 " +
+        "AND happened_on IS NOT NULL AND happened_on_precision = 'year' GROUP BY year ORDER BY year DESC",
+    )
+    .bind(userId);
+}
+
+export function countUndated(db: D1Database, userId: string): D1PreparedStatement {
+  return db
+    .prepare("SELECT COUNT(*) AS n FROM memories WHERE user_id = ?1 AND (happened_on IS NULL OR happened_on_precision = 'unknown')")
+    .bind(userId);
 }

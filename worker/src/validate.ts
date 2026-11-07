@@ -76,3 +76,41 @@ export const parseMemoryInput = (input: unknown, today: string = todayInTokyo())
   const happened_on = normalizeHappenedOn(o.happened_on, precision, today);
   return { body, happened_on, happened_on_precision: precision };
 };
+
+// 一覧の始まり（GET /api/memories の month / year / undated。S2 の「年月で探す」、ADR-0015）。
+// 返すのは COALESCE(happened_on,'') の上限（この値より小さい行から始める。LIST_ORDER は降順なので、その区切りのいちばん新しい行が先頭になる）。
+//   month=YYYY-MM: その月の行から（上限は翌月の 1 日）
+//   year=YYYY:     年だけの行から。年だけの行は YYYY-01-01 に並ぶので、上限は 1 月 2 日（その日の 1 月の行も前に入る）
+//   undated=1:     日付なしの行から（'' より大きく、どの日付（1900 年以降）より小さい "0" を上限にする）
+// どれも無ければ null（いちばん新しい行から）。空の値は無いものとみなす。2 つ以上、または形の誤りは 400
+export const UNDATED_BOUND = "0";
+
+const yearOf = (raw: string): number => {
+  const y = Number(raw);
+  if (y < 1900 || y > 2100) bad("年が範囲外です");
+  return y;
+};
+
+export const parseListStart = (q: { month?: string | undefined; year?: string | undefined; undated?: string | undefined }): string | null => {
+  const month = q.month || undefined;
+  const year = q.year || undefined;
+  const undated = q.undated || undefined;
+  const given = [month, year, undated].filter((v) => v !== undefined).length;
+  if (given === 0) return null;
+  if (given > 1) bad("month・year・undated はどれか 1 つにしてください");
+  if (month !== undefined) {
+    const m = /^(\d{4})-(\d{2})$/.exec(month);
+    if (!m) return bad("month は YYYY-MM で指定してください");
+    const y = yearOf(m[1]!);
+    const mo = Number(m[2]);
+    if (mo < 1 || mo > 12) bad("存在しない月です");
+    return mo === 12 ? `${y + 1}-01-01` : `${m[1]}-${String(mo + 1).padStart(2, "0")}-01`;
+  }
+  if (year !== undefined) {
+    if (!/^\d{4}$/.test(year)) return bad("year は YYYY で指定してください");
+    yearOf(year);
+    return `${year}-01-02`;
+  }
+  if (undated !== "1") bad("undated は 1 だけです");
+  return UNDATED_BOUND;
+};

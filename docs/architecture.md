@@ -919,3 +919,41 @@ curl -s -H "$H" -X DELETE -o /dev/null -w '%{http_code}\n' localhost:8787/api/me
 | 5 | `ai_runs(kind='recall')` | 過去記憶 0 件なら行を作らない（6.2）。requirements N-5 と同じ | なし |
 | 6 | 認証と配布（ADR-0007） | 招待コード + HS256 JWT、Capacitor。`ACCESS_*` は廃止し `INVITE_CODE` / `JWT_SECRET` に置き換えた（3 章、10 章） | requirements F1、wireframes S0、setup-cloudflare.md、tasks.md（追従済み） |
 | 7 | ネイティブでの写真表示 | `<img src>` では Bearer を付けられない（5.8）。画面側で `fetch` + Bearer → `createObjectURL` にするのを既定案とする | tasks.md T-1107-00b（開発者の確認が要る） |
+
+## 年月で探す（S2。11/7 に足した。ADR-0015）
+
+### GET /api/memories?month=YYYY-MM（と year= / undated=1）
+
+5.3 の一覧に「始まり」を足す。その区切りのいちばん新しい記憶から、並び（`LIST_ORDER`）はそのままで返し、続きは `next_cursor`（5.3 と同じカーソル）。
+
+| クエリ | 始まり（`COALESCE(happened_on,'')` の上限。これより小さい行から） |
+|---|---|
+| `month=YYYY-MM` | 翌月の 1 日（12 月は翌年の 1 月 1 日）。その月に記憶が無ければ、それより前のいちばん新しい記憶から |
+| `year=YYYY` | `YYYY-01-02`。年だけの記憶は `YYYY-01-01` に並ぶので、同じ 1 月 1 日の 1 月の記憶（day と month）も前に入る |
+| `undated=1` | `"0"`（`''` より大きく、どの日付（1900 年以降）より小さい）。日付なしの記憶だけ |
+
+- どれか 1 つだけ。空の値は付けないのと同じ。形の誤り（月が 01〜12 でない、年が 1900〜2100 でない、`undated` が 1 でない）と 2 つ以上は `400 validation`。`cursor` があれば始まりを使わない（続きの位置は cursor が持つ。形の検査はする）
+- SQL は `buildListSql(cursor, before)`: 始まりだけなら `WHERE user_id = ?1 AND COALESCE(happened_on,'') < ?2 ORDER BY … LIMIT ?3`。索引は `idx_memories_user_happened`
+- 実装: `worker/src/validate.ts` の `parseListStart`、`worker/src/db/memories.ts`、`worker/src/routes/memories.ts`
+
+### GET /api/memories/months
+
+```json
+200 {
+  "months": [{ "month": "2026-11", "count": 3 }, { "month": "2026-10", "count": 2 }],
+  "years_only": [{ "year": "2023", "count": 1 }],
+  "undated": 1
+}
+```
+
+- 自分の記憶だけ（`user_id`）。どれも新しい順。`months` は精度 day と month の年月、`years_only` は精度 year の年、`undated` は日付の無い記憶（`happened_on IS NULL` か精度 unknown）。どの行もどれか 1 つに入る
+- 3 つの集計（`GROUP BY substr(happened_on, …)`）を `db.batch` で 1 往復。`/:id` より先に置く（`months` を記憶の id として読まない）
+- 消した記憶は行ごと消えるので数えない（4.6）
+
+### 画面（`TimelineScreen.vue`、`past/sections.ts`、`components/past/MonthSheet.vue`）
+
+- 区切り: 起きた日の年月（day・month）/ 年（year）/ 日付なし。並びは API のまま、同じ起きた日の行の中でだけ年だけの記憶を後ろへ回す（1 月の区切りを割らない）
+- 札: 区切りごとの `<section>` の頭の `<h2>` を `position: sticky`。区切りの箱の終わりで止まり、次の札に押し出される。スクロールは測らない
+- 一覧の始まり（`start`）を持つ。`null` はいちばん新しい記憶から。初めの読み込み・戻ったときの取り直し（見えている件数ぶん）は `start` から、「もっと前を見る」は cursor だけ
+- シートを開いたときだけ `GET /api/memories/months` を読む（前の結果をすぐ出して裏で取り直す）。月を選ぶと `start` を変えて読み直し、先頭へ（年だけの区切りが先頭でなければその区切りの頭へ）。読み直しの結果は、そのあとに始めた続き・取り直しがあれば捨てる（`version`）
+- 「いちばん新しいひとことへ」は `start` を `null` に戻して読み直す
