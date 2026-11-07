@@ -523,7 +523,7 @@ ADR-0005 に従い Structured Outputs を採用する。仕様 9 章は「tool u
         "type": "object",
         "properties": {
           "related_memory_id": {"type": "string", "description": "関係のある過去の記憶の id（入力に含まれるものだけ）"},
-          "reason":            {"type": "string", "description": "なぜ関係があるか。日本語で 80 文字以内の一文"},
+          "reason":            {"type": "string", "description": "なぜ思い出したか。書いた本人に添える、です・ます調のやわらかい日本語の一文（80 文字以内）"},
           "evidence":          {"type": "string", "description": "その過去の記憶の本文からの逐語引用。一字も変えない"}
         },
         "required": ["related_memory_id", "reason", "evidence"],
