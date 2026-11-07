@@ -66,9 +66,13 @@ describe("iPhone の手ざわり", () => {
     expect(found).toEqual([]);
   });
 
-  it("index.html: 拡大を止める user-scalable=no は使わない、明るい表示だけ、数字を電話のリンクにしない", () => {
+  it("index.html: 拡大しないページ（ダブルタップで寄らない）、明るい表示だけ、数字を電話のリンクにしない", () => {
     const html = read("web/index.html");
-    expect(html).not.toMatch(/user-scalable\s*=\s*no|maximum-scale/);
+    // WKWebView は拡大できる viewport のままだとダブルタップで拡大する（touch-action: manipulation では実機で止まらなかった。ADR-0011 の 5 節）
+    const viewport = (html.match(/<meta name="viewport" content="([^"]+)"/)?.[1] ?? "").split(/\s*,\s*/);
+    expect(viewport).toEqual(
+      expect.arrayContaining(["width=device-width", "initial-scale=1", "maximum-scale=1", "user-scalable=no", "viewport-fit=cover"]),
+    );
     expect(html).toContain('<meta name="color-scheme" content="light" />');
     expect(html).toMatch(/<meta name="format-detection" content="telephone=no/);
   });

@@ -135,7 +135,7 @@ Android はビルドが通ることだけを保つ（ADR-0011）。`@capacitor/h
   `web/src/native.ts` が `keyboardWillShow` / `keyboardWillHide` を `web/src/keyboard.ts` の `setKeyboard` に渡し、`<html data-keyboard="open">` の間は `web/src/styles/platform.css` が下部ナビを隠す。付属バー（∧ ∨ 完了）は `Keyboard.setAccessoryBarVisible({ isVisible: true })` で出す（プラグインは既定で消す）。
   入力欄の文字は 16px 以上（16px 未満だと iOS が入力欄を拡大する。`web/test/platform.test.ts` が `.vue` を見張る。いまは全部 17px）
 - 触覚（`@capacitor/haptics`。ADR-0011 の 3 節）: 画面からは `web/src/haptics.ts` の `tap` / `select` / `stamp` / `saved` / `arrive` / `failed` だけを呼ぶ。Web では何もしない。**Simulator には Taptic Engine が無いので鳴らない**（確かめるのは実機だけ）
-- 長押しと拡大: `ios.allowsLinkPreview: false`（札を長押ししても `capacitor://localhost/#memory/…` の下見を出さない）。拡大と弾む動きは Capacitor の既定で切れている（`zoomEnabled = false`、`scrollView.bounces = false`）。ダブルタップの拡大と、押すもの・絵・写真の選択と長押しのメニューは `styles/platform.css` で止める（本文は選べる）
+- 長押しと拡大: `ios.allowsLinkPreview: false`（札を長押ししても `capacitor://localhost/#memory/…` の下見を出さない）。ピンチの拡大と弾む動きは Capacitor の既定で切れている（`zoomEnabled = false`、`scrollView.bounces = false`）。ダブルタップの拡大は `web/index.html` の viewport（`maximum-scale=1, user-scalable=no`）で止める（ADR-0011 の 13 節）。押すもの・絵・写真の選択と長押しのメニューは `styles/platform.css` で止める（本文は選べる）
 - セーフエリア: `web/src/style.css` の `.safe-area` と下部ナビの `env(safe-area-inset-bottom)`。iOS は `capacitor.config.ts` の `ios.contentInset` を `"never"`（Capacitor の既定）にして、セーフエリアを CSS の `env()` だけで取る。`"automatic"` にすると、ページがスクロールできるときだけ WKWebView がずらして `env()` が 0 になり、画面ごとに下部ナビの高さが変わる（wireframes 第8節 #23）。ステータスバーの下の地は `App.vue` の固定の `div`
 
 ## 5. 更新の流れ
@@ -174,4 +174,4 @@ Worker の変更は `pnpm run deploy`（docs/setup-cloudflare.md）。
 | 鍵盤 | 実機の鍵盤（かな・英字・音声・外付け・ほかの会社の鍵盤）で下部ナビが消えて戻る、「保存する」が鍵盤の上、「完了」で閉じる | |
 | 長押し | 札で下見が出ない、本文は選べる、写真は「画像を保存」が出ない | |
 | アイコン | ホーム画面の明るい表示・暗い表示・色付きの表示、29pt（設定の一覧）でも朱の丸と葉が残る | |
-| 時間帯の紙 | `applyTimeOfDay` を `main.ts` から呼んだあと、17 時・21 時に地と下部ナビ・シートの継ぎ目が出ない、起動の絵から地へ溶ける（いまは呼んでいないので効かない） | |
+| 時間帯の紙 | 17 時・21 時に地と下部ナビ・シートの継ぎ目が出ない、起動の絵から地へ溶ける（`main.ts` が mount の前に `applyTimeOfDay` を呼ぶ） | |

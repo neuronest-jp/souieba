@@ -2,7 +2,10 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- 拡大しないページにする（ADR-0011 の 5 節）。WKWebView は拡大できる指定のままだと、ダブルタップで本文に寄って拡大する
+         （touch-action: manipulation だけでは実機で止まらなかった）。ピンチはもともと Capacitor が止めている（zoomEnabled = false）ので、
+         この指定で取り上げるものは無い。Safari は user-scalable=no を無視するので、ブラウザでの開発ではピンチできるまま -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#FAF5EC" />
     <!-- 地は明るい紙だけ（ADR-0011）。端末が暗い表示でも、入力欄・日付の選択・スクロールバーを明るい紙のまま描く -->
     <meta name="color-scheme" content="light" />

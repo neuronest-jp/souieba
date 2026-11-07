@@ -84,8 +84,9 @@ SPM は `ios/App/CapApp-SPM/Package.swift` に 2 つが入っている（`cap sy
 ### 5. iPhone の手ざわり（platform）
 
 - 長押しのリンクの下見を切る（`ios.allowsLinkPreview: false`）。札（`RecallCard`）は札全体がリンクなので、引用を長押しすると `capacitor://localhost/#memory/…` の下見が開いていた
-- 拡大と弾む動き（ゴムの伸び）は Capacitor の既定で切れている（`zoomEnabled = false`、`scrollView.bounces = false` の決め打ち）。
-  ダブルタップの拡大だけは `touch-action: manipulation` で止める（Web の開発でも同じ手ざわりにする）。`user-scalable=no` は使わない
+- ピンチの拡大と弾む動き（ゴムの伸び）は Capacitor の既定で切れている（`zoomEnabled = false`、`scrollView.bounces = false` の決め打ち）。
+  ダブルタップの拡大は `index.html` の viewport を `maximum-scale=1, user-scalable=no` にして止める（11/7 に改めた。下の 13 節）。
+  `html` の `touch-action: manipulation` は Safari での開発のために残す（Safari は `user-scalable=no` を無視する）
 - タップの灰色の光は消す（`-webkit-tap-highlight-color: transparent`。押した手ごたえは `.press` の沈みと触覚で返す）
 - 長押しのメニューと選択を止めるのは押すもの・絵・写真だけ（`a`、`button`、`nav`、`svg`、`img`、`[role="button"]`）。本文・引用・日付・候補は選べてコピーできる。
   `label` は入力欄を包むので入れない。`a` と `img` は持ち上げて引きずる動きも止める
@@ -324,11 +325,25 @@ SPM は `ios/App/CapApp-SPM/Package.swift` に 2 つが入っている（`cap sy
 - なぞり: 動きを減らす設定では、シートは指に付いて動かず、下へ 40px（`SHEET.reduceCommit`）なぞった時点で待たずに閉じる（左端なぞりの 32px と同じ考え方）。離したときの速さは、最後の touchmove から 80ms より後に離したら 0 とみなす（払ってから止めて離しても、払ったとはみなさない。S3 の戻りもシートも）
 - S5: 9 節と ADR-0009 の追記のとおり（判と「記録できませんでした」を並べる、閉じかけのシートは閉じたものとして扱う、抜けていく途中の組をひらき直したら外さない）
 
+### 13. ダブルタップの拡大（実機、11/7）
+
+- 実機（iPhone 16 Pro）でダブルタップすると画面が拡大した（開発者）。5 節の `touch-action: manipulation`（`html`）と、
+  アプリの外枠の `touch-pan-y touch-pinch-zoom` では止まっていなかった。Capacitor の `zoomEnabled = false` はピンチの始まりで
+  ピンチの認識を切るだけで、WebKit がダブルタップで自分から寄る拡大は止めない
+- **viewport を拡大できない指定にする**（`width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`）。
+  WKWebView は最小と最大の倍率が同じページではダブルタップの認識そのものを外す（`ignoresViewportScaleLimits` は既定の NO のまま。Capacitor も変えていない）。
+  あわせて、16px 未満の入力欄に寄る拡大も起きなくなる（入力欄はいまも全部 17px。4 節）
+- 5 節で `user-scalable=no` を避けていたのは、拡大できる余地を残すためだった。ただアプリのピンチは Capacitor がもともと止めていて、
+  写真の原寸ビューア（wireframes の S3）も作っていないので、この指定で取り上げるものは無い。文字を大きくしたい人には iOS のズーム
+  （アクセシビリティ）が効く。Safari は `user-scalable=no` を無視するので、ブラウザでの開発プレビューではピンチできるまま
+- 見張り: `web/test/platform.test.ts` が viewport の 5 つの指定を見る（これまでは逆に `user-scalable=no` が無いことを見ていた）
+- Simulator は窓を開けない形で動かしているので、ダブルタップ（2 回の速いタップ）を作れず、実機で確かめる
+
 ## 時間が無いときに削る順
 
 上から順に外す。どれも外しても画面は成り立つ（触覚、`.press`、鍵盤の扱い、アイコンは残す）。
 
-1. **時間帯の紙**（いまは `applyTimeOfDay` を呼んでいないので効いていない。呼ばなければそのまま。`styles/season.css` の `html[data-time=…]` の 2 規則を外してもよい）
+1. **時間帯の紙**（`web/src/main.ts` の `applyTimeOfDay();` の 1 行を外す。`styles/season.css` の `html[data-time=…]` の 2 規則を外してもよい）
 2. **札を待つ間の糸と「思い出しています」**（`TodayScreen.vue` の `<WaitingThread>` の 1 行を外す。2.6 の静かな待ち方に戻る）
 3. **S3 を左端からなぞって戻る**（`MemoryDetailScreen.vue` の `useEdgeSwipe(...)` の 1 行を外す。戻るボタンと下部ナビは残る）
 4. **画面の移り変わり**（`App.vue` の `animated` を常に false にする。動きを減らす設定と同じ、待たない入れ替えになる）
@@ -338,8 +353,6 @@ S5 の分は ADR-0009 の「時間が無いときに削る順」、見た目の�
 
 ## まだのこと
 
-- **時間帯の紙が効いていない**: `web/src/main.ts` が `applyTimeOfDay()` を呼んでいない（season の受け持ちから platform への頼みごとのまま）。
-  直すなら `main.ts` の `createApp(App).mount("#app")` の前に `applyTimeOfDay();` の 1 行（`import { applyTimeOfDay } from "./season"`）
 - 弾む動き（ゴムの伸び）は出ない（5 節）。スクロールで鍵盤を閉じる動きも無い（4 節）
 - Android の調整はしない（アイコン、鍵盤の付属バー、戻るボタンでシートだけ閉じる、はどれも未対応）
 - 前に起きた「WebView が白いままになる」件は、4 回入れ直して一度も起きなかった（原因は分かっていない）
@@ -352,6 +365,7 @@ S5 の分は ADR-0009 の「時間が無いときに削る順」、見た目の�
 - 画面の移り変わりの滑らかさ（60fps か、離れていく画面が 1 フレーム透けないか）、`.press` の `:active` が指で効くか
 - 実機の鍵盤（高さは端末と鍵盤の種類で変わる。外付けの鍵盤、ほかの会社の鍵盤）で、下部ナビが消えて戻ること、「保存する」が鍵盤の上に出ること、「完了」で閉じること
 - 長押し: 札で下見が出ないこと、S3 の本文が選べてコピーできること
+- ダブルタップ: 本文・札・下部ナビ・シートのどこでも拡大しないこと、便箋の中のダブルタップで語が選べること（13 節）
 - アイコンのホーム画面での見え方（明るい表示・暗い表示・色付きの表示）
 - 時間帯の紙（`applyTimeOfDay` を呼んだあと）: 夕方と夜に地と下部ナビ・シートの継ぎ目が出ないこと、起動の絵から地へ溶けること
 

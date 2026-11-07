@@ -14,7 +14,8 @@ const config: CapacitorConfig = {
     // 短い S1 と長い S2 で下部ナビの高さが変わっていた（wireframes 第8節 #23）
     contentInset: "never",
     // 長押しでリンクの行き先（capacitor://localhost/#memory/…）の下見を出さない。札（RecallCard）は札全体がリンクなので、
-    // 引用を長押しすると技術の URL の下見が開く。拡大（zoomEnabled）と弾む動き（scrollView.bounces）は Capacitor の既定で切れている
+    // 引用を長押しすると技術の URL の下見が開く。ピンチの拡大（zoomEnabled）と弾む動き（scrollView.bounces）は Capacitor の既定で切れている。
+    // ダブルタップの拡大は zoomEnabled では止まらない（WebKit が自分で寄る）ので、web/index.html の viewport で止める
     allowsLinkPreview: false,
   },
   android: {

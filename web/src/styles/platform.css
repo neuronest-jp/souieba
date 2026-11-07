@@ -11,7 +11,8 @@ html[data-keyboard="open"] nav[aria-label="画面の切り替え"] {
 }
 
 /* iPhone の手ざわり。押したときの灰色の四角は出さない（押した手ごたえは .press の沈みと触覚で返す）。
-   ダブルタップの拡大は切る（Capacitor は拡大を切っているが、Web の開発のときも同じ手ざわりにする。ピンチは止めない） */
+   アプリのダブルタップの拡大は index.html の viewport（maximum-scale=1, user-scalable=no）で止める（これだけでは実機で止まらなかった）。
+   manipulation は Safari での開発のため（Safari は user-scalable=no を無視する。ピンチは止めない） */
 html {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
