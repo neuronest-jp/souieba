@@ -28,6 +28,53 @@ mark.quote-mark {
   pointer-events: none;
 }
 
+/* ---- 帯の入れ物: 横に送れる年表（11/8、ADR-0009 の追記）。横は帯だけが送られ、縦のなぞりは画面に渡す（外枠は touch-pan-y） ---- */
+.loom {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.loom::-webkit-scrollbar {
+  display: none;
+}
+/* 左右の端の薄いぼかし（紙の色から透明へ）。その向きに続きがあるときだけ（data-more-start / data-more-end。opacity だけ） */
+.loom-frame {
+  position: relative;
+}
+.loom-frame::before,
+.loom-frame::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.loom-frame::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--color-paper), transparent);
+}
+.loom-frame::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--color-paper), transparent);
+}
+.loom-frame[data-more-start]::before,
+.loom-frame[data-more-end]::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loom-frame::before,
+  .loom-frame::after {
+    transition: none;
+  }
+}
+
 /* ---- 帯: 押せる所と、押した弧の光（太い淡い線を後ろに敷いて opacity だけで出す） ---- */
 .loom-pickable {
   cursor: pointer;

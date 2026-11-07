@@ -103,7 +103,7 @@ onUnmounted(() => {
     class="tex-desk pointer-events-none fixed inset-x-0 top-0 z-10 h-[env(safe-area-inset-top)] bg-paper"
     aria-hidden="true"
   ></div>
-  <!-- touch-pan-y: 横へなぞってもスクロールを始めない（S3 の左端からなぞって戻る手ざわりを WebKit に取られない。横に動くものは無い） -->
+  <!-- touch-pan-y: 横へなぞってもスクロールを始めない（S3 の左端からなぞって戻る手ざわりを WebKit に取られない。横に送れるのは S5 の帯だけで、帯の入れ物が touch-action: pan-x pan-y を持つ） -->
   <div class="safe-area mx-auto flex min-h-dvh w-full max-w-[560px] touch-pan-y touch-pinch-zoom flex-col">
     <!-- 読み込み中は何も主張しない -->
     <main v-if="state.kind === 'loading'" class="flex flex-1 items-center justify-center" aria-busy="true">

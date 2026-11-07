@@ -5,7 +5,7 @@
 // 一組を押すとシート（PairSheet）が開き、そこで「そうだった」「関係ないかも」を返せる（S3 の札と同じ PATCH /api/recalls/:id）。
 // App.vue の KeepAlive で残すので、S3 を開いて戻っても位置はそのまま。戻ったときは裏で取り直して入れ替え、新しく結ばれた組だけを現す。
 // 組が順に現れて糸が渡されるのは、最初に読み込んだときと、戻ったときの新しい組だけ（prefers-reduced-motion ではすべて止める）
-import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { api } from "../api";
 import type { Bead, ConnectionsResponse } from "../api/types";
 import PairCard from "../components/connections/PairCard.vue";
@@ -39,6 +39,11 @@ const glowId = ref<string | null>(null);
 // シートを閉じたあとに記録が失敗した組。組の足に「記録できませんでした」を出し、その組をひらくまで残す（見直し n=3, n=8）
 const failedIds = ref(new Set<string>());
 const openId = ref<string | null>(null);
+// 一覧で組をひらいたら、帯もその組の弧が見える所まで送る（ThreadLoom の reveal）
+const loom = ref<{ reveal: (id: string) => void } | null>(null);
+watch(openId, (id) => {
+  if (id) loom.value?.reveal(id);
+});
 // 紙が下がっていく途中のシートの組（PairSheet の closing から close まで）。閉じたものとして扱い、
 // その間に返った記録の失敗も組の足に残す（下がりきる約 280ms の内か外かで扱いを変えない。見直し 4 回目）
 let closingId: string | null = null;
@@ -354,7 +359,7 @@ useMemoryDeleted((id) => {
     </section>
 
     <template v-else>
-      <ThreadLoom class="-mt-1" :beads="beads" :items="visible" :weave="weave" :glow="glowId" @pick="jump" />
+      <ThreadLoom class="-mt-1" :beads="beads" :items="visible" :weave="weave" ref="loom" :glow="glowId" @pick="jump" />
       <ol ref="list" role="list" aria-label="つながりの一覧" class="flex flex-col gap-7">
         <li
           v-for="p in visible"
