@@ -1,1 +1,41 @@
-/* platform の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ */
+/* platform の受け持ちの CSS（ブラッシュアップ 11/7、ADR-0011）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ。
+   ここは @layer に入れていない。style.css の @layer base / components / utilities のどれよりも強いので、狭い対象にだけ書く */
+
+/* 鍵盤が出ている間は下部ナビを隠す（見直し n=10）。capacitor.config.ts の Keyboard.resize は native で、鍵盤のぶん WKWebView の枠が縮む。
+   そのままだと sticky の下部ナビが鍵盤のすぐ上に出て、下の余白の env(safe-area-inset-bottom) も 0 になり、高さが 96px → 68px に変わる。
+   隠せば、書く場所から取られるのは鍵盤のぶんだけになり、閉じたときはふだんの高さ（pt-1 + 58px + max(env, 6px)）のまま戻る。
+   data-keyboard は native.ts が鍵盤の出入り（keyboardWillShow / keyboardWillHide）から keyboard.ts の setKeyboard で付け外しする。
+   aria-label は BottomNav.vue の <nav> と同じ文字（web/test/platform.test.ts が両方を見張る） */
+html[data-keyboard="open"] nav[aria-label="画面の切り替え"] {
+  display: none;
+}
+
+/* iPhone の手ざわり。押したときの灰色の四角は出さない（押した手ごたえは .press の沈みと触覚で返す）。
+   ダブルタップの拡大は切る（Capacitor は拡大を切っているが、Web の開発のときも同じ手ざわりにする。ピンチは止めない） */
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 文字でない所（押すもの・絵・写真）は、長押しで選択や「リンクを開く / 画像を保存」のメニューを出さない。
+   本文、引用、日付、候補の文字は選べるまま残す（コピーできる）。label は入力欄を包むことがあるので入れない
+   （iOS では user-select: none の中の入力欄に書けなくなることがある） */
+a,
+button,
+nav,
+svg,
+img,
+[role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+a,
+img {
+  -webkit-user-drag: none; /* 長押しで持ち上げて引きずる動きも出さない */
+}
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
