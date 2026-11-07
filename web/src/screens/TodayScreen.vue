@@ -349,18 +349,22 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
 </script>
 
 <template>
-  <main class="flex flex-1 flex-col gap-6 py-6">
+  <!-- 書く前の画面（あいさつ・便箋・保存する・このごろ・あの日のひとこと）が iPhone（402 × 874pt）で、スクロールせずにひと目に収まる間隔（11/7 実機）。
+       書いて便箋が伸びたら、そこからはスクロールしてよい -->
+  <main class="flex flex-1 flex-col gap-5 py-4">
     <template v-if="!saved">
       <header class="flex flex-col gap-0.5">
         <div class="flex items-baseline justify-between">
           <h1 ref="dateHeading" class="text-[22px] focus:outline-none">{{ headingDate }}</h1>
-          <button ref="whenButton" type="button" class="min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
+          <!-- 押せる高さは 44pt のまま、上下の -6px で見出しの行を押し広げない（最初の画面をひと目に収める） -->
+          <button ref="whenButton" type="button" class="-my-1.5 min-h-11 px-2 text-sm text-ink-soft" @click="sheetOpen = true">いつ？</button>
         </div>
         <!-- 問いかけのあいさつ（時間帯・季節・日替わり）。見出しの下に小さく -->
         <p class="text-sm leading-[1.6] tracking-[.04em] text-ink-soft" data-greeting>{{ prompt.greeting }}</p>
       </header>
 
-      <!-- 便箋（ADR-0010）: 空の朱罫が「書く場所」に見えるよう、5 行分の罫を最初から引いておく。
+      <!-- 便箋（ADR-0010）: 空の朱罫が「書く場所」に見えるよう、4 行分の罫を最初から引いておく（5 行では最初の画面がスクロールになった。11/7 実機）。
+           書いて行が増えると field-sizing: content で便箋が伸びる（iOS 27 の WebKit で 10 行まで伸びることを確かめた）。
            罫は文字と一緒に流れる（bg-local）。行送りと罫の間隔は同じ --leading-letter。
            下の段に写真（カメラの札と、添えた写真の焼き付け）。保存を押すと封をされるように小さく沈む -->
       <section class="card px-5 pt-[18px] pb-1.5" :class="sealing ? 'letter-sealing' : ''">
@@ -368,8 +372,8 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
         <textarea
           id="body"
           v-model="body"
-          rows="5"
-          class="letter-text field-sizing-content block min-h-[calc(var(--leading-letter)_*_5_+_2em_/_17)] w-full resize-none bg-local text-ink outline-none"
+          rows="4"
+          class="letter-text field-sizing-content block min-h-[calc(var(--leading-letter)_*_4_+_2em_/_17)] w-full resize-none bg-local text-ink outline-none"
           :placeholder="prompt.question"
           :readonly="saving"
         ></textarea>
@@ -412,7 +416,7 @@ useMemoryPhoto((id, photo_key, photo_content_type) => {
       </div>
       <!-- 便箋（ADR-0010）: 残したひとことは罫の上の明朝。候補はミシン目から下の控えに鉛筆書きで並ぶ。
            ミシン目の切り欠きがカードの縁にかかるので overflow-hidden は付けず、写真の角は写真の側で丸める -->
-      <article class="card -mt-3" :class="shownIds.has(saved.id) ? '' : 'letter-sealed'">
+      <article class="card -mt-2" :class="shownIds.has(saved.id) ? '' : 'letter-sealed'">
         <PhotoImg v-if="saved.photo_key" :photo-key="saved.photo_key" class="h-[200px] w-full rounded-t-[13px] object-cover" />
         <div class="px-5 pt-[18px] pb-5">
           <p class="text-sm leading-[1.6] tracking-[.04em] text-ink-soft">{{ formatHappenedOn(saved.happened_on, saved.happened_on_precision) }}</p>
