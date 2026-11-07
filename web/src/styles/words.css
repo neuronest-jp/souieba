@@ -1,7 +1,7 @@
 /* words の受け持ちの CSS（S6 ことばの地図。ADR-0014、wireframes 第10節）。style.css の @import から読む。色は @theme のトークン（var(--color-*)）だけ。
    約束（ADR-0011 の 6 節）: 動かすのは transform と opacity だけ。速さと曲線は style.css のトークン。prefers-reduced-motion: reduce では動かさない。
    地図が現れるとき（.is-weaving。WordsScreen.vue が WEAVE_MS の間だけ付ける）: 背骨が上から伸び（460ms）、年の札が 120ms から 60ms ずつ、
-   言葉と線が 260ms から 35ms ずつ（30 こまで）浮かぶ。集めなおしている間（.is-collecting）は地図を少し薄くする */
+   言葉が 260ms から 35ms ずつ（30 こまで）6px 下から浮かび、線と糸（結び目も）はつながる言葉と同じ順に 220ms から 35ms ずつ薄く現れる。集めなおしている間（.is-collecting）は地図を少し薄くする */
 @layer components {
   .words-map {
     transition: opacity var(--duration-base) var(--ease-out-soft);
