@@ -117,14 +117,14 @@ curl -s $URL/api/health
 
 ### 5. secret（審査員のぶんも、対応表に 1 人 1 行）
 
-招待コードは 1 人 1 つ（ADR-0007）。審査員の行のメールは実在しなくてよく、利用者の id として使うだけ（例: `judge1@example.com`〜`judge4@example.com`。手渡す文面に「そのまま入れる」と書く）。
+招待コードは 1 人 1 つ（ADR-0007）。審査員の行のメールは実在しなくてよく、利用者の id として使うだけ（例: `demo1@neuronest.jp`〜`demo4@neuronest.jp`。手渡す文面に「そのまま入れる」と書く）。
 値は端末にだけ控え、提出フォーム以外に書かない。
 
 ```fish
 set c0 (openssl rand -hex 8)   # 自分のぶん
 set c1 (openssl rand -hex 8); set c2 (openssl rand -hex 8); set c3 (openssl rand -hex 8); set c4 (openssl rand -hex 8)   # 審査員 1〜4
 # 1 行で、末尾にカンマを付けない。人を足すときは ,コード=メール を後ろに足して入れ直す（全体の置き換え）
-printf '%s=%s,%s=%s,%s=%s,%s=%s,%s=%s' $c0 you@example.com $c1 judge1@example.com $c2 judge2@example.com $c3 judge3@example.com $c4 judge4@example.com | pnpm exec wrangler secret put INVITE_CODE --name $WORKER
+printf '%s=%s,%s=%s,%s=%s,%s=%s,%s=%s' $c0 you@example.com $c1 demo1@neuronest.jp $c2 demo2@neuronest.jp $c3 demo3@neuronest.jp $c4 demo4@neuronest.jp | pnpm exec wrangler secret put INVITE_CODE --name $WORKER
 openssl rand -base64 48 | tr -d '\n' | pnpm exec wrangler secret put JWT_SECRET --name $WORKER   # 32 文字以上
 pnpm exec wrangler secret put ANTHROPIC_API_KEY --name $WORKER                                    # 貼り付けて Enter
 pnpm exec wrangler secret list --name $WORKER    # 3 つ出る
@@ -139,7 +139,7 @@ Anthropic Console で、月の利用上限を決めておく（保存のたび�
 空のアカウントでは「そういえば。」が出ない。物語のデータ（88 件、`demo/fixtures/story.py`）を、審査員ごとに id の前置きを変えて本番の D1 に入れる（ADR-0016）。
 
 ```fish
-bash scripts/seed-story-for.sh judge1@example.com judge2@example.com judge3@example.com judge4@example.com
+bash scripts/seed-story-for.sh demo1@neuronest.jp demo2@neuronest.jp demo3@neuronest.jp demo4@neuronest.jp
 pnpm exec wrangler d1 execute souieba --remote --command "SELECT user_id, count(*) AS n FROM memories GROUP BY user_id"   # 各 88
 ```
 
@@ -186,8 +186,8 @@ URL と招待コードはここにだけ書く（README・リポジトリ・チ�
 
 > ブラウザで触れる版（iPhone のアプリと同じ画面。Cloudflare Workers 上）: <URL>
 > スマートフォンのブラウザで開くのがおすすめです。ログイン画面に、次の招待コードとメールアドレスをそのまま入れてください（メールアドレスは利用者の ID として使うだけで、実在しません）。
-> - 審査員 1: 招待コード <コード 1> / メールアドレス judge1@example.com
-> - 審査員 2: 招待コード <コード 2> / メールアドレス judge2@example.com
+> - 審査員 1: 招待コード <コード 1> / メールアドレス demo1@neuronest.jp
+> - 審査員 2: 招待コード <コード 2> / メールアドレス demo2@neuronest.jp
 > - （3・4 も同じ形）
 > 架空の人物の記憶が 88 件（2020 年〜2026 年）入っています。「三人で、山の上の展望台までドライブした」「そろそろクリスマスのプレゼントを考えたい。みさきは何がうれしいかな」のように書いて保存すると、2〜6 秒ほどで、関係のある昔の記憶がそのときの言葉のまま浮かびます。関係が無ければ何も出ません（例:「シャンプーの詰め替えを買った」）。
 > 「つながり」「これまで」「ことばの地図」も開けます。写真を添えると「〜でしょうか」の候補が出ます。
@@ -196,7 +196,7 @@ URL と招待コードはここにだけ書く（README・リポジトリ・チ�
 ## 審査のあと
 
 - `INVITE_CODE` から審査員の行を外して入れ直し（5 と同じ形で、自分の行だけ）、`JWT_SECRET` を新しくする（発行済みのトークンが無効になる）
-- 審査員が書いた記憶を消すなら docs/setup-cloudflare.md 13 節（メールは `judge1@example.com` など）
+- 審査員が書いた記憶を消すなら docs/setup-cloudflare.md 13 節（メールは `demo1@neuronest.jp` など）
 - Worker ごと止めるなら `pnpm exec wrangler delete --name $WORKER`（D1 / R2 は残る）
 
 ## プロジェクトの説明（下書き）
