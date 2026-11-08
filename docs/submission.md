@@ -102,6 +102,8 @@ curl -s $URL/robots.txt
 
 `pnpm run deploy` は画面を `VITE_API_BASE` 空で組む（同じ Worker の `/api` を叩く）ので、`web/.env.local` に LAN の向き先が残っていてもよい。
 
+deploy の出力の URL の 2 つ目のラベル（workers.dev のサブドメイン）は、アカウントごとに 1 つで乱数ではない。メールの前半や本名になっていたら、公開する前にダッシュボードの Workers & Pages → 概要 → workers.dev のサブドメインを変える（アカウントの全 Worker の URL が変わるので先に済ませる）。または docs/setup-cloudflare.md 5.3 の独自ドメインに、乱数のサブドメインで出す。
+
 ### 5. secret（審査員のぶんも、対応表に 1 人 1 行）
 
 招待コードは 1 人 1 つ（ADR-0007）。審査員の行のメールは実在しなくてよく、利用者の id として使うだけ（例: `judge1@example.com`〜`judge4@example.com`。手渡す文面に「そのまま入れる」と書く）。

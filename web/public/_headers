@@ -1,6 +1,7 @@
 # 画面と静的ファイルの応答に付ける（Workers Static Assets の _headers。/api/* は Worker が返すので対象外）。ADR-0016
 # - 検索に載せない（X-Robots-Tag）。ほかのサイトの枠の中に出さない（X-Frame-Options）
-# - Referrer-Policy: same-origin … 字体を Google Fonts から読むときなど、外にこのページの場所を伝えない
+# - Referrer-Policy: same-origin … 字体を Google Fonts から読むときなど、外に Referer（ページの場所）を送らない
+#   （字体のファイルは CORS で取るので、ホスト名だけは Origin として相手に届く）
 /*
   X-Robots-Tag: noindex, nofollow
   X-Frame-Options: DENY

@@ -11,7 +11,8 @@
     <meta name="color-scheme" content="light" />
     <!-- 書いたひとことの中の数字や住所を、電話番号・地図・メールのリンクに変えない（自分の言葉は書いたままに見せる） -->
     <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
-    <!-- 審査員向けの配備（ADR-0016）: 検索に載せない。字体を取りに行くときなど、外にこのページの場所を伝えない（同じ場所の中だけ） -->
+    <!-- 審査員向けの配備（ADR-0016）: 検索に載せない。字体を取りに行くときなど、外に Referer（ページの場所）を送らない
+         （字体のファイルは CORS で取るので、ホスト名だけは Origin として相手に届く） -->
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="same-origin" />
     <title>そういえば。</title>

@@ -14,7 +14,7 @@ ADR-0007 では Workers Static Assets の配信を「開発用プレビューだ
 
 1. **Pages ではなく、API と同じ Worker から画面を配信する**（wrangler.toml の `[assets]`、`run_worker_first = ["/api/*"]`）。画面は同じオリジンの `/api` を叩くので、向き先（`VITE_API_BASE`）の設定も CORS の追加も要らない。
 2. **配備する Worker の名前は乱数**（英字 1 字 + 16 進 20 桁）にし、`.wrangler/worker-name`（gitignore 済み）に置く。`pnpm run deploy`（scripts/deploy.sh）がそれを `--name` で渡す。wrangler.toml の `name = "souieba"` は手元（`wrangler dev`）と dry-run 用で、その名前では配備しない（`souieba.<account>.workers.dev` は推測できる）。名前はリポジトリ・README・文書に書かず、提出フォームにだけ書く。バージョンごとの Preview URL は閉じる（`preview_urls = false`）。
-3. **検索に載せない**: `web/public/robots.txt`（すべて Disallow）、`web/public/_headers`（`X-Robots-Tag: noindex, nofollow`、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: same-origin`）、index.html の `<meta name="robots">` と `<meta name="referrer" content="same-origin">`。字体を Google Fonts から読むときに、このページの場所を外に伝えない。
+3. **検索に載せない**: `web/public/robots.txt`（すべて Disallow）、`web/public/_headers`（`X-Robots-Tag: noindex, nofollow`、`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: same-origin`）、index.html の `<meta name="robots">` と `<meta name="referrer" content="same-origin">`。字体を Google Fonts から読むときに Referer（ページの場所）を送らない。ただし字体のファイルは CORS で取るので、ホスト名だけは Origin として相手に届く（自前で字体を置けば消える）。
 4. **審査員のアカウント**: 招待コードは 1 人 1 つのまま（ADR-0007 の対応表）。メールは利用者の id として使うだけで、実在しなくてよい（手渡す文面に「そのまま入れる」と書く）。空のアカウントでは「そういえば。」が出ないので、物語のデータ（88 件、demo/fixtures/story.py）を審査員ごとに id の前置きを変えて入れる（`--user` / `--prefix`、scripts/seed-story-for.sh）。
 5. **秘密と Cloudflare の資源は開発者が手で**: `ANTHROPIC_API_KEY` / `INVITE_CODE` / `JWT_SECRET` の投入、D1 / R2 の作成、配備は docs/setup-cloudflare.md と docs/submission.md「本番の手順」のとおり開発者が行う。Claude Code が書くスクリプトは秘密を扱わない（CLAUDE.md）。
 
@@ -26,3 +26,4 @@ ADR-0007 では Workers Static Assets の配信を「開発用プレビューだ
 - 審査が終わったら、`INVITE_CODE` から審査員の行を外して入れ直し、`JWT_SECRET` を替える（発行済みのトークンが無効になる）。審査員が書いた記憶は docs/setup-cloudflare.md 13 節の手順で消す。
 - 画面の幅はスマートフォン向け。PC のブラウザでは幅いっぱいに広がるので、手渡す文面でスマートフォンを勧める。
 - 乱数の名前は `.wrangler/worker-name` を失うと分からなくなる（ダッシュボードの Workers の一覧で見られる）。
+- URL の 2 つ目のラベル（workers.dev のサブドメイン）はアカウントごとに 1 つで、名前の乱数とは別。メールの前半や本名になっていれば、配備の前にダッシュボードで変える（docs/submission.md 4）。

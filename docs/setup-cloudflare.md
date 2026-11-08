@@ -5,6 +5,9 @@
 - 根拠: docs/spec.md 第 5 節（セキュリティ）、第 8 節（API）、第 10 節（認証）、第 12 節（スタック）。docs/architecture.md 第 3 節・第 10 節。docs/tasks.md T-1104-14〜16、J-1、J-3。ADR-0007（招待コード + JWT）
 - 表記: 「要確認」と書いた箇所は、Cloudflare の画面名や制約を断定していない。実際の画面で確かめること
 - アプリ（iOS / Android）のビルドは docs/setup-capacitor.md。本書は Worker 側だけ
+- **11/8 から（ADR-0016）**: 配備する Worker の名前は wrangler.toml の `souieba` ではなく、`.wrangler/worker-name` の乱数（`pnpm run deploy` = scripts/deploy.sh が作って `--name` で渡す）。
+  `secret put` / `secret list` / `tail` / `delete` など Worker を指すコマンドには、必ず `--name (cat .wrangler/worker-name)`（fish）を付ける。付けないと `souieba` という別の Worker が作られ、配備した Worker には secret が入らない。
+  本書の `souieba.<サブドメイン>.workers.dev` は `<乱数の名前>.<サブドメイン>.workers.dev` と読み替える。審査員向けの流れは docs/submission.md「本番の手順」
 
 ## 0. 全体の流れ
 
@@ -117,9 +120,10 @@ pnpm exec wrangler r2 bucket list      # souieba-photos が出る
 | `JWT_SECRET` | JWT（HS256）の署名鍵 | 32 文字以上。`openssl rand -base64 48` の出力をそのまま貼る。人が入力するものではないので長くてよい |
 
 ```sh
-pnpm exec wrangler secret put ANTHROPIC_API_KEY
-pnpm exec wrangler secret put INVITE_CODE
-pnpm exec wrangler secret put JWT_SECRET
+# 11/8 から: Worker 名を --name で指す（ADR-0016）。fish なら --name (cat .wrangler/worker-name)
+pnpm exec wrangler secret put ANTHROPIC_API_KEY --name "$(cat .wrangler/worker-name)"
+pnpm exec wrangler secret put INVITE_CODE --name "$(cat .wrangler/worker-name)"
+pnpm exec wrangler secret put JWT_SECRET --name "$(cat .wrangler/worker-name)"
 # それぞれ値の入力を求められる。貼り付けて Enter（画面に表示されない）
 ```
 
@@ -156,11 +160,13 @@ pnpm exec wrangler secret put JWT_SECRET
 
 ```sh
 pnpm build            # 画面ビルド + wrangler deploy --dry-run（何も公開しない）
-pnpm run deploy       # 画面ビルド + wrangler deploy
+pnpm run deploy       # scripts/deploy.sh: 画面ビルド（VITE_API_BASE 空）+ wrangler deploy --name <.wrangler/worker-name の乱数>（ADR-0016）
 ```
 
+- 初回の `pnpm run deploy` が `.wrangler/worker-name` に乱数の名前を作る。以後の `secret` / `tail` などは `--name` でその名前を指す（冒頭の注意）。`database_id` が仮の値のままなら止まる
+
 - 必ず `pnpm run deploy` と打つ。`pnpm deploy` は pnpm の組み込みコマンド（workspace 用）と衝突し、package.json の `deploy` スクリプトは実行されない（pnpm 10.28.0 では `ERR_PNPM_CANNOT_DEPLOY  A deploy is only possible from inside a workspace` で止まる）。`pnpm build` / `pnpm dev` / `pnpm preview` / `pnpm db:*` は組み込みと衝突しないのでそのままでよい
-- `pnpm run deploy` の出力に公開 URL（`https://souieba.<サブドメイン>.workers.dev`）が出る。これがアプリの `VITE_API_BASE`（第 8 節）
+- `pnpm run deploy` の出力に公開 URL（`https://<乱数の名前>.<サブドメイン>.workers.dev`）が出る。これがアプリの `VITE_API_BASE`（第 8 節）。名前は文書・README・チャットに書かない
 - `<サブドメイン>` はアカウントごとに 1 つ。初回は wrangler が登録を促す（要確認）
 - 一緒に deploy される画面（Static Assets）は開発用プレビュー。ブラウザで `$URL/` を開くとアプリと同じログイン画面が出るので、アプリを入れていない端末での確認に使える
 - ログ: `pnpm exec wrangler tail` で本番のリクエストとエラーを流し見できる。認証で拒否した理由コード（第 9 節）もここに出る
