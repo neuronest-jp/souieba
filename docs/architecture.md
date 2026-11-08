@@ -18,7 +18,7 @@
    │     ├─ D1 "souieba"            … users / memories / memory_facts / recalls / ai_runs / login_attempts
    │     ├─ R2 "souieba-photos"     … 写真の実体
    │     └─ Anthropic API（@anthropic-ai/sdk）… C1 想起 / C2 候補抽出
-   └─ それ以外        → Workers Static Assets（web/dist、SPA フォールバック）。開発用プレビューだけで、配布には使わない
+   └─ それ以外        → Workers Static Assets（web/dist、SPA フォールバック）。開発用プレビューと、審査員向けのブラウザ版（ADR-0016）
 ```
 
 - 配布はアプリストア経由ではなく、ハッカソン期間中は Xcode / Android Studio からのインストール（docs/setup-capacitor.md）。App Store / Play への提出は対象外
@@ -178,8 +178,8 @@ APP_VERSION = "0.1.0"
 | 対策 | 内容 |
 |---|---|
 | 認証なしで到達できる口 | `GET /api/health`（死活確認。秘密は返さない）と `POST /api/auth/login`（レート制限あり）だけ。それ以外の `/api/*` は常に Bearer を検証する |
-| Static Assets | 画面の静的ファイルは誰でも取得できるが、データは API 経由でしか出ないので問題ない。配布には使わない（開発プレビュー） |
-| 入口の URL | 当面は `souieba.<account>.workers.dev`。カスタムドメインに変えるときは `routes`（custom_domain）と `workers_dev = false` をセットで入れ、アプリの `VITE_API_BASE` を変えてビルドし直す |
+| Static Assets | 画面の静的ファイルは誰でも取得できるが、データは API 経由でしか出ないので問題ない。開発プレビューと審査員向けのブラウザ版に使う（ADR-0016。検索に載せない設定は web/public の robots.txt と _headers、index.html の meta） |
+| 入口の URL | 配備する Worker の名前は乱数（`.wrangler/worker-name`。`pnpm run deploy` が `--name` で渡す。ADR-0016）で、`<乱数>.<account>.workers.dev` になる。名前は文書に書かない。カスタムドメインに変えるときは `routes`（custom_domain）と `workers_dev = false` をセットで入れ、アプリの `VITE_API_BASE` を変えてビルドし直す |
 | 招待コードの総当たり | 12 文字以上のランダム文字列（setup-cloudflare.md）+ 1 分 10 回の制限。定数時間比較で長さや前方一致を漏らさない |
 
 本番の受け入れ条件は「`Authorization` なしの curl で `/api/memories` が 401、`X-Dev-User` だけでも 401、`/api/health` は 200、`POST /api/auth/login` に正しいコードで 200 → その `token` で `/api/me` が 200」（requirements N-9 / S-10、setup-cloudflare.md 7 節）。

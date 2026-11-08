@@ -13,7 +13,7 @@
     "dev:worker:lan": "bash scripts/dev-worker-lan.sh",
     "build:web": "vue-tsc -p web/tsconfig.json --noEmit && vite build",
     "build": "pnpm build:web && wrangler deploy --dry-run --outdir dist/worker",
-    "deploy": "pnpm build:web && wrangler deploy",
+    "deploy": "bash scripts/deploy.sh",
     "preview": "pnpm build:web && wrangler dev --var ENVIRONMENT:development --var INVITE_CODE:dev --var JWT_SECRET:dev-only-secret",
     "db:migrate:local": "wrangler d1 migrations apply souieba --local",
     "db:migrate:remote": "wrangler d1 migrations apply souieba --remote",

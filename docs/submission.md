@@ -13,6 +13,7 @@
 | デモ動画（3 分以内、YouTube・Loom など） | 構成は `docs/demo-video.md`。流れは開発者が練る | 3 分を超えると減点、3 分より後は見ない。期間中に作った機能だけを映す |
 | 公開 GitHub リポジトリ | 新しいリポジトリに差し替える（下の「リポジトリの差し替え」） | |
 | Claude Code での開発の感想など | 下の下書き | |
+| 触れる場所（ブラウザ版） | 乱数の名前の Worker に配備（ADR-0016。下の「本番の手順」） | URL・招待コード・メールは提出フォームにだけ書く（README やリポジトリには書かない） |
 
 ## 審査の観点（案内の要点）
 
@@ -40,13 +41,16 @@
 - [ ] 新しいリポジトリを非公開で作り、期間中だけの履歴を押し上げる
 - [ ] README を GitHub 上で読む（画像・リンク・見出し）。`.dev.vars` や秘密が無いことを確かめる
 - [ ] 公開に切り替える。ログインしていない窓で開けるか確かめる
-- [ ] 本番の Worker を deploy し（`GET /api/today` を含む）、本番の `/api/health` が 200 を返す
+- [ ] 本番の Worker を乱数の名前で deploy し（`pnpm run deploy`。下の 4）、本番の `/api/health` が 200 を返す
+- [ ] 審査員のアカウント（招待コードと物語のデータ）を入れ、1 つで実際にログイン → 書く → 札が出るまで通す（下の 5・5b・6）
 - [ ] デモ動画を書き出し（2:50 以内）、限定公開で上げ、ログインしていない窓で再生できる
-- [ ] テーマ・説明・感想を提出フォームに入れる（説明は 500 字以内）
+- [ ] テーマ・説明・感想と、ブラウザ版の URL・招待コードを提出フォームに入れる（説明は 500 字以内。文面は下の「提出フォームに書く文面」）
+- [ ] Anthropic Console で月の使用上限を決めた
 
 ## 本番の手順（開発者が上から打つ。fish）
 
-11/7 の点検（本番の手順の担当）がまとめたもの。deploy・secret・D1 / R2 の作成は開発者が行う。値（招待コード・JWT_SECRET・API キー）はチャット・文書・コミットに書かない。
+11/7 の点検（本番の手順の担当）がまとめ、11/8 に審査員向けの配備（ADR-0016）に合わせて直したもの。deploy・secret・D1 / R2 の作成は開発者が行う。値（招待コード・JWT_SECRET・API キー）と Worker 名（URL）はチャット・文書・コミットに書かない。
+Worker 名は `.wrangler/worker-name` の乱数で、`pnpm run deploy` が最初に作る。secret など Worker を指すコマンドにはすべて `--name $WORKER` を付ける（付けないと wrangler.toml の `souieba` という別の Worker が作られる）。
 `<UDID>` は `xcrun devicectl list devices`、チーム ID は自分の Apple Developer のもの（`set -x DEVELOPMENT_TEAM …`）。
 
 ### 0. 準備
@@ -64,6 +68,8 @@ pnpm typecheck; and pnpm test; and pnpm check:words; and pnpm build
 pnpm exec wrangler login
 pnpm exec wrangler whoami
 ```
+
+11/8 の `whoami` では scope に d1 / r2 が無かった（D1 / R2 を作る権限が無い）。2 の `d1 create` が権限で断られたら、`pnpm exec wrangler login` をやり直す（既定の scope で入り直す）。
 
 ### 2. D1
 
@@ -86,24 +92,45 @@ pnpm exec wrangler r2 bucket list
 ### 4. 最初の deploy（secret を入れるまでログインは 503 のままでよい）
 
 ```fish
-pnpm run deploy        # pnpm deploy と打たない（pnpm の組み込みコマンドと衝突する）
-set -x URL https://souieba.<サブドメイン>.workers.dev
+pnpm run deploy        # pnpm deploy と打たない（pnpm の組み込みコマンドと衝突する）。初回は .wrangler/worker-name に乱数の名前を作ってから配備する
+set -x WORKER (cat .wrangler/worker-name)
+set -x URL https://$WORKER.<サブドメイン>.workers.dev   # サブドメインは deploy の出力の URL から
 curl -s $URL/api/health
+curl -sI $URL/ | grep -i -E 'x-robots-tag|x-frame-options'   # 検索よけのヘッダが付いている
+curl -s $URL/robots.txt
 ```
 
-### 5. secret
+`pnpm run deploy` は画面を `VITE_API_BASE` 空で組む（同じ Worker の `/api` を叩く）ので、`web/.env.local` に LAN の向き先が残っていてもよい。
+
+### 5. secret（審査員のぶんも、対応表に 1 人 1 行）
+
+招待コードは 1 人 1 つ（ADR-0007）。審査員の行のメールは実在しなくてよく、利用者の id として使うだけ（例: `judge1@example.com`〜`judge4@example.com`。手渡す文面に「そのまま入れる」と書く）。
+値は端末にだけ控え、提出フォーム以外に書かない。
 
 ```fish
-set c1 (openssl rand -hex 8); echo $c1   # 本人に渡す分だけ控える
-# 1 行で、末尾にカンマを付けない。人を増やすときは printf '%s=%s,%s=%s' $c1 you@… $c2 …
-printf '%s=%s' $c1 you@example.com | pnpm exec wrangler secret put INVITE_CODE
-openssl rand -base64 48 | tr -d '\n' | pnpm exec wrangler secret put JWT_SECRET   # 32 文字以上
-pnpm exec wrangler secret put ANTHROPIC_API_KEY                                    # 貼り付けて Enter
-pnpm exec wrangler secret list    # 3 つ出る
-set -e c1
+set c0 (openssl rand -hex 8)   # 自分のぶん
+set c1 (openssl rand -hex 8); set c2 (openssl rand -hex 8); set c3 (openssl rand -hex 8); set c4 (openssl rand -hex 8)   # 審査員 1〜4
+# 1 行で、末尾にカンマを付けない。人を足すときは ,コード=メール を後ろに足して入れ直す（全体の置き換え）
+printf '%s=%s,%s=%s,%s=%s,%s=%s,%s=%s' $c0 you@example.com $c1 judge1@example.com $c2 judge2@example.com $c3 judge3@example.com $c4 judge4@example.com | pnpm exec wrangler secret put INVITE_CODE --name $WORKER
+openssl rand -base64 48 | tr -d '\n' | pnpm exec wrangler secret put JWT_SECRET --name $WORKER   # 32 文字以上
+pnpm exec wrangler secret put ANTHROPIC_API_KEY --name $WORKER                                    # 貼り付けて Enter
+pnpm exec wrangler secret list --name $WORKER    # 3 つ出る
+echo judge1 $c1; echo judge2 $c2; echo judge3 $c3; echo judge4 $c4   # 提出フォームに写したら消す
+set -e c0 c1 c2 c3 c4
 ```
 
-Anthropic Console で、月の利用上限を決めておく。
+Anthropic Console で、月の利用上限を決めておく（保存のたびに Claude を 2 回呼ぶ）。
+
+### 5b. 審査員のアカウントに物語のデータを入れる
+
+空のアカウントでは「そういえば。」が出ない。物語のデータ（88 件、`demo/fixtures/story.py`）を、審査員ごとに id の前置きを変えて本番の D1 に入れる（ADR-0016）。
+
+```fish
+bash scripts/seed-story-for.sh judge1@example.com judge2@example.com judge3@example.com judge4@example.com
+pnpm exec wrangler d1 execute souieba --remote --command "SELECT user_id, count(*) AS n FROM memories GROUP BY user_id"   # 各 88
+```
+
+入れ直すとその人の行は消えて入り直る（審査員が書いた記憶も消える）。
 
 ### 6. 疎通の確認（ログインは同じ IP から 1 分に 10 回まで）
 
@@ -114,6 +141,9 @@ env EXPECT_PRODUCTION=1 bash scripts/smoke.sh $URL     # /api/today と /api/con
 pnpm exec wrangler d1 execute souieba --remote --command "SELECT kind,status,substr(error,1,80) FROM ai_runs ORDER BY created_at DESC LIMIT 4"   # succeeded か empty
 set -e SMOKE_INVITE_CODE
 ```
+
+最後に、スマートフォンのブラウザで `$URL` を開き、審査員 1 の招待コードとメールで入る → 「三人で、山の上の展望台までドライブした」と書いて保存 → 展望台の札が 2 枚出る（2〜6 秒）。
+確かめ終えたら、その記憶は詳細から消しておく（札も一緒に消える）。本番のログは `pnpm exec wrangler tail --name $WORKER`。
 
 ### 7. アプリを本番向けに作り直して実機に入れる
 
@@ -136,6 +166,25 @@ env VITE_API_BASE=http://<LAN の IP>:8788 pnpm cap:sync
 ```
 
 本番にデモの記憶を入れるかは撮る場所で決める。LAN で撮るなら本番に seed は入れない。本番で撮るなら `pnpm db:seed:remote` を流し、INVITE_CODE に `<コード>=demo@example.com` を足す。
+
+## 提出フォームに書く文面（審査員向け）
+
+URL と招待コードはここにだけ書く（README・リポジトリ・チャットには書かない）。`<…>` を埋める。
+
+> ブラウザで触れる版（iPhone のアプリと同じ画面。Cloudflare Workers 上）: <URL>
+> スマートフォンのブラウザで開くのがおすすめです。ログイン画面に、次の招待コードとメールアドレスをそのまま入れてください（メールアドレスは利用者の ID として使うだけで、実在しません）。
+> - 審査員 1: 招待コード <コード 1> / メールアドレス judge1@example.com
+> - 審査員 2: 招待コード <コード 2> / メールアドレス judge2@example.com
+> - （3・4 も同じ形）
+> 架空の人物の記憶が 88 件（2020 年〜2026 年）入っています。「三人で、山の上の展望台までドライブした」「そろそろクリスマスのプレゼントを考えたい。みさきは何がうれしいかな」のように書いて保存すると、2〜6 秒ほどで、関係のある昔の記憶がそのときの言葉のまま浮かびます。関係が無ければ何も出ません（例:「シャンプーの詰め替えを買った」）。
+> 「つながり」「これまで」「ことばの地図」も開けます。写真を添えると「〜でしょうか」の候補が出ます。
+> 1 つの招待コードは 1 人分です。同じコードで入ると、同じ記憶が見えます。
+
+## 審査のあと
+
+- `INVITE_CODE` から審査員の行を外して入れ直し（5 と同じ形で、自分の行だけ）、`JWT_SECRET` を新しくする（発行済みのトークンが無効になる）
+- 審査員が書いた記憶を消すなら docs/setup-cloudflare.md 13 節（メールは `judge1@example.com` など）
+- Worker ごと止めるなら `pnpm exec wrangler delete --name $WORKER`（D1 / R2 は残る）
 
 ## プロジェクトの説明（下書き）
 

@@ -14,7 +14,7 @@ Cloudflare Access の Cookie もログインリダイレクトも成立しない
 
 1. **配布**: Capacitor（`@capacitor/core` / `cli` / `ios` / `android`）。appId `jp.neuronest.souieba`、表示名「そういえば。」。
    `webDir` は `web/dist`。`ios/` と `android/` は git にコミットする（`Pods/`、`build/`、署名ファイルは除く）。
-   Workers の Static Assets 配信は開発用プレビューとしてだけ残す
+   Workers の Static Assets 配信は開発用プレビューとしてだけ残す（2026-11-08: 審査員向けのブラウザ版にも使う。ADR-0016）
 2. **認証**: 招待コード + メールアドレス → HS256 の JWT（有効 90 日）
    - `POST /api/auth/login { invite_code, email }`。Worker は `INVITE_CODE`（2026-11-06 から `コード=メール` の対応表。既知の制約を参照）と定数時間比較し、`JWT_SECRET` で署名した `{ sub, iat, exp }` を返す
    - アプリは `@capacitor/preferences` に保存し、`Authorization: Bearer` で送る。401 を受けたら消して S0 へ

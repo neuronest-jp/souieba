@@ -104,8 +104,9 @@ Built with Claude: Japan 2026 ハッカソンの個人開発（開発期間 2026
 iPhone のアプリは開発者の Mac から直接入れているので、手元の iPhone では動かせません。
 
 1. デモ動画（3 分）を見る
-2. ブラウザで試す: 下の「動かし方」で `pnpm preview`（http://localhost:8787）を開き、招待コード `dev` と `demo@example.com` で入る。デモの過去の記憶は `pnpm db:seed:local` で入る（動画と写しに使った架空の物語のデータは `pnpm db:seed:story:local`）。`.dev.vars` に `ANTHROPIC_API_KEY` が要る（無いと札は出ない）。「スーパーで青梅を見かけた」と書くと、2024 年のおばあちゃんの梅干しの記憶が浮かぶ
-3. iPhone で試す: [docs/setup-capacitor.md](docs/setup-capacitor.md)（Mac と Xcode が要る）
+2. ブラウザで試す（審査員向けの配備）: URL と招待コード・メールアドレスは提出フォームに書いてあります（リポジトリには書きません。[ADR-0016](docs/decisions/0016-judge-browser-access.md)）。スマートフォンのブラウザで開くと、アプリと同じ画面です。架空の物語のデータ（88 件）が入っているので、「三人で、山の上の展望台までドライブした」のように書くと、2〜6 秒ほどで関係のある昔の記憶が浮かびます
+3. 手元で動かす: 下の「動かし方」で `pnpm preview`（http://localhost:8787）を開き、招待コード `dev` と `demo@example.com` で入る。デモの過去の記憶は `pnpm db:seed:local` で入る（動画と写しに使った架空の物語のデータは `pnpm db:seed:story:local`）。`.dev.vars` に `ANTHROPIC_API_KEY` が要る（無いと札は出ない）。「スーパーで青梅を見かけた」と書くと、2024 年のおばあちゃんの梅干しの記憶が浮かぶ
+4. iPhone で試す: [docs/setup-capacitor.md](docs/setup-capacitor.md)（Mac と Xcode が要る）
 
 ## いまの制約
 

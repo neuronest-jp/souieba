@@ -1,8 +1,11 @@
 # そういえば。 Worker 設定
+# name は手元（wrangler dev）と dry-run 用。配備は scripts/deploy.sh（pnpm run deploy）が .wrangler/worker-name の
+# 乱数の名前を --name で渡す（ADR-0016。souieba.<account>.workers.dev は推測できる URL になるので使わない）
 name = "souieba"
 main = "worker/src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]  # @anthropic-ai/sdk のため
+preview_urls = false  # バージョンごとの Preview URL（<id>-<name>.<account>.workers.dev）を出さない
 
 # 画面（web/dist）は同じ Worker から配信する。/api/* だけ Worker のコードが先に処理する。
 [assets]

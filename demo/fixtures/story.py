@@ -1,7 +1,17 @@
 # 物語のサンプルデータ（demo/fixtures/story.sql）を作る。開発者の 11/7 の筋書きから。人名はすべて架空。使い方: python3 demo/fixtures/story.py demo/fixtures/story.sql（引用が原文にあるか、日付の順などを確かめてから書く）
+# 別の利用者のぶん（審査員のアカウントなど。ADR-0016）: python3 demo/fixtures/story.py <出力の .sql> --user <メール> --prefix <id の前置き>
+#   id に前置きを付けるので、同じ D1 に何人ぶん入れてもぶつからない。出力はリポジトリの外（.wrangler/ など）に置く。scripts/seed-story-for.sh がこれを呼ぶ
 import datetime as dt, sys
 
 USER = "demo@example.com"
+PREFIX = ""  # id の前置き（--prefix）。既定は無し（story.sql と同じ id）
+if len(sys.argv) < 2 or sys.argv[1].startswith("--"):
+    sys.exit("使い方: python3 demo/fixtures/story.py <出力の .sql> [--user <メール>] [--prefix <id の前置き>]")
+_args = sys.argv[2:]
+while _args:
+    if _args[0] == "--user" and len(_args) > 1 and "@" in _args[1]: USER, _args = _args[1].strip().lower(), _args[2:]
+    elif _args[0] == "--prefix" and len(_args) > 1: PREFIX, _args = _args[1], _args[2:]
+    else: sys.exit(f"引数が読めません: {_args[0]}（--user <メール> / --prefix <id の前置き>）")
 # (id, 起きた日, 精度, 書いた時刻 JST, 本文)
 M = [
  ("s20_0404","2020-04-04","day","23:40","今日、離婚届を出した。信じていた人に裏切られて、まだ何も考えられない。とりあえず、ここに書いておく。"),
@@ -159,24 +169,25 @@ out.append("""-- そういえば。 デモ用の物語のサンプルデータ�
 -- 投入: pnpm db:seed:story:local（demo@example.com の D1 の行を消して入れ直す。D1〜D4 のシード demo/fixtures/seed.sql とは入れ替えになる）
 -- 撮影の日（11/5〜11/11）の書く画面の「あの日のひとこと」は s25_1108（1 年まえ、つかまり立ち）。このごろの押し葉は 11/3・11/4・11/6。
 -- 撮影で書くひとことと、出てほしい札は demo/fixtures/README.md の「物語のデータ」。
-
-DELETE FROM ai_runs WHERE user_id = 'demo@example.com';
-DELETE FROM users   WHERE id      = 'demo@example.com';
+""" + (f"-- この出力は利用者 {USER} のぶん（id の前置き {PREFIX!r}）。ADR-0016\n" if (USER, PREFIX) != ("demo@example.com", "") else ""))
+out.append(f"""DELETE FROM ai_runs WHERE user_id = {q(USER)};
+DELETE FROM users   WHERE id      = {q(USER)};
 
 INSERT INTO users (id, display_name, created_at, last_seen_at) VALUES
-  ('demo@example.com', NULL, '2020-04-04T14:40:00.000Z', '2026-11-06T13:20:00.000Z');
+  ({q(USER)}, NULL, '2020-04-04T14:40:00.000Z', '2026-11-06T13:20:00.000Z');
 """)
+pid = lambda i: PREFIX + i  # id の前置き（--prefix）。M / F / R の照合は前置き無しの id で済ませ、書き出すときだけ付ける
 out.append("INSERT INTO memories (id, user_id, body, happened_on, happened_on_precision, photo_key, photo_content_type, created_at, updated_at) VALUES")
 rows = []
 for i,d,p,hm,b in M:
     w = utc(d,hm)
-    rows.append(f"  ({q(i)}, {q(USER)}, {q(b)}, {q(d)}, {q(p)}, NULL, NULL, {q(w)}, {q(w)})")
+    rows.append(f"  ({q(pid(i))}, {q(USER)}, {q(b)}, {q(d)}, {q(p)}, NULL, NULL, {q(w)}, {q(w)})")
 out.append(",\n".join(rows) + ";\n")
 out.append("INSERT INTO memory_facts (id, memory_id, kind, value, status, source, evidence, created_at, decided_at) VALUES")
 rows = []
 for i,mid,k,v,src,ev in F:
     w = written[mid]
-    rows.append(f"  ({q(i)}, {q(mid)}, {q(k)}, {q(v)}, 'confirmed', {q(src)}, {q(ev)}, {q(w)}, {q(w)})")
+    rows.append(f"  ({q(pid(i))}, {q(pid(mid))}, {q(k)}, {q(v)}, 'confirmed', {q(src)}, {q(ev)}, {q(w)}, {q(w)})")
 out.append(",\n".join(rows) + ";\n")
 out.append("-- memory_id が新しい側、related_memory_id が思い出された側。evidence は思い出された側の本文の逐語引用")
 out.append("INSERT INTO recalls (id, memory_id, related_memory_id, reason, evidence, feedback, created_at) VALUES")
@@ -185,7 +196,7 @@ _seen = {}
 for i,a,b,reason,ev,fb in R:
     _seen[a] = _seen.get(a, 0) + 1
     w = written[a].replace(":00.000Z", f":{4 + _seen[a]:02d}.000Z")
-    rows.append(f"  ({q(i)}, {q(a)}, {q(b)}, {q(reason)}, {q(ev)}, {q(fb)}, {q(w)})")
+    rows.append(f"  ({q(pid(i))}, {q(pid(a))}, {q(pid(b))}, {q(reason)}, {q(ev)}, {q(fb)}, {q(w)})")
 out.append(",\n".join(rows) + ";")
 open(sys.argv[1], "w", encoding="utf-8").write("\n".join(out) + "\n")
 print(len(M), "memories,", len(F), "facts,", len(R), "recalls")
