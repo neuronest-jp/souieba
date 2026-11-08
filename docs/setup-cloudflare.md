@@ -185,7 +185,7 @@ preview_urls = false                      # バージョンごとの Preview URL
 
 前提: 対象ドメイン（例 `example.jp`）が同じ Cloudflare アカウントのゾーンとして登録されている。
 
-`wrangler.toml` に以下を足して `pnpm run deploy` する。
+11/8 から（ADR-0016）: `wrangler.toml` は変えず、ホスト名を `.wrangler/worker-domain`（gitignore 済み）に 1 行書いて `pnpm run deploy` する。scripts/deploy.sh が下の 2 行を足した `wrangler.deploy.toml`（gitignore 済み）を作り、それで配備する（ホスト名をリポジトリに書かないため）。ダッシュボードで先に独自ドメインを付けた場合も、次の配備で外れないように同じファイルに書いておく。
 
 ```toml
 workers_dev = false                       # *.workers.dev の入口を閉じる（architecture.md 3.6）

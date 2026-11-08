@@ -102,7 +102,18 @@ curl -s $URL/robots.txt
 
 `pnpm run deploy` は画面を `VITE_API_BASE` 空で組む（同じ Worker の `/api` を叩く）ので、`web/.env.local` に LAN の向き先が残っていてもよい。
 
-deploy の出力の URL の 2 つ目のラベル（workers.dev のサブドメイン）は、アカウントごとに 1 つで乱数ではない。メールの前半や本名になっていたら、公開する前にダッシュボードの Workers & Pages → 概要 → workers.dev のサブドメインを変える（アカウントの全 Worker の URL が変わるので先に済ませる）。または docs/setup-cloudflare.md 5.3 の独自ドメインに、乱数のサブドメインで出す。
+deploy の出力の URL の 2 つ目のラベル（workers.dev のサブドメイン）は、アカウントごとに 1 つで乱数ではない。メールの前半や本名になっていたら、公開する前にダッシュボードの Workers & Pages → 概要 → workers.dev のサブドメインを変える（アカウントの全 Worker の URL が変わるので先に済ませる）。
+
+独自ドメイン（同じアカウントのゾーン。neuronest.jp など）で出すなら、ホスト名を `.wrangler/worker-domain` に書いてもう一度 `pnpm run deploy`。wrangler.toml は変えずに `wrangler.deploy.toml`（gitignore 済み）を作って配備し、workers.dev の入口は閉じる（404 になる）。以後の `$URL` はこちら。
+
+```fish
+echo (cat .wrangler/worker-name).neuronest.jp > .wrangler/worker-domain
+pnpm run deploy
+set -x URL https://(cat .wrangler/worker-domain)
+curl -s $URL/api/health
+```
+
+ホスト名は証明書の透明性ログ（CT）に載りうる（ゾーンのワイルドカード証明書で済めば載らない）。招待コードが無ければ入れないので、載っても中身は見えない。
 
 ### 5. secret（審査員のぶんも、対応表に 1 人 1 行）
 

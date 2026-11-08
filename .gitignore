@@ -41,3 +41,6 @@ android/key.properties
 **/google-services.json
 **/GoogleService-Info.plist
 ios/App/App/ExportOptions.plist
+
+# scripts/deploy.sh が独自ドメインで配備するときに wrangler.toml から作る設定（ADR-0016）
+wrangler.deploy.toml

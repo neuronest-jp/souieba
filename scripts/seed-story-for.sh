@@ -30,7 +30,7 @@ for email in "$@"; do
   prefix="$(printf '%s' "${email%%@*}" | tr -c 'a-z0-9' '_')_"
   out=".wrangler/story-${prefix%_}.sql"
   python3 demo/fixtures/story.py "$out" --user "$email" --prefix "$prefix" >/dev/null
-  echo "== $email → $out（${mode[0]}）"
+  echo "== ${email} → ${out}（${mode[0]}）"   # bash 3.2 は $変数 の直後の全角文字を変数名に含めて読むので ${…} で囲む
   pnpm exec wrangler d1 execute souieba "${mode[@]}" --file "$out"
 done
 echo "入れました: $#"
